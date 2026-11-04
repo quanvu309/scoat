@@ -22,3 +22,5 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Failed initialization leaves a client running | Close client before rethrowing connect failure | checkDriver; missing-cleanup fixture |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.
+
+| Fresh hosted runner lacks ~/tmp | Allocate task scratch with scratchDirectory, which creates its parent | checkScratchAllocation; original mkdtemp calls; absent-parent concurrent allocation regression |

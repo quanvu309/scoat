@@ -111,6 +111,9 @@ export function checkDriver(source) {
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkDurableFences(fs.readFileSync("src/hunt/postgres.ts", "utf8"));
   checkStartReplay(fs.readFileSync("src/hunt/index.ts", "utf8"));
+  checkDurableCommands(fs.readFileSync("src/hunt/index.ts", "utf8"));
+  checkRaceBarriers(fs.readFileSync("scripts/verify-durable.mjs", "utf8"));
+  checkTransactionGuidance(fs.readFileSync("RATIONALE.md", "utf8"));
   walk("src");
   walk("scripts");
   walk("test");
@@ -223,4 +226,23 @@ export function checkStartReplay(source) {
   const replay = calls.find(node => node.callee?.property?.name === "priorReceipt");
   const knowledge = calls.find(node => node.callee?.property?.name === "read" && node.callee.object?.property?.name === "knowledge");
   if (!replay || !knowledge || replay.start > knowledge.start) throw new Error("Probe the fenced receipt before start knowledge loading so old replays survive provider failure");
+}
+
+export function checkDurableCommands(source) {
+  const nodes = astNodes(parse(source, { sourceType: "module", plugins: ["typescript"] }));
+  if (nodes.some(node => node.type === "CallExpression" && node.callee?.name === "finishable")) throw new Error("Use canonical HuntView.progress for the finish decision so inferred seller coverage agrees with the rendered view");
+}
+
+export function checkRaceBarriers(source) {
+  const nodes = astNodes(parse(source, { sourceType: "module" }));
+  for (const assignment of nodes.filter(node => node.type === "AssignmentExpression" && node.left?.object?.name === "hooks" && ["afterAccountFence", "beforeAccountFence"].includes(node.left?.property?.name))) {
+    const body = astNodes(assignment.right);
+    for (const signal of body.filter(node => node.type === "CallExpression" && node.callee?.property?.name === "resolve" && ["entered", "eraseEntered"].includes(node.callee.object?.name))) {
+      if (!body.some(node => node.type === "AwaitExpression" && node.argument?.callee?.name === "proveContention" && node.start < signal.start)) throw new Error("Await proveContention before signaling a contended race; a hook before lock acquisition cannot prove PostgreSQL contention");
+    }
+  }
+}
+
+export function checkTransactionGuidance(source) {
+  if (/Finish and stop take every row lock/i.test(source)) throw new Error("Document finish and stop with an exclusive hunt fence inside the shared account fence");
 }

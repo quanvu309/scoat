@@ -6,12 +6,13 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { withDatabase } from "./durable-database.mjs";
-import { fixture, gate, offer, proof, now } from "./durable-fixture.mjs";
+import { fixture, gate, offer, proof, now, intent } from "./durable-fixture.mjs";
 import { PostgresHuntStore } from "../dist/hunt/postgres.js";
 import { Hunts } from "../dist/hunt/index.js";
 const evidence = path.join(os.homedir(),"tmp/scoat-delivery/p04","verify-" + Date.now());
 await fs.mkdir(evidence,{recursive:true});
 const transcript=[];
+const contention=[];
 const lanes=[];
 const passed = name => { lanes.push({ name,status:"PASS" }); console.log(JSON.stringify({lane:name,status:"PASS"})); };
 await withDatabase(async databaseUrl => {
@@ -23,12 +24,32 @@ await withDatabase(async databaseUrl => {
  const f=await fixture(databaseUrl);
  const {store,hooks,run,start,record,control}=f;
  const found = () => { const {id,row,...input}=offer("discarded","price",{amount:{currency:"GBP",pence:7000}}); return {kind:"found",offers:[input]}; };
+ async function proveContention(scope,client) {
+   const prefix=[scope.account,scope.incarnation];
+   const probes=scope.accountFence==="exclusive"
+     ? [{lock:"account",sql:"SELECT account FROM hunt_accounts WHERE account=$1 AND incarnation=$2 FOR UPDATE NOWAIT",args:prefix}]
+     : [{lock:"hunt",sql:"SELECT id FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3 FOR " + (scope.huntFence==="exclusive"?"UPDATE":"SHARE") + " NOWAIT",args:[...prefix,scope.hunt]},
+        ...scope.rows.map(row=>({lock:"row",sql:"SELECT id FROM hunt_rows WHERE account=$1 AND incarnation=$2 AND hunt=$3 AND id=$4 FOR UPDATE NOWAIT",args:[...prefix,scope.hunt,row]}))];
+   await client.query("SAVEPOINT contention_probe");
+   let blocked=null;
+   try {
+     for (const probe of probes) {
+       try { await client.query(probe.sql,probe.args); }
+       catch (error) { if(error.code!=="55P03")throw error; blocked={lock:probe.lock,code:error.code,request:scope.request?.key??"erase"}; break; }
+     }
+   } finally {
+     await client.query("ROLLBACK TO SAVEPOINT contention_probe");
+     await client.query("RELEASE SAVEPOINT contention_probe");
+   }
+   assert(blocked,"Contender must encounter a PostgreSQL lock conflict before releasing its holder");
+   contention.push(blocked);
+ }
  async function heldRace(first,second,check,disjoint=false) {
    const held=gate(),release=gate(),entered=gate();
    let firstKey;
    let accountEntries=0;
    hooks.afterRowFence=async scope => { if (scope.request?.key===firstKey) { held.resolve(); await release.promise; } else if (disjoint) entered.resolve(); };
-   hooks.afterAccountFence=async scope => { if (!disjoint && ++accountEntries===2) entered.resolve(); };
+   hooks.afterAccountFence=async (scope,client) => { if (!disjoint && ++accountEntries===2) { await proveContention(scope,client); entered.resolve(); } };
    const a=first(); firstKey=a.key;
    const pa=a.run();
 
@@ -76,6 +97,22 @@ await withDatabase(async databaseUrl => {
    assert.equal((await run(record(finished.value.view))).error.code,"conflict");
    } finally { await restartedStore.close(); }
    passed("start-record-finish survives process restart");
+   let unspecified=await run({op:"start",requestKey:randomUUID(),intent:{...intent,shop:null},profile:null});
+   assert(unspecified.ok);
+   let inferred=unspecified.value.view;
+   for (const row of inferred.rows) for (const slot of row.slots) {
+     const current=inferred.rows.find(r=>r.row.id===row.row.id);
+     const offers=["price","delivery"].map(kind=>{const {id,row,...input}=offer("discarded",kind,{amount:{currency:"GBP",pence:kind==="price"?7000:0}});return input;});
+     const outcome=row.row.place==="shop-price"?{kind:"found",offers}:row.row.place==="other-sellers"?{kind:"none",checked:"Synthetic other seller checked",seller:"seller-"+slot.slot,proof:[proof]}:{kind:"gap",reason:"Synthetic unavailable"};
+     unspecified=await run({op:"record",requestKey:randomUUID(),hunt:inferred.hunt,row:current.row.id,slot:slot.slot,expected:current.revision,outcome});
+     assert(unspecified.ok); inferred=unspecified.value.view;
+   }
+   assert.equal(inferred.progress.resolved,inferred.progress.total);
+   assert.equal(inferred.directive.kind,"finish");
+   const inferredFinish=await run({op:"finish",requestKey:randomUUID(),hunt:inferred.hunt,selection:null});
+   assert(inferredFinish.ok); assert.equal(inferredFinish.value.view.final.kind,"finished");
+   transcript.push({inferredShop:inferred,inferredFinish});
+   passed("unspecified shop shares the rendered finish decision");
    view=await start();
    const a=record(view,0),b=record(view,1);
    await heldRace(()=>({key:a.requestKey,run:()=>run(a)}),()=>run(b),async replies=>{assert(replies.every(r=>r.ok));const read=await run({op:"read",hunt:view.hunt});assert.equal(read.value.view.rows.filter(r=>r.revision===1).length,2);},true);
@@ -174,7 +211,7 @@ await withDatabase(async databaseUrl => {
    const heldWriter=gate(),releaseWriter=gate(),eraseEntered=gate();
    const precommitKey=randomUUID();
    hooks.beforeCommit=async scope=>{if(scope.request?.key===precommitKey){heldWriter.resolve();await releaseWriter.promise;}};
-   hooks.beforeAccountFence=async scope=>{if(scope.accountFence==="exclusive")eraseEntered.resolve();};
+   hooks.beforeAccountFence=async (scope,client)=>{if(scope.accountFence==="exclusive"){await proveContention(scope,client);eraseEntered.resolve();}};
    const writer=run(record(current,0,{requestKey:precommitKey}));
    await heldWriter.promise;
    const erasing=f.hunts.erase({account:f.scope});
@@ -210,7 +247,7 @@ await withDatabase(async databaseUrl => {
    const incarnation=await store.createAccount(f.scope.account); assert.notEqual(incarnation.incarnation,f.scope.incarnation);
    transcript.push({finalReceipts:lanes});
    const version=(await store.pool.query("SHOW server_version")).rows[0].server_version;
-   await fs.writeFile(path.join(evidence,"proof.json"),JSON.stringify({head:execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(),status:execFileSync("git",["status","--porcelain"],{encoding:"utf8"}),version,lanes,transcript,retries:store.retries,realSessions:"UNTESTED: ten model-agent/real-host sessions unavailable"},null,2));
+   await fs.writeFile(path.join(evidence,"proof.json"),JSON.stringify({head:execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(),status:execFileSync("git",["status","--porcelain"],{encoding:"utf8"}),version,lanes,transcript,contention,retries:store.retries,realSessions:"UNTESTED: ten model-agent/real-host sessions unavailable"},null,2));
  } finally { await store.close(); }
 }).catch(async error=>{await fs.writeFile(path.join(evidence,"failure.json"),JSON.stringify({head:execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(),lanes,status:"FAIL",error:String(error),transcript},null,2));throw error;});
 console.log(JSON.stringify({evidence,lanes}));

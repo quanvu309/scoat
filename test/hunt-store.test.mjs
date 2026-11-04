@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { checkDurableFences, checkStartReplay } from "../scripts/check-structure.mjs";
+import { checkDurableFences, checkStartReplay, checkDurableCommands, checkRaceBarriers, checkTransactionGuidance } from "../scripts/check-structure.mjs";
 import { canonical, digest } from "../dist/hunt/postgres.js";
 import { huntInput } from "../dist/mcp/index.js";
 test("durable fences reject original lockAll shape and serializable prescription",()=>{
@@ -24,4 +24,20 @@ test("compatibility transport rejects unbound proofs, empty evidence and manufac
 test("start replay precedes external inputs and rejects the original prefetch shape",()=>{
  checkStartReplay(fs.readFileSync("src/hunt/index.ts","utf8"));
  assert.throws(()=>checkStartReplay('class Hunts { async run(request) { const start = request.op === "start" ? await this.deps.knowledge.read({release:"latest"}) : null; return this.execute(start); } }'),/fenced receipt/);
+});
+
+test("finish uses projected coverage and rejects the original nullable seller decision",()=>{
+ checkDurableCommands(fs.readFileSync("src/hunt/index.ts","utf8"));
+ assert.throws(()=>checkDurableCommands('function finish() { if (!finishable(view.rows,state.release,state.hunt.intent.shop).ok) return failure("incomplete"); }'),/canonical HuntView.progress/);
+});
+
+test("contended barriers prove database conflicts before signaling",()=>{
+ checkRaceBarriers(fs.readFileSync("scripts/verify-durable.mjs","utf8"));
+ assert.throws(()=>checkRaceBarriers('hooks.afterAccountFence=async scope => { if (!disjoint && ++accountEntries===2) entered.resolve(); };'),/Await proveContention/);
+ assert.throws(()=>checkRaceBarriers('hooks.beforeAccountFence=async scope=>{if(scope.accountFence==="exclusive")eraseEntered.resolve();};'),/Await proveContention/);
+});
+
+test("transaction guidance rejects the superseded all-row locking prescription",()=>{
+ checkTransactionGuidance(fs.readFileSync("RATIONALE.md","utf8"));
+ assert.throws(()=>checkTransactionGuidance("Finish and stop take every row lock in one transaction."),/exclusive hunt fence/);
 });

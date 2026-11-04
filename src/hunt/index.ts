@@ -4,7 +4,7 @@ import { digest, StoreFailure } from "./postgres.js";
 import type { Snapshot, Scope, Tx } from "./postgres.js";
 import { nonempty, offerIdSchema, compatibilitySchema, parseEvidence, validateProof } from "./evidence.js";
 import { priceQuotes, pickBest } from "./pricing.js";
-import { renderView, finishable } from "./view.js";
+import { renderView } from "./view.js";
 import type { AccountScope } from "../domain.js";
 import type { Agent, Compatibility, Failure, HuntId, Instant, Intent, NonEmpty, Offer, OfferInput, Person, Profile, Proof, Quote, ReadyLink, ReleaseId, RequestKey, Result, RowId, RowRevision, Selection, } from "../domain.js";
 import type { Knowledge, Release, Row } from "../knowledge/index.js";
@@ -205,7 +205,7 @@ export class Hunts {
                 await tx.compatible(request.hunt,evidence);
             } else {
                 const view = projection(state,now);
-                if (!finishable(view.rows,state.release,state.hunt.intent.shop).ok) return failure("incomplete","Canonical slots remain unresolved");
+                if (view.progress.resolved !== view.progress.total) return failure("incomplete","Canonical slots remain unresolved");
                 let selected;
                 try { selected = projection(state,now,request.selection); } catch (error) { return failure("unproven",String(error)); }
                 const quote = pickBest(selected.quotes);

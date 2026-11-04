@@ -73,6 +73,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       },
     },
     features: {
+      dPoP: { enabled: false },
       pushedAuthorizationRequests: { enabled: false },
       userinfo: { enabled: false },
       rpInitiatedLogout: { enabled: false },

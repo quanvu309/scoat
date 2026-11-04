@@ -153,7 +153,7 @@ export async function authLanes(databaseUrl) {
     const metadata = await (await fetch(f.issuer + "/.well-known/openid-configuration")).json();
     assert.deepEqual(metadata.response_types_supported, ["code"]);
     assert.deepEqual(metadata.grant_types_supported, ["authorization_code"]);
-    for (const key of ["userinfo_endpoint", "end_session_endpoint", "pushed_authorization_request_endpoint"]) assert.equal(metadata[key], undefined);
+    for (const key of ["userinfo_endpoint", "end_session_endpoint", "pushed_authorization_request_endpoint", "dpop_signing_alg_values_supported"]) assert.equal(metadata[key], undefined);
     const substituted = await fetch(
       f.issuer +
         "/auth?" +
@@ -378,6 +378,23 @@ export async function authLanes(databaseUrl) {
       "upstream-subject-A",
     );
     assert.equal(wrongReauth.status, 400, JSON.stringify(wrongReauth));
+    for (const kind of ["hunts", "identities"]) {
+      const subject = "refusal-" + kind;
+      const candidate = await f.login("host-two", subject);
+      if (kind === "hunts") assert.ok((await call(candidate.token, "start", { requestKey: randomUUID(), intent, profile: null })).ok);
+      const binding = (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE subject=$1", [subject])).rows[0];
+      if (kind === "identities") await f.store.pool.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)", [binding.issuer, subject + "-other", binding.account, binding.incarnation]);
+      const snapshot = async () => ({
+        accounts: (await f.store.pool.query("SELECT account,incarnation,erased FROM hunt_accounts WHERE account=$1", [binding.account])).rows,
+        identities: (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE account=$1 ORDER BY issuer,subject", [binding.account])).rows,
+        hunts: (await f.store.pool.query("SELECT * FROM durable_hunts WHERE account=$1 ORDER BY id", [binding.account])).rows,
+      });
+      const before = await snapshot();
+      const denied = await f.link("upstream-subject-A", subject);
+      assert.equal(denied.status, 400, JSON.stringify(denied));
+      assert.deepEqual(await snapshot(), before);
+      assert.equal((await f.rpc(candidate.token, "tools/list")).status, 200);
+    }
     const movedPrincipal = await f.authenticate(foreign.token);
     const linked = await f.link(
       "upstream-subject-A",
@@ -453,6 +470,8 @@ export async function authLanes(databaseUrl) {
       linking: {
         status: "PASS",
         reauthMismatch: 400,
+        candidateHuntsRejectedWithoutMutation: true,
+        candidateIdentitiesRejectedWithoutMutation: true,
         twoReauthentications: true,
         oldTokensRevoked: true,
         browserEntry: "GET /account/link",
@@ -463,7 +482,7 @@ export async function authLanes(databaseUrl) {
         status: "PASS",
         tombstoneDeniesOuterAccount: true,
       },
-      authorizationPolicy: { status: "PASS", aliases: ["/auth", "/auth/", "/AUTH", "/Auth"], required: ["state", "resource", "code_challenge_method"], wrongResource: "invalid_target", codeFlowDiscoveryOnly: true },
+      authorizationPolicy: { status: "PASS", aliases: ["/auth", "/auth/", "/AUTH", "/Auth"], required: ["state", "resource", "code_challenge_method"], wrongResource: "invalid_target", codeFlowDiscoveryOnly: true, dpopDisabled: true },
       infrastructureOutage: { status: "PASS", http: 503, credentialChallenge: false },
       bodyBoundsLane: { status: "PASS", oversize: 413 },
     };

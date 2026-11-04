@@ -141,6 +141,8 @@ test("P05 guards reject residual alias, result and dead-condition bypasses", asy
     'import { createIssuer } from "./auth/issuer.js"; export { createIssuer };',
     'import { createIssuer as issue } from "./auth/issuer.js"; export { issue as safe };',
     'import * as a from "./auth/issuer.js"; export { a };',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export default issue;',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export const leak = issue;',
   ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
   assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
@@ -151,6 +153,26 @@ test("P05 guards reject residual alias, result and dead-condition bypasses", asy
   const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
   assert.doesNotThrow(() => checkConsentDecision(renamed));
   assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
+  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", assignment + "const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  const rejection = issuer.slice(issuer.indexOf("        if (\n          req.method"), issuer.indexOf('        if (decision.data === "deny")'));
+  assert.ok(rejection.includes("!decision.success"));
+  assert.throws(() => checkConsentDecision(replace(issuer, rejection, "if (false) {" + rejection + "}")), /explicit allow or deny/);
   assert.doesNotThrow(() => checkRemoteBoundary(server));
   assert.doesNotThrow(() => checkGrantRenewal(grants));
+});
+
+
+test("P05 disables unsupported DPoP and preserves candidate linking refusals", async () => {
+  const {checkAuthorizationPolicy,checkLinkRetirement} = await import("../scripts/check-structure.mjs");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const link = readFileSync(new URL("../src/auth/link.ts", import.meta.url), "utf8");
+  for (const change of ["", "dPoP: { enabled: true },"]) {
+    assert.ok(issuer.includes("dPoP: { enabled: false },"));
+    assert.throws(() => checkAuthorizationPolicy(issuer.replace("dPoP: { enabled: false },", change)), /unused issuer endpoints/);
+  }
+  for (const name of ["hunts", "others"]) {
+    assert.ok(link.includes(`if (${name}.rowCount)`));
+    for (const condition of ["false", `false && ${name}.rowCount`]) assert.throws(() => checkLinkRetirement(link.replace(`if (${name}.rowCount)`, `if (${condition})`)), /Refuse candidate accounts/);
+  }
+  assert.doesNotThrow(() => checkLinkRetirement(link));
 });

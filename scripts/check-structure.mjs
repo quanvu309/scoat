@@ -296,7 +296,7 @@ export function checkRemoteBoundary(source) {
   const returns = astNodes(callback).filter(node => node.type === "ReturnStatement");
   const result = returns[0]?.argument;
   const invokes = returns.length === 1 && result?.type === "AwaitExpression" && result.argument?.type === "CallExpression" && result.argument.callee?.name === "invoke" && result.argument.arguments[0]?.name === callback.params?.[0]?.name;
-  const assignments = nodes.filter(node => node.type === "AssignmentExpression" && node.left?.name === "principal");
+  const assignments = nodes.filter(node => node.type === "AssignmentExpression" && astNodes(node.left).some(part => part.type === "Identifier" && part.name === "principal"));
   const authenticatedAssignment = authentication?.block.body.find(statement => statement.expression?.left?.name === "principal")?.expression;
   const stablePrincipal = assignments.length === 1 && assignments[0] === authenticatedAssignment && !nodes.some(node => node.type === "UpdateExpression" && node.argument?.name === "principal");
   if (!authentication || !dispatch || !server || authentication.start > dispatch.start || dispatch.start > server.start || !invokes || !stablePrincipal || authentication.handler?.body.body.at(-1)?.type !== "ReturnStatement") throw new Error("Await the verified issuer principal and pass it to the production MCP dispatcher; return on authentication failure");
@@ -310,7 +310,7 @@ export function checkPublicAuthority(source) {
   const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/auth(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
   for (const node of nodes) {
     if (node.exportKind === "type") continue;
-    if (node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
+    if (((node.type === "ExportDefaultDeclaration" || node.type === "ExportNamedDeclaration") && astNodes(node.declaration).some(part => part.type === "Identifier" && authorityImports.has(part.name))) || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
   }
 }
 export function checkGrantRenewal(source) {
@@ -349,7 +349,7 @@ export function checkConsentDecision(source) {
     return parseDecision(value.object) || (value.object.type === "Identifier" && declarations.some(binding => binding.id.name === value.object.name && binding.start < node.start && parseDecision(binding.init)));
   };
   const consent = nodes.find(node => node.type === "CallExpression" && member(node.callee,"provider","interactionFinished") && astNodes(node.arguments[2]).some(part => part.type === "ObjectProperty" && part.key?.name === "consent"));
-  const rejecting = nodes.find(node => node.type === "IfStatement" && rejectsDecision(node.test) && node.consequent.body?.at(-1)?.type === "ReturnStatement" && node.start < (consent?.start ?? 0));
+  const rejecting = nodes.filter(node => node.type === "BlockStatement" && node.body.some(statement => astNodes(statement).includes(consent) && statement.type === "ExpressionStatement")).flatMap(node => node.body).find(node => node.type === "IfStatement" && rejectsDecision(node.test) && node.consequent.body?.at(-1)?.type === "ReturnStatement" && node.start < (consent?.start ?? 0));
   if (!rejecting || !consent) throw new Error("Require an explicit allow or deny decision with a terminating rejection before completing consent");
 }
 export function checkAuthorizationPolicy(source) {
@@ -365,7 +365,7 @@ export function checkAuthorizationPolicy(source) {
   const responseTypes = options.find(node => node.key?.name === "responseTypes")?.value;
   const scopes = options.find(node => node.key?.name === "scopes")?.value;
   const features = options.find(node => node.key?.name === "features")?.value.properties ?? [];
-  const disabled = ["pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
+  const disabled = ["dPoP", "pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
   if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
 }
 export function checkBrowserLink(source) {
@@ -387,6 +387,14 @@ export function checkLinkRetirement(source) {
   const retired = queries.find(node => node.arguments[0]?.value === "UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2");
   const move = queries.find(node => node.arguments[0]?.value?.startsWith("INSERT INTO oauth_identities"));
   if (!lock || !retired || !move || !(lock.start < retired.start && retired.start < move.start)) throw new Error("Retire the old account under its exclusive fence before moving its last identity");
+  const migration = nodes.find(node => node.type === "BlockStatement" && node.body.some(statement => astNodes(statement).includes(retired) && statement.type === "ExpressionStatement"));
+  const refusal = (name, sql) => {
+    const statements = migration?.body ?? [];
+    const read = statements.find(node => node.type === "VariableDeclaration" && node.declarations.some(binding => binding.id?.name === name && binding.init?.type === "AwaitExpression" && member(binding.init.argument?.callee,"client","query") && binding.init.argument.arguments[0]?.value === sql));
+    const reject = statements.find(node => node.type === "IfStatement" && member(node.test,name,"rowCount") && node.consequent.type === "ThrowStatement");
+    return read && reject && lock && retired && lock.start < read.start && read.start < reject.start && reject.start < retired.start;
+  };
+  if (!refusal("hunts", "SELECT 1 FROM durable_hunts WHERE account=$1 AND incarnation=$2 LIMIT 1") || !refusal("others", "SELECT 1 FROM oauth_identities WHERE account=$1 AND incarnation=$2 AND (issuer<>$3 OR subject<>$4) LIMIT 1")) throw new Error("Refuse candidate accounts with hunts or other identities before retiring or moving them");
 }
 export function checkAuthVerification(skill, index) {
   const header = skill.split("---")[1] ?? "";

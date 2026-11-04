@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { checkComments } from "../scripts/check-no-comments.mjs";
 import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkHuntAuthority, checkCandidateSearch, checkViewCoverage, checkCodeAuthority, checkScenarioProjection, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
@@ -67,6 +68,14 @@ test("scratch lint rejects the original GitHub runner failure", () => {
   assert.throws(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));'), /scratchDirectory/);
   assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
   assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
+});
+
+test("P05 evidence rejects the original shallow hosted checkout", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yaml", import.meta.url), "utf8");
+  const original = workflow.replace("        with:\n          fetch-depth: 0\n", "");
+  assert.notEqual(original, workflow);
+  assert.throws(() => checkWorkflow(original), /fetch-depth: 0/);
+  assert.doesNotThrow(() => checkWorkflow(workflow));
 });
 
 test("P05 rejects the original unauthenticated server and public authority constructors", async()=>{

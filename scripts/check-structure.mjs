@@ -24,7 +24,13 @@ export function checkWire(schema) {
 }
 export function checkWorkflow(source) {
   const workflow = yaml(source);
-  for (const job of Object.values(workflow.jobs)) if (job["runs-on"] !== "ubuntu-latest") throw new Error("Use GitHub-hosted standard ubuntu-latest only");
+  for (const job of Object.values(workflow.jobs)) {
+    if (job["runs-on"] !== "ubuntu-latest") throw new Error("Use GitHub-hosted standard ubuntu-latest only");
+    if (job.steps?.some(step => /npm run (verify|perf) -- p05/.test(step.run ?? ""))) {
+      const checkout = job.steps.find(step => step.uses?.startsWith("actions/checkout@"));
+      if (checkout?.with?.["fetch-depth"] !== 0) throw new Error("Fetch full history with checkout fetch-depth: 0 so P05 evidence can inspect origin/main");
+    }
+  }
 }
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

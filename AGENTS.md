@@ -17,6 +17,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Foreign browser Origins accepted by transport | Allow only exact loopback HTTP origins at the local socket port | checkHostConfig; missing/empty/foreign-Origin fixtures; raw HTTP Origin test |
 | Extra product tools | Keep four registry names | checkTools; extra-tool fixture |
 | Paid or self-hosted CI runner | Use standard ubuntu-latest | checkWorkflow; self-hosted fixture |
+| Shallow hosted checkout lacks trunk evidence | Fetch full history before P05 verification and performance probes | checkWorkflow; original shallow checkout regression |
 | Missing Node ambient types under TS7 | Include node in compiler types | checkTypeConfig; missing-types fixture |
 | Driver inherits incompatible Node flags | Fork with an empty execArgv array | checkDriver; inherited-flags fixture |
 | Failed initialization leaves a client running | Close client before rethrowing connect failure | checkDriver; missing-cleanup fixture |

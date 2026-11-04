@@ -4,7 +4,7 @@ Find the best benefit from what she asks.
 
 Scoat is a kit for Claude and ChatGPT. It teaches the agent to hunt every benefit (price, student discount, member perks, cashback, points, card perks), keeps it hunting until every place is checked, and shows her each step in a live card inside the chat. The agent sees, searches and talks. Scoat brings playbooks, curated shop facts, a hunt tracker, the card, and memory that lasts across chats and hosts.
 
-Status: P05 authenticated HTTPS MCP with durable PostgreSQL hunts, pinned guidance and session-bound read capabilities. Production login requires a configured upstream OIDC provider and registered OAuth clients. Real host interoperability, interactive Person controls, memory and watches remain unverified or unreleased. The tables and boards below describe the planned product. See [launch and verification](docs/implementation-notes.md#p01-foundation) and [host support](docs/host-support.md).
+Status: P05 authenticated HTTPS MCP with durable PostgreSQL hunts, pinned guidance and session-bound read capabilities. Production login requires a configured upstream OIDC provider and registered OAuth clients. Real host interoperability, interactive Person controls, memory and watches remain unverified or unreleased. The tables and boards below describe the planned product. See [launch and verification](docs/implementation-notes.md#historical-p01-foundation) and [host support](docs/host-support.md).
 
 Licensed under the [MIT License](LICENSE).
 

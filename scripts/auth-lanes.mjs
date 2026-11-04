@@ -134,8 +134,26 @@ export async function authLanes(databaseUrl) {
           response.headers.get("location") ?? (await response.text()),
           /error|invalid/,
         );
-      } else assert.equal(response.status, 400);
+      } else {
+        assert.ok(response.status === 400 || /error=/.test(response.headers.get("location") ?? ""));
+      }
     }
+    for (const path of ["/auth", "/auth/", "/AUTH", "/Auth"]) {
+      for (const field of ["state", "resource", "code_challenge_method"]) {
+        const raw = { ...params };
+        delete raw[field];
+        const refused = await fetch(f.issuer + path + "?" + new URLSearchParams(raw), { redirect: "manual" });
+        assert.ok(refused.status === 400 || /error=/.test(refused.headers.get("location") ?? ""), path + ":" + field);
+        assert.ok(!/interaction/.test(refused.headers.get("location") ?? ""));
+      }
+    }
+    const wrongResource = await fetch(f.issuer + "/auth?" + new URLSearchParams({ ...params, resource: "https://wrong.invalid/mcp" }), { redirect: "manual" });
+    assert.notEqual(wrongResource.status, 500);
+    assert.match(wrongResource.headers.get("location") ?? await wrongResource.text(), /invalid_target/);
+    const metadata = await (await fetch(f.issuer + "/.well-known/openid-configuration")).json();
+    assert.deepEqual(metadata.response_types_supported, ["code"]);
+    assert.deepEqual(metadata.grant_types_supported, ["authorization_code"]);
+    for (const key of ["userinfo_endpoint", "end_session_endpoint", "pushed_authorization_request_endpoint"]) assert.equal(metadata[key], undefined);
     const substituted = await fetch(
       f.issuer +
         "/auth?" +
@@ -356,17 +374,25 @@ export async function authLanes(databaseUrl) {
       recordAndFinish: true,
     });
     const wrongReauth = await f.link(
-      active.token,
       "same-email-other-subject",
       "upstream-subject-A",
     );
     assert.equal(wrongReauth.status, 400, JSON.stringify(wrongReauth));
+    const movedPrincipal = await f.authenticate(foreign.token);
     const linked = await f.link(
-      active.token,
       "upstream-subject-A",
       "same-email-other-subject",
     );
     assert.equal(linked.status, 200, JSON.stringify(linked));
+    assert.equal((await f.rpc(foreign.token, "tools/list")).status, 401);
+    await assert.rejects(() => f.store.transact({ ...movedPrincipal.agent, hunt: null, row: null, request: null }, async () => true), /Inactive account incarnation/);
+    const { authenticatedDispatch } = await import("../dist/mcp/authenticated.js");
+    const { parseToolCall } = await import("../dist/mcp/index.js");
+    const staleStart = await authenticatedDispatch(f.store, movedPrincipal)(parseToolCall("scoat_hunt", { op: "start", requestKey: randomUUID(), intent, profile: null }));
+    assert.equal(staleStart.structuredContent.ok, false);
+    assert.equal(staleStart.structuredContent.error.code, "forbidden");
+    const retired = await f.store.pool.query("SELECT erased FROM hunt_accounts WHERE account=$1 AND incarnation=$2", [movedPrincipal.agent.account, movedPrincipal.agent.incarnation]);
+    assert.equal(retired.rows[0].erased, true);
     const linkedLogin = await f.login("host-two", "same-email-other-subject");
     assert.equal((await call(linkedLogin.token, "list")).value.hunts.length, 2);
     assert.equal((await f.rpc(foreign.token, "tools/list")).status, 401);
@@ -384,21 +410,16 @@ export async function authLanes(databaseUrl) {
         .status,
       400,
     );
-    const { principalFor } = await import("../dist/auth/identity.js");
     const { ReadGrants } = await import("../dist/auth/grants.js");
-    const session = (
-      await f.store.pool.query(
-        "SELECT payload FROM oauth_artifacts WHERE model='Session' AND payload->>'accountId'=$1 LIMIT 1",
-        [account],
-      )
-    ).rows[0].payload;
-    const priorPrincipal = await principalFor(
-      f.store.pool,
-      account,
-      "host-one",
-      session.uid,
-      "scoat:read",
-    );
+    await f.store.pool.query("ALTER TABLE oauth_artifacts RENAME TO unavailable_oauth_artifacts");
+    try {
+      const unavailable = await f.rpc(active.token, "tools/list");
+      assert.equal(unavailable.status, 503);
+      assert.equal(unavailable.challenge, null);
+    } finally {
+      await f.store.pool.query("ALTER TABLE unavailable_oauth_artifacts RENAME TO oauth_artifacts");
+    }
+    const priorPrincipal = await f.authenticate(active.token);
     const capabilities = new ReadGrants(f.store.pool);
     const priorGrant = await capabilities.open(priorPrincipal, view.hunt);
     await f.store.pool.query(
@@ -434,11 +455,16 @@ export async function authLanes(databaseUrl) {
         reauthMismatch: 400,
         twoReauthentications: true,
         oldTokensRevoked: true,
+        browserEntry: "GET /account/link",
+        forgedAndReplayedConfirmation: 400,
+        retiredAccountRejectsPreviouslyVerifiedPrincipal: true,
       },
       incarnationGrantLane: {
         status: "PASS",
         tombstoneDeniesOuterAccount: true,
       },
+      authorizationPolicy: { status: "PASS", aliases: ["/auth", "/auth/", "/AUTH", "/Auth"], required: ["state", "resource", "code_challenge_method"], wrongResource: "invalid_target", codeFlowDiscoveryOnly: true },
+      infrastructureOutage: { status: "PASS", http: 503, credentialChallenge: false },
       bodyBoundsLane: { status: "PASS", oversize: 413 },
     };
   } finally {

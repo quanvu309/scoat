@@ -17,7 +17,6 @@ test("maintained issuer authenticates two clients to the same durable subject", 
       assert.equal(identities.rows[0].count, "1");
       assert.equal((await f.rpc("forged", "tools/list")).status, 401);
       const wrong = await f.link(
-        one.token,
         "unlinked-subject",
         "upstream-subject-A",
       );

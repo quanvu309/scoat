@@ -33,7 +33,7 @@ export type HuntRequest = { readonly op: "compatibility"; readonly requestKey: R
     readonly op: "read";
     readonly hunt: HuntId;
 } | {
-    readonly op: "list"; readonly after?: string; readonly limit?: number;
+    readonly op: "list"; readonly after?: HuntId; readonly limit?: number;
 } | {
     readonly op: "record";
     readonly requestKey: RequestKey;
@@ -136,7 +136,7 @@ export class Hunts {
             throw error;
         }
     }
-    async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: string | null }>> {
+    async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>> {
         let start: { release: Release; profile: Profile } | null = null;
         if (request.op === "start") {
             try {
@@ -149,7 +149,7 @@ export class Hunts {
             start = { release: await this.deps.knowledge.read({ release: "latest" }), profile: request.profile ?? await this.deps.profileOf(agent) };
         }
         const scope: Scope = { ...agent, hunt: "hunt" in request ? request.hunt : null, accountFence: "shared", huntFence: request.op === "finish" || request.op === "compatibility" ? "exclusive" : "shared", rows: request.op === "record" ? [request.row] : [], ...("requestKey" in request ? { request: { key: request.requestKey, digest: digest(request) } } : {}) };
-        return this.execute<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: string | null }>(scope, async tx => {
+        return this.execute<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>(scope, async tx => {
             if (request.op === "list") {
                 const hunts = [];
                 const ids = await tx.ids(request.after, (request.limit ?? 20) + 1);

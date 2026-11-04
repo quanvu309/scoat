@@ -6,7 +6,9 @@ import { huntInput } from "./index.js";
 const hunt = z.string().brand<"HuntId">();
 const key = z.string().brand<"RequestKey">();
 export function parseHuntRequest(raw: unknown): HuntRequest {
-  const request = huntInput.parse(raw);
+  return toHuntRequest(huntInput.parse(raw));
+}
+export function toHuntRequest(request: z.infer<typeof huntInput>): HuntRequest {
   if (request.op === "list")
     return {
       op: "list",

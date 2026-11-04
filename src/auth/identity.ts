@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import type { Agent } from "../domain.js";
 
 const accountScope = z.strictObject({
   account: z.uuid().brand<"AccountId">(),
@@ -48,35 +47,4 @@ export async function resolveIdentity(
   } finally {
     client.release();
   }
-}
-const verified = Symbol("verified OAuth principal");
-export type Principal = Readonly<{
-  agent: Agent;
-  session: string;
-  scopes: ReadonlySet<string>;
-  [verified]: true;
-}>;
-export async function principalFor(
-  pool: pg.Pool,
-  account: string,
-  client: string,
-  session: string,
-  scope: string,
-): Promise<Principal> {
-  const result = await pool.query(
-    "SELECT account,incarnation FROM oauth_identities WHERE account=$1",
-    [account],
-  );
-  const parsed = accountScope.parse(result.rows[0]);
-  const active = await pool.query(
-    "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased",
-    [parsed.account, parsed.incarnation],
-  );
-  if (!active.rowCount) throw new Error("Inactive account incarnation");
-  return {
-    agent: { ...parsed, kind: "agent", client },
-    session,
-    scopes: new Set(scope.split(" ")),
-    [verified]: true,
-  };
 }

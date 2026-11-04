@@ -86,3 +86,37 @@ test("P05 rejects the original unauthenticated server and public authority const
   assert.throws(()=>checkGrantRenewal('class Grants { async use() { if(op==="renew") return this.open(principal,hunt); } }'),/atomically/);
   assert.throws(()=>checkGrantRenewal('class ReadGrants { async open() { const result = await this.pool.query("INSERT INTO oauth_read_grants SELECT account FROM hunt_accounts WHERE NOT erased"); return result; } }'),/Fence capability/);
 });
+
+
+test("P05 review guards reject the reproduced boundary bypasses", async () => {
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision,checkAuthorizationPolicy,checkLinkRetirement,checkAuthVerification,checkBrowserLink} = await import("../scripts/check-structure.mjs");
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const link = readFileSync(new URL("../src/auth/link.ts", import.meta.url), "utf8");
+  for (const injected of ["allowedOrigins.push(String(req.headers.origin));", "allowedHosts.push(String(req.headers.host));", "const alias = allowedOrigins; alias.push(auth.issuer);"]) {
+    assert.throws(() => checkHostConfig(server.replace("    res.setHeader", injected + "\n    res.setHeader")), /immutable/);
+  }
+  assert.throws(() => checkRemoteBoundary('const x="Authentication is not configured"; async function h(){ try { await auth.authenticate(req); } catch {} const server=createMcpServer(); }'), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal)", "authenticatedDispatch(store, ignored)")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("res.end(\"Authentication is not configured\");\n      return;", "res.end(\"Authentication is not configured\");")), /Fail closed/);
+  for (const value of ['export * from "./auth/identity.js";', 'export { principalFor as safe } from "./auth/identity.js";']) assert.throws(() => checkPublicAuthority(value), /public barrel/);
+  assert.doesNotThrow(() => checkPublicAuthority('export type * from "./auth/issuer.js";'));
+  assert.throws(() => checkGrantRenewal('/* NOT erased FOR SHARE */ class ReadGrants { async open(){ const p=this.pool; return p.query("INSERT INTO oauth_read_grants VALUES(1)"); } }'), /Fence capability/);
+  assert.throws(() => checkConsentDecision('const ok=["allow","deny"].includes(submitted.get("decision") ?? ""); await provider.interactionFinished(req,res,{consent:{}});'), /explicit allow or deny/);
+  assert.throws(() => checkConsentDecision(issuer.replace("!decision.success", "false")), /explicit allow or deny/);
+  assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
+  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
+  assert.doesNotThrow(() => checkConsentDecision(issuer));
+  assert.doesNotThrow(() => checkConsentDecision(issuer.replace("!decision.success", '!z.enum(["allow","deny"]).safeParse(submitted.get("decision")).success')));
+  assert.throws(() => checkRemoteBoundary(server.replace("!(error instanceof InvalidCredential)", "false")), /infrastructure failures/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('throw new errors.InvalidTarget("Explicit resource required");', 'return resource;')), /missing explicit resource/);
+  assert.throws(() => checkBrowserLink(issuer.replace('req.method === "GET"', 'req.method === "UNAVAILABLE"')), /Start linking in a browser/);
+  assert.throws(() => checkBrowserLink(issuer.replace('DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data', 'SELECT data FROM oauth_browser_flows WHERE state=$1')), /browser-bound confirmation/);
+  assert.throws(() => checkBrowserLink(issuer.replace("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
+  const skill = readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md", import.meta.url), "utf8");
+  assert.throws(() => checkAuthVerification(skill.replace("features/auth.md", "features/foundation.md"), index), /Route OAuth/);
+  assert.throws(() => checkAuthVerification("---\ndescription: excludes OAuth\n---\n## Completion", index), /Route OAuth/);
+});

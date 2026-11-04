@@ -51,6 +51,15 @@ export async function linkIdentity(
         throw new Error(
           "Linking an account with existing hunts requires a separately verified data migration",
         );
+      const others = await client.query(
+        "SELECT 1 FROM oauth_identities WHERE account=$1 AND incarnation=$2 AND (issuer<>$3 OR subject<>$4) LIMIT 1",
+        [existing.account, existing.incarnation, issuer, subject],
+      );
+      if (others.rowCount) throw new Error("Linking an account with other identities requires a separately verified data migration");
+      await client.query(
+        "UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2",
+        [existing.account, existing.incarnation],
+      );
       await client.query(
         "DELETE FROM oauth_artifacts WHERE payload->>'accountId'=$1",
         [existing.account],

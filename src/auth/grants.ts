@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
-import type { Principal } from "./identity.js";
+import type { HuntId, Id } from "../domain.js";
+import { z } from "zod";
+import type { Principal } from "./issuer.js";
 
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -25,8 +27,8 @@ export class ReadGrants {
       client.release();
     }
   }
-  async open(principal: Principal, hunt: string) {
-    const grant = randomBytes(32).toString("base64url");
+  async open(principal: Principal, hunt: HuntId) {
+    const grant = z.string().min(1).brand<"ReadGrantId">().parse(randomBytes(32).toString("base64url"));
     const { agent, session } = principal;
     const result = await this.query(
       principal,
@@ -38,8 +40,8 @@ export class ReadGrants {
   }
   async use(
     principal: Principal,
-    hunt: string,
-    grant: string,
+    hunt: HuntId,
+    grant: Id<"ReadGrantId">,
     op: "read" | "renew" | "revoke",
   ) {
     const { agent, session } = principal;
@@ -54,7 +56,7 @@ export class ReadGrants {
       "digest=$1 AND account=$2 AND incarnation=$3 AND hunt=$4 AND session=$5 AND permission='read' AND NOT revoked " +
       (op === "read" ? " AND expires_at>now()" : "");
     if (op === "renew") {
-      const renewed = randomBytes(32).toString("base64url");
+      const renewed = z.string().min(1).brand<"ReadGrantId">().parse(randomBytes(32).toString("base64url"));
       const result = await this.query(
         principal,
         "WITH prior AS (UPDATE oauth_read_grants SET revoked=true WHERE " +

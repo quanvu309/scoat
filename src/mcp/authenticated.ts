@@ -1,12 +1,13 @@
 import { z } from "zod";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Hunts } from "../hunt/index.js";
 import type { HuntStore } from "../hunt/store.js";
 import { Knowledge } from "../knowledge/index.js";
-import type { Principal } from "../auth/identity.js";
+import type { Principal } from "../auth/issuer.js";
 import { ReadGrants } from "../auth/grants.js";
-import { dispatch, toolCatalog } from "./index.js";
-import type { ToolName } from "./index.js";
-import { parseHuntRequest } from "./contracts.js";
+import { dispatchParsed } from "./index.js";
+import type { ToolCall } from "./index.js";
+import { toHuntRequest } from "./contracts.js";
 
 export function authenticatedDispatch(store: HuntStore, principal: Principal) {
   const hunts = new Hunts({
@@ -28,12 +29,11 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal) {
   const grants = new ReadGrants(store.pool);
   const now = () =>
     z.string().brand<"UtcInstant">().parse(new Date().toISOString());
-  return async (name: ToolName, raw: unknown) => {
-    toolCatalog[name].input.parse(raw);
-    if (name === "scoat_guide" || name === "scoat_memory")
-      return dispatch(name, raw);
-    if (name === "scoat_hunt") {
-      const request = parseHuntRequest(raw);
+  return async (call: ToolCall): Promise<CallToolResult> => {
+    if (call.name === "scoat_guide" || call.name === "scoat_memory")
+      return dispatchParsed(call);
+    if (call.name === "scoat_hunt") {
+      const request = toHuntRequest(call.input);
       if (
         !["list", "read"].includes(request.op) &&
         !principal.scopes.has("scoat:write")
@@ -58,7 +58,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal) {
         structuredContent: reply,
       };
     }
-    const request = toolCatalog.scoat_card.input.parse(raw);
+    const request = call.input;
     if (request.op === "open")
       return {
         content: [{ type: "text", text: "Read capability created" }],
@@ -75,7 +75,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal) {
         agent: principal.agent,
         request: {
           op: "read",
-          hunt: z.string().brand<"HuntId">().parse(request.hunt),
+          hunt: request.hunt,
         },
         now: now(),
       });

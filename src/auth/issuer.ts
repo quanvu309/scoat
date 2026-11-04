@@ -1,30 +1,41 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, createHmac } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import Provider from "oidc-provider";
+import Provider, { errors } from "oidc-provider";
 import * as oidc from "openid-client";
 import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
 import { authConfigSchema } from "./config.js";
 import { linkIdentity } from "./link.js";
-import type { AccountScope } from "../domain.js";
-import { resolveIdentity, principalFor } from "./identity.js";
+import type { Agent, Id } from "../domain.js";
+import { resolveIdentity } from "./identity.js";
 
-const flowSchema = z.strictObject({
-  uid: z.string(),
-  verifier: z.string(),
-  nonce: z.string(),
-  browser: z.string(),
-  stage: z.enum(["login", "link-current", "link-candidate"]),
-  target: z
-    .strictObject({
-      account: z.uuid().brand<"AccountId">(),
-      incarnation: z.uuid().brand<"Incarnation">(),
-    })
-    .nullable(),
+const accountScope = z.strictObject({
+  account: z.uuid().brand<"AccountId">(),
+  incarnation: z.uuid().brand<"Incarnation">(),
 });
+const contextSchema = z.discriminatedUnion("stage", [
+  z.strictObject({ stage: z.literal("login"), uid: z.string() }),
+  z.strictObject({ stage: z.literal("link-current") }),
+  z.strictObject({ stage: z.literal("link-confirm"), target: accountScope }),
+  z.strictObject({ stage: z.literal("link-candidate"), target: accountScope }),
+]);
+const flowSchema = z.strictObject({
+  verifier: z.string(), nonce: z.string(), browser: z.string(), context: contextSchema,
+});
+const verified = Symbol("verified OAuth principal");
+export type Principal = Readonly<{
+  agent: Agent;
+  session: Id<"OAuthSessionId">;
+  scopes: ReadonlySet<string>;
+  [verified]: true;
+}>;
+export class InvalidCredential extends Error {}
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+function browserCookie(req: IncomingMessage) {
+  return req.headers.cookie?.split("; ").find(value => value.startsWith("__Host-scoat-flow="))?.slice(18);
+}
 async function form(req: IncomingMessage) {
   let body = "";
   for await (const chunk of req) {
@@ -53,7 +64,18 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       token_endpoint_auth_method: "none",
       subject_type: "public",
     })),
+    responseTypes: ["code"],
+    scopes: ["openid"],
+    extraParams: {
+      state: (ctx, value) => {
+        if (!value || ctx.oidc.params?.resource !== resource || ctx.oidc.params?.code_challenge_method !== "S256")
+          throw new errors.InvalidRequest("State, resource and PKCE S256 required");
+      },
+    },
     features: {
+      pushedAuthorizationRequests: { enabled: false },
+      userinfo: { enabled: false },
+      rpInitiatedLogout: { enabled: false },
       devInteractions: { enabled: false },
       revocation: {
         enabled: true,
@@ -62,9 +84,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       },
       resourceIndicators: {
         enabled: true,
-        defaultResource: () => resource,
+        defaultResource: () => { throw new errors.InvalidTarget("Explicit resource required"); },
         getResourceServerInfo: (_ctx, value) => {
-          if (value !== resource) throw new Error("Invalid resource");
+          if (value !== resource) throw new errors.InvalidTarget("Invalid resource");
           return {
             scope: "scoat:read scoat:write",
             audience: resource,
@@ -92,12 +114,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
     }),
   });
   async function authenticate(req: IncomingMessage) {
-    const authorization = z
-      .string()
-      .max(4096)
-      .regex(/^Bearer [A-Za-z0-9._~-]+$/)
-      .parse(req.headers.authorization);
-    const token = await provider.AccessToken.find(authorization.slice(7));
+    const authorization = z.string().max(4096).regex(/^Bearer [A-Za-z0-9._~-]+$/).safeParse(req.headers.authorization);
+    if (!authorization.success) throw new InvalidCredential("Invalid bearer credential");
+    const token = await provider.AccessToken.find(authorization.data.slice(7));
     if (
       !token ||
       token.isExpired ||
@@ -106,7 +125,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       !token.scope?.split(" ").includes("scoat:read") ||
       !token.sessionUid
     )
-      throw new Error("Invalid access token");
+      throw new InvalidCredential("Invalid access token");
     const session = await provider.Session.findByUid(token.sessionUid);
     const grant = await provider.Grant.find(token.grantId);
     if (
@@ -118,20 +137,28 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       grant.accountId !== token.accountId ||
       grant.clientId !== token.clientId
     )
-      throw new Error("Revoked OAuth session or grant");
-    return principalFor(
-      pool,
-      token.accountId,
-      z.string().min(1).parse(token.clientId),
-      token.sessionUid,
-      token.scope,
+      throw new InvalidCredential("Revoked OAuth session or grant");
+    const result = await pool.query(
+      "SELECT account,incarnation FROM oauth_identities WHERE account=$1",
+      [token.accountId],
     );
+    if (!result.rowCount) throw new InvalidCredential("Identity unavailable");
+    const account = accountScope.parse(result.rows[0]);
+    const active = await pool.query(
+      "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased",
+      [account.account, account.incarnation],
+    );
+    if (!active.rowCount) throw new InvalidCredential("Inactive account incarnation");
+    return {
+      agent: { ...account, kind: "agent", client: z.string().min(1).parse(token.clientId) },
+      session: z.string().min(1).brand<"OAuthSessionId">().parse(token.sessionUid),
+      scopes: new Set(token.scope.split(" ")),
+      [verified]: true,
+    } satisfies Principal;
   }
   async function upstreamRedirect(
     res: ServerResponse,
-    uid: string,
-    stage: "login" | "link-current" | "link-candidate",
-    target: AccountScope | null,
+    context: z.infer<typeof contextSchema>,
   ) {
     const state = oidc.randomState(),
       verifier = oidc.randomPKCECodeVerifier(),
@@ -141,7 +168,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       "INSERT INTO oauth_browser_flows(state,data,expires_at) VALUES($1,$2,now()+interval '5 minutes')",
       [
         digest(state),
-        { uid, verifier, nonce, browser: digest(browser), stage, target },
+        { verifier, nonce, browser: digest(browser), context },
       ],
     );
     const destination = oidc.buildAuthorizationUrl(upstream, {
@@ -163,16 +190,27 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
   async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", issuer);
     if (url.pathname === "/account/link") {
+      if (req.method === "GET") {
+        await upstreamRedirect(res, { stage: "link-current" });
+        return;
+      }
       if (req.method !== "POST" || req.headers.origin !== issuer) {
         res.writeHead(403);
         res.end();
         return;
       }
-      const principal = await authenticate(req);
-      await upstreamRedirect(res, "", "link-current", {
-        account: principal.agent.account,
-        incarnation: principal.agent.incarnation,
-      });
+      const submitted = await form(req);
+      const confirmation = submitted.get("confirmation");
+      if (!confirmation) throw new Error("Missing confirmation");
+      const rows = await pool.query(
+        "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data",
+        [digest(confirmation)],
+      );
+      const flow = flowSchema.parse(rows.rows[0]?.data);
+      const browser = browserCookie(req);
+      if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "link-confirm")
+        throw new Error("Invalid link confirmation");
+      await upstreamRedirect(res, { stage: "link-candidate", target: flow.context.target });
       return;
     }
     if (url.pathname === "/.well-known/oauth-protected-resource/mcp") {
@@ -187,26 +225,14 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       );
       return;
     }
-    if (
-      url.pathname === "/auth" &&
-      (!url.searchParams.get("state") ||
-        url.searchParams.get("code_challenge_method") !== "S256" ||
-        !url.searchParams.get("resource"))
-    ) {
-      res.writeHead(400);
-      res.end("State, resource and PKCE S256 required");
-      return;
-    }
     if (url.pathname.startsWith("/interaction/")) {
       const details = await provider.interactionDetails(req, res);
       if (details.prompt.name === "login" && req.method === "GET") {
-        await upstreamRedirect(res, details.uid, "login", null);
+        await upstreamRedirect(res, { stage: "login", uid: details.uid });
         return;
       }
       if (details.prompt.name === "consent" && details.session) {
-        const csrf = digest(
-          config.cookieKeys.join(":") + details.uid + details.session.uid,
-        );
+        const csrf = createHmac("sha256", config.cookieKeys.join(":")).update(JSON.stringify([details.uid, details.session.uid])).digest("hex");
         if (req.method === "GET") {
           res.writeHead(200, {
             "content-type": "text/html; charset=utf-8",
@@ -221,17 +247,18 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
         }
         const submitted =
           req.method === "POST" ? await form(req) : new URLSearchParams();
+        const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));
         if (
           req.method !== "POST" ||
           req.headers.origin !== issuer ||
           submitted.get("csrf") !== csrf ||
-          !["allow", "deny"].includes(submitted.get("decision") ?? "")
+          !decision.success
         ) {
           res.writeHead(403);
           res.end();
           return;
         }
-        if (submitted.get("decision") === "deny") {
+        if (decision.data === "deny") {
           await provider.interactionFinished(
             req,
             res,
@@ -272,10 +299,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
         [digest(state)],
       );
       const flow = flowSchema.parse(flows.rows[0]?.data);
-      const browser = req.headers.cookie
-        ?.split("; ")
-        .find((value) => value.startsWith("__Host-scoat-flow="))
-        ?.slice(18);
+      const browser = browserCookie(req);
       if (!browser || digest(browser) !== flow.browser)
         throw new Error("Browser binding mismatch");
       const tokens = await oidc.authorizationCodeGrant(upstream, url, {
@@ -287,27 +311,29 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       });
       const claims = tokens.claims();
       if (!claims) throw new Error("Verified ID token required");
-      if (flow.stage === "link-current") {
-        if (!flow.target) throw new Error("Missing link target");
-        const current = await resolveIdentity(
-          pool,
-          upstream.serverMetadata().issuer,
-          claims.sub,
+      if (flow.context.stage === "link-current") {
+        const existing = await pool.query(
+          "SELECT i.account,i.incarnation FROM oauth_identities i JOIN hunt_accounts a USING(account,incarnation) WHERE i.issuer=$1 AND i.subject=$2 AND NOT a.erased",
+          [upstream.serverMetadata().issuer, claims.sub],
         );
-        if (
-          current.account !== flow.target.account ||
-          current.incarnation !== flow.target.incarnation
-        )
-          throw new Error("Reauthentication must match the existing account");
-        await upstreamRedirect(res, "", "link-candidate", flow.target);
+        const target = accountScope.parse(existing.rows[0]);
+        const confirmation = randomBytes(32).toString("base64url");
+        await pool.query(
+          "INSERT INTO oauth_browser_flows(state,data,expires_at) VALUES($1,$2,now()+interval '5 minutes')",
+          [digest(confirmation), { ...flow, context: { stage: "link-confirm", target } }],
+        );
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+          "cache-control": "no-store",
+        });
+        res.end(`<title>Link a Scoat identity</title><p>Keep this Scoat account and sign in with the identity you want to add. Accounts with existing hunts or other linked identities require a separate migration.</p><form method="post" action="/account/link"><input type="hidden" name="confirmation" value="${confirmation}"><button>Sign in with the identity to add</button></form>`);
         return;
       }
-      if (flow.stage === "link-candidate") {
-        if (!flow.target)
-          throw new Error("Missing reauthenticated link target");
+      if (flow.context.stage === "link-candidate") {
         await linkIdentity(
           pool,
-          flow.target,
+          flow.context.target,
           upstream.serverMetadata().issuer,
           claims.sub,
         );
@@ -321,12 +347,13 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
         );
         return;
       }
+      if (flow.context.stage !== "login") throw new Error("Invalid callback stage");
       const account = await resolveIdentity(
         pool,
         upstream.serverMetadata().issuer,
         claims.sub,
       );
-      const interaction = await provider.Interaction.find(flow.uid);
+      const interaction = await provider.Interaction.find(flow.context.uid);
       if (!interaction) throw new Error("Expired interaction");
       interaction.result = {
         login: {

@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
-import { createIssuer } from "./auth/issuer.js";
+import { createIssuer, InvalidCredential } from "./auth/issuer.js";
 import { authSchema } from "./auth/schema.js";
 import { PostgresHuntStore } from "./hunt/postgres.js";
 
@@ -39,15 +39,13 @@ export async function createHttpServer() {
     const allowedHosts = [
       `localhost:${req.socket.localPort}`,
       `127.0.0.1:${req.socket.localPort}`,
+      ...(auth ? [new URL(auth.issuer).host] : []),
     ];
     const allowedOrigins = [
       `http://localhost:${req.socket.localPort}`,
       `http://127.0.0.1:${req.socket.localPort}`,
+      ...(auth ? [auth.issuer] : []),
     ];
-    if (auth) {
-      allowedHosts.push(new URL(auth.issuer).host);
-      allowedOrigins.push(auth.issuer);
-    }
     if (
       !req.headers.host ||
       !allowedHosts.includes(req.headers.host) ||
@@ -89,6 +87,7 @@ export async function createHttpServer() {
       try {
         await auth.route(req, res);
       } catch {
+        process.stderr.write(JSON.stringify({ event: "authentication_request_refused" }) + "\n");
         if (!res.headersSent) res.writeHead(400);
         res.end("Authentication request refused");
       }
@@ -98,7 +97,13 @@ export async function createHttpServer() {
     let principal;
     try {
       principal = await auth.authenticate(req);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof InvalidCredential)) {
+        process.stderr.write(JSON.stringify({ event: "authentication_unavailable" }) + "\n");
+        res.writeHead(503);
+        res.end("Authentication temporarily unavailable");
+        return;
+      }
       res.writeHead(401, {
         "www-authenticate": `Bearer resource_metadata="${auth.issuer}/.well-known/oauth-protected-resource/mcp"`,
       });
@@ -107,10 +112,10 @@ export async function createHttpServer() {
     }
     const validationMs = performance.now() - authStart;
     const invoke = authenticatedDispatch(store, principal);
-    const server = createMcpServer(async (name, raw) => {
+    const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {
-        return await invoke(name, raw);
+        return await invoke(call);
       } finally {
         if (!res.headersSent)
           res.setHeader(
@@ -148,6 +153,7 @@ export async function createHttpServer() {
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
     } catch {
+      process.stderr.write(JSON.stringify({ event: "mcp_request_refused" }) + "\n");
       if (!res.headersSent) res.writeHead(400);
       res.end();
     }

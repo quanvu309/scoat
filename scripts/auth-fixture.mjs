@@ -13,6 +13,7 @@ import * as jose from "jose";
 import assert from "node:assert/strict";
 import { scratchDirectory } from "./scratch.mjs";
 import { durableSchema } from "../dist/db/schema.js";
+import { createIssuer } from "../dist/auth/issuer.js";
 import { authSchema } from "../dist/auth/schema.js";
 import { PostgresHuntStore } from "../dist/hunt/postgres.js";
 const listen = (server) => new Promise((resolve) => server.listen(0, resolve));
@@ -295,7 +296,7 @@ export async function authFixture(databaseUrl) {
       url = new URL(response.headers.get("location"), url).href;
     }
     const callback = new URL(url);
-    assert.equal(callback.searchParams.get("state"), state);
+    assert.equal(callback.searchParams.get("state"), state, JSON.stringify({ url, steps }));
     const code = callback.searchParams.get("code");
     assert.ok(code, url);
     const response = await fetch(issuer + "/token", {
@@ -314,13 +315,10 @@ export async function authFixture(databaseUrl) {
     assert.equal(response.status, 200, JSON.stringify(tokens));
     return { token: tokens.access_token, steps, client };
   }
-  async function link(token, current, candidate) {
+  async function link(current, candidate) {
     identity = current;
     jar.delete(upstreamIssuer);
-    let response = await browser(issuer + "/account/link", {
-      method: "POST",
-      headers: { origin: issuer, authorization: "Bearer " + token },
-    });
+    let response = await browser(issuer + "/account/link");
     let callbacks = 0;
     const steps = [];
     let previousUrl = issuer;
@@ -333,6 +331,25 @@ export async function authFixture(databaseUrl) {
       if (callbacks === 1 && url.pathname === "/upstream/callback") {
         identity = candidate;
         jar.delete(upstreamIssuer);
+        if (response.status === 200) {
+          const html = await response.text();
+          const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
+          assert.ok(confirmation, html);
+          const denied = await browser(issuer + "/account/link", {
+            method: "POST", headers: { origin: issuer },
+            body: new URLSearchParams({ confirmation: "forged" }),
+          });
+          assert.equal(denied.status, 400);
+          response = await browser(issuer + "/account/link", {
+            method: "POST", headers: { origin: issuer },
+            body: new URLSearchParams({ confirmation }),
+          });
+          const replay = await browser(issuer + "/account/link", {
+            method: "POST", headers: { origin: issuer },
+            body: new URLSearchParams({ confirmation }),
+          });
+          assert.equal(replay.status, 400);
+        }
       }
     }
     return { status: response.status, text: await response.text(), steps };
@@ -366,6 +383,7 @@ export async function authFixture(databaseUrl) {
     const reply = {
       status: response.status,
       timing: response.headers.get("server-timing"),
+      challenge: response.headers.get("www-authenticate"),
       body: response.headers.get("content-type")?.includes("application/json")
         ? await response.json()
         : await response.text(),
@@ -380,9 +398,11 @@ export async function authFixture(databaseUrl) {
       ? { isError: true, error: reply.body.error }
       : reply.body.result;
   };
+  const boundary = await createIssuer(config, store.pool);
   return {
     issuer,
     store,
+    authenticate: (token) => boundary.authenticate({ headers: { authorization: "Bearer " + token } }),
     login,
     link,
     rpc,

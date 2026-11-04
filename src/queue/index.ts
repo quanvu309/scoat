@@ -19,7 +19,7 @@ export async function deleteScopedJobs(client: pg.PoolClient, target: Readonly<{
  const installed = await client.query("SELECT to_regclass($1) AS job", [queueSchema + ".job"]);
  if (installed.rows[0]?.job === null) return 0;
  const filter = JSON.stringify(target.watch === undefined ? { account: target.account, incarnation: target.incarnation } : { account: target.account, incarnation: target.incarnation, watch: target.watch });
- const deleted = await client.query(`DELETE FROM ${queueSchema}.job WHERE name = ANY($1::text[]) AND data @> $2::jsonb`, [[queueNames.check, queueNames.send], filter]);
+ const deleted = await client.query(`DELETE FROM ${queueSchema}.job WHERE data @> $1::jsonb`, [filter]);
  const survivors = await client.query(`SELECT count(*)::integer AS count FROM ${queueSchema}.job WHERE data @> $1::jsonb`, [filter]);
  if (survivors.rows[0]?.count !== 0) throw new Error("Queue erasure survivor");
  return deleted.rowCount ?? 0;

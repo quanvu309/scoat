@@ -51,7 +51,7 @@ export async function lifecycleLanes(databaseUrl) {
   const principal = await f.authenticate(login.token);
   const scope = principal.agent, prefix=[scope.account,scope.incarnation];
   const caller={...scope,session:principal.session};
-  const memory=new Memory(f.store.pool,f.issuer);
+  const memory=new Memory(f.store.pool,f.issuer,false);
   const proposal={op:"profile",requestKey:randomUUID(),profile:{student:"unknown",cards:[],memberships:[]}};
   await memory.run(caller,proposal);
   await f.store.pool.query("UPDATE memory_commands SET expires_at=now()-interval '1 second' WHERE account=$1",[scope.account]);

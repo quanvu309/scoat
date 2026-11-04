@@ -5,6 +5,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { watchFixture, productUrl, variant } from "./watch-fixture.mjs";
+import { serveCard } from "./card-fixture.mjs";
 import { retryTransaction } from "../dist/db/transaction.js";
 import { eraseAccount } from "../dist/accounts/erasure.js";
 
@@ -67,6 +68,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   assert.ok(studentShown, huntA.text.slice(0, 1500));
   const proposalA = await memory({ op: "watch", requestKey: randomUUID(), hunt: huntA.hunt, target: { currency: "GBP", pence: 6000 } });
   assert.equal(proposalA.kind, "confirmation-required");
+  assert.equal(proposalA.url, f.issuer + "/account/watch?account=" + encodeURIComponent(scope.account) + "&hunt=" + encodeURIComponent(huntA.hunt));
   f.setEmail({ email: "person@example.test", email_verified: true });
   await page.goto(proposalA.url);
   await page.getByText("Confirm price watch").waitFor();
@@ -74,6 +76,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   assert.match(confirmText, /Public delivered baseline\s*GBP 70\.00/);
   assert.match(confirmText, /p\*\*\*@example\.test/);
   assert.ok(!confirmText.includes("63.00"));
+  assert.equal(await page.getByLabel("Your target delivered price (GBP)").inputValue(), "60.00");
   await page.screenshot({ path: path.join(evidence, "p08-review-1-confirm.png"), fullPage: true });
   await page.getByRole("button", { name: "Start watching" }).click();
   await page.getByText("Watch active").waitFor();
@@ -102,6 +105,29 @@ export async function watchLanes(databaseUrl, evidence, head) {
   refusals.stale = { status: (await page.locator("body").innerText()).slice(0, 120), active: (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active").length };
   const foreign = await fetch(f.issuer + "/account/watch", { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/x-www-form-urlencoded" }, body: "confirmation=x&decision=watch" });
   refusals.foreignOrigin = foreign.status;
+  assert.match(refusals.stale.status, /Price watch not started/);
+  assert.ok(await page.getByRole("link", { name: "Start again with a fresh public price" }).count());
+  const nativePost = async values => {
+   await page.evaluate(entries => { const form = document.createElement("form"); form.method = "post"; form.action = "/account/watch"; for (const [name, value] of entries) { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input); } document.body.append(form); form.submit(); }, values);
+   await page.waitForLoadState();
+   return (await page.locator("body").innerText()).slice(0, 300);
+  };
+  refusals.expired = await nativePost([["confirmation", randomBytes(32).toString("base64url")], ["decision", "watch"], ["target", "60.00"]]);
+  assert.match(refusals.expired, /expired or was already used/);
+  await page.goto(proposalA.url);
+  refusals.alreadyWatching = (await page.locator("body").innerText()).slice(0, 300);
+  assert.match(refusals.alreadyWatching, /already has an active price watch/);
+  await pool.query("INSERT INTO watches(account,incarnation,id,hunt,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version) SELECT account,incarnation,gen_random_uuid(),'limit-'||g,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version FROM watches, generate_series(1,9) g WHERE id=$1", [watchA.watch]);
+  const limitHunt = await finishedHunt(false);
+  const limitLink = (await f.tool(login.token, "scoat_hunt", { op: "read", hunt: limitHunt.hunt })).structuredContent.controls.watch;
+  assert.equal(limitLink.available, true);
+  await page.goto(limitLink.url);
+  refusals.limit = (await page.locator("body").innerText()).slice(0, 300);
+  assert.match(refusals.limit, /maximum number of active price watches/);
+  refusals.limitProposal = await memory({ op: "watch", requestKey: randomUUID(), hunt: limitHunt.hunt, target: { currency: "GBP", pence: 6000 } });
+  assert.equal(refusals.limitProposal.reason, "watch-limit");
+  await pool.query("UPDATE watches SET status='cancelled',ended_at=now() WHERE account=$1 AND hunt LIKE 'limit-%'", [scope.account]);
+  await page.screenshot({ path: path.join(evidence, "p08-review-0-refusal.png"), fullPage: true });
   assert.equal(refusals.unverified.active, 1); assert.equal(refusals.missing.active, 1); assert.equal(refusals.stale.active, 1); assert.equal(foreign.status, 403);
 
   await w.startWorker();
@@ -307,6 +333,55 @@ export async function watchLanes(databaseUrl, evidence, head) {
   for (const part of ["GBP 60.00", "GBP 56.20", "GBP 3.80", "Observed at", productUrl, "Conditions", "/watch/unsubscribe?token="]) assert.ok(email.message.text.includes(part), part);
   assert.equal(lanes[10].unsubscribeWorked, "cancelled");
   await writeFile(path.join(evidence, "p08-lane-10.json"), JSON.stringify(lanes[10], null, 1));
+
+  const huntC = await finishedHunt(false);
+  const readC = await f.tool(login.token, "scoat_hunt", { op: "read", hunt: huntC.hunt });
+  const textUrl = /Watch price: (\S+)/.exec(readC.content[0].text)?.[1];
+  assert.ok(textUrl);
+  assert.equal(textUrl, readC.structuredContent.controls.watch.url);
+  const card = await serveCard(f, login, readC.structuredContent);
+  const cardPage = await context.newPage();
+  try {
+   await cardPage.goto(card.url);
+   const cardFrame = cardPage.frameLocator("iframe");
+   f.setEmail({ email: "person.work@example.test", email_verified: true });
+   const [popup] = await Promise.all([cardPage.waitForEvent("popup"), cardFrame.getByRole("button", { name: "Watch price" }).click()]);
+   await popup.getByText("Confirm price watch").waitFor();
+   const opened = (await cardPage.evaluate(() => window.harness.opened))[0];
+   assert.equal(opened, textUrl);
+   await cardPage.screenshot({ path: path.join(evidence, "p08-review-7-card.png"), fullPage: true });
+   const moveText = await popup.locator("body").innerText();
+   assert.match(moveText, /verified a different address\. Your 1 other active watch alerts p\*\*\*@example\.test now/);
+   assert.equal(await popup.getByLabel("Your target delivered price (GBP)").inputValue(), "");
+   await popup.getByLabel("Your target delivered price (GBP)").fill("60.00");
+   await popup.getByRole("button", { name: "Start watching" }).click();
+   const blocked = await popup.evaluate(() => document.querySelector("input[name=recipient]").validity.valueMissing);
+   assert.equal(blocked, true);
+   assert.equal(await popup.title(), "Confirm Scoat price watch");
+   await popup.screenshot({ path: path.join(evidence, "p08-review-8-move-consent.png"), fullPage: true });
+   await popup.getByLabel(/Send alerts for all my watches/).check();
+   await popup.getByRole("button", { name: "Start watching" }).click();
+   await popup.getByText("Watch active").waitFor();
+   const activeText = await popup.locator("body").innerText();
+   assert.match(activeText, /Alerts for your 1 other active watch now go to the same verified address/);
+   await popup.screenshot({ path: path.join(evidence, "p08-review-9-moved.png"), fullPage: true });
+   await popup.close();
+  } finally { await cardPage.close(); await card.close(); }
+  const moved = (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active");
+  assert.equal(moved.length, 2);
+  assert.ok(moved.every(item => item.alertsCurrentRecipient));
+  const earlier = moved.find(item => item.hunt === reviewHunt.hunt);
+  assert.ok(earlier);
+  state.pence = 5320;
+  const drop = await checker.check(jobFor(scope, earlier.watch, 40));
+  assert.ok(drop.alert);
+  const movedSend = await checker.send(sendFor(scope, earlier.watch, drop.alert));
+  const movedDelivery = await w.waitAccepted("scoat-watch-alert-" + drop.alert);
+  const movedMail = (await w.deliveries()).find(item => item.key === "scoat-watch-alert-" + drop.alert);
+  assert.deepEqual(movedMail.message.to, ["person.work@example.test"]);
+  lanes[11] = { textUrl, cardOpened: textUrl, consentRequiredBeforeMove: true, activeAfterMove: moved.map(item => ({ watch: item.watch, alertsCurrentRecipient: item.alertsCurrentRecipient })), earlierWatchSend: movedSend, earlierWatchDeliveredTo: movedMail.message.to, accepted: Boolean(movedDelivery) };
+  await shot("p08-lane-11", lanes[11]);
+  state.pence = 6620;
 
   const deliveries = await w.deliveries();
   const perKey = Object.values(deliveries.reduce((all, item) => ({ ...all, [item.key]: (all[item.key] ?? 0) + 1 }), {}));

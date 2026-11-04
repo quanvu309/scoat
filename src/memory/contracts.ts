@@ -1,10 +1,12 @@
 import { z } from "zod";
 const id = z.string().min(1).max(128);
 export const profileSchema = z.strictObject({ student: z.enum(["yes", "no", "unknown"]), cards: z.array(z.string().min(1).max(2000)).max(30), memberships: z.array(z.string().min(1).max(2000)).max(30) });
+export const watchTargetPence = z.number().int().min(1).max(10000000);
+export const watchCommandSchema = z.strictObject({ op: z.literal("watch"), requestKey: id, hunt: id, target: z.strictObject({ currency: z.literal("GBP"), pence: watchTargetPence }) });
 export const memoryCommandSchema = z.discriminatedUnion("op", [
  z.strictObject({ op: z.literal("profile"), requestKey: id, profile: profileSchema }),
  z.strictObject({ op: z.literal("save"), requestKey: id, hunt: id }),
- z.strictObject({ op: z.literal("watch"), requestKey: id, hunt: id, target: z.strictObject({ currency: z.literal("GBP"), pence: z.number().int().min(1).max(10000000) }) }),
+ watchCommandSchema,
  z.strictObject({ op: z.literal("unwatch"), requestKey: id, watch: z.uuid() }),
 ]);
 export const memoryInput = z.discriminatedUnion("op", [

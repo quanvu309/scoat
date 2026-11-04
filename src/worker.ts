@@ -9,6 +9,7 @@ import type { WatchConfig, WatchPause } from "./memory/watches.js";
 export type WorkerOptions = Readonly<{ databaseUrl: string; config: WatchConfig; delivery: Delivery; concurrency: number; initialPlan: boolean; pause?: WatchPause }>;
 
 export async function startWorker(options: WorkerOptions) {
+ if (!options.delivery.canSubmit) throw new Error("Watch worker requires a mail transport; refusing before queue work or submission markers");
  const pool = new pg.Pool({ connectionString: options.databaseUrl, max: options.concurrency + 2 });
  let queue: WatchQueue;
  try {
@@ -34,6 +35,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
  const databaseUrl = process.env.DATABASE_URL, configPath = process.env.SCOAT_WATCH_CONFIG;
  if (!databaseUrl || !configPath) throw new Error("DATABASE_URL and SCOAT_WATCH_CONFIG are required");
  const config = watchConfigSchema.parse(JSON.parse(await readFile(configPath, "utf8")));
+ if (config.resendApiKey === null) throw new Error("Watch worker requires resendApiKey; refusing before queue work or submission markers");
  const worker = await startWorker({ databaseUrl, config, delivery: Delivery.production(config.resendApiKey), concurrency: 4, initialPlan: true });
  if (process.send) process.send({ ready: true });
  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void worker.stop(); });

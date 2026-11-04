@@ -71,13 +71,18 @@ export class Delivery {
   }
  }
 
+ get canSubmit(): boolean {
+  return this.deps.mail !== null;
+ }
+
  async submit(message: MailMessage, to: string, key: string, signal: AbortSignal): Promise<Submission> {
-  if (!this.deps.mail) return { kind: "ambiguous", reason: "mail-unconfigured" };
+  const mail = this.deps.mail;
+  if (!mail) throw new Error("Mail transport unavailable");
   let response: Response;
   try {
-   response = await fetch(this.deps.mail.origin + "/emails", {
+   response = await fetch(mail.origin + "/emails", {
     method: "POST", redirect: "error", signal,
-    headers: { authorization: "Bearer " + this.deps.mail.apiKey, "content-type": "application/json", "idempotency-key": key },
+    headers: { authorization: "Bearer " + mail.apiKey, "content-type": "application/json", "idempotency-key": key },
     body: JSON.stringify({ from: message.from, to: [to], subject: message.subject, text: message.text, html: message.html, headers: message.headers }),
    });
   } catch {

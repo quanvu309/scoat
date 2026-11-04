@@ -15,7 +15,19 @@ Run `npm run build`, then `pstack-run run --timeout 900 -- npm run verify -- p08
 9. Erase while enqueue, marker and fenced send are paused and after a killed sender connection. Zero watch rows and queue jobs survive; another account is preserved; a late job is refused.
 10. The captured email names price, delivery basis, source time, clean shop URL, conditions and a working native unsubscribe form.
 
-Browser refusals cover `email_verified` false, a missing email claim, a stale public observation and a foreign Origin.
+11. The hunt text's `Watch price:` link equals `controls.watch.url`. The live card's Watch price button opens that exact link. A second verified address shows the move notice, and native validation blocks Start until the consent checkbox is ticked. After the move, both active watches report `alertsCurrentRecipient`, and the earlier watch's next alert is delivered to the new address.
+
+Browser refusals cover `email_verified` false, a missing email claim and a foreign Origin. They also cover a stale public observation, an expired or used confirmation (a native same-origin POST, with no injected Origin), an already-watched hunt and the active limit. Each is a no-store 409 page with a fresh-start action.
+
+`npm test` adds PostgreSQL proofs in `test/watch-corrections.test.mjs`:
+
+- The plan waits on the erase account fence while holding no alert lock, finishes on one connection and does not retry.
+- Queue deletion removes 18 scoped jobs across six states and a legacy `watch-send-dead` queue, and preserves another account's 18 jobs.
+- A sender without a mail transport writes no marker, and `startWorker` refuses it.
+- RFC 8058 one-click works over HTTPS in both form encodings. Duplicate, extra, wrong-value, file, malformed, oversized and text bodies return 400 and leave the watch active.
+- `dist/worker.js` exits without `resendApiKey` and installs no queue schema.
+
+The P07 card lane checks the unconfigured explanation and the MCP `service-unconfigured` result.
 
 ## Limits
 

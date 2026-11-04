@@ -50,7 +50,7 @@ export class ControlCodec {
  links(issuer:string,account:unknown,view:{hunt:string;rows:readonly {row:{id:string}}[]}) {
   const parsed=z.object({account:z.string(),incarnation:z.string()}).parse(account);
   const link=(action:unknown)=>issuer+"/account/control?intent="+encodeURIComponent(this.intent({...parsed,hunt:view.hunt,action}));
-  return {hub:link({kind:"hub"}),stop:link({kind:"stop"}),skip:view.rows.map(row=>({row:row.row.id,url:link({kind:"skip",row:row.row.id})})),watch:{available:false,reason:"Watch through scoat_memory op watch; Scoat returns a browser confirmation link for a supported exact public item"}};
+  return {hub:link({kind:"hub"}),stop:link({kind:"stop"}),skip:view.rows.map(row=>({row:row.row.id,url:link({kind:"skip",row:row.row.id})}))};
  }
 }
 export type ControlLinksFor = ControlCodec["links"];

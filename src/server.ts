@@ -26,6 +26,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       : null;
   let codec: ControlCodec | undefined;
   let auth: Awaited<ReturnType<typeof createIssuer>> | null = null;
+  let watches: Watches | undefined;
   try {
     if (store && configPath) {
       const installation = await store.pool.connect();
@@ -39,11 +40,12 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       const controlPath=process.env.SCOAT_CONTROL_CONFIG;
       if(controlPath) codec=new ControlCodec(JSON.parse(await readFile(controlPath,"utf8")));
       const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY)});
+      watches = process.env.SCOAT_WATCH_CONFIG ? new Watches({ pool: store.pool, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined;
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
         codec ? {codec,hunts} : undefined,
-        process.env.SCOAT_WATCH_CONFIG ? new Watches({ pool: store.pool, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined,
+        watches,
       );
     }
   } catch (error) {
@@ -133,7 +135,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       return;
     }
     const validationMs = performance.now() - authStart;
-    const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));
+    const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec), watches !== undefined);
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {

@@ -5,13 +5,15 @@ import { retryTransaction } from "../db/transaction.js";
 import { basisDigest, cleanShopUrl, observationSchema, submitLimitMilliseconds, watchTargetSchema } from "../delivery/index.js";
 import type { Delivery, MailMessage, Observation, PublicWatchTarget } from "../delivery/index.js";
 import { pihut } from "../delivery/pihut.js";
+import { readFinishedResult } from "../hunt/postgres.js";
+import { watchCommandSchema, watchTargetPence } from "./contracts.js";
 import { deleteScopedJobs } from "../queue/index.js";
 import type { CheckJob, Enqueue, SendJob } from "../queue/index.js";
 import type { AccountScope } from "../domain.js";
 
 export const watchLimits = { active: 10, days: 90, freshObservationSeconds: 120, retryHorizonHours: 20, submitMilliseconds: submitLimitMilliseconds, fetchMilliseconds: 10000 } as const;
 export const watchConfigSchema = z.strictObject({
- issuer: z.url().refine(value => new URL(value).protocol === "https:"),
+ issuer: z.url().refine(value => { const url = new URL(value); return url.protocol === "https:" && url.origin === value; }),
  from: z.string().min(3).max(320),
  unsubscribe: z.strictObject({ version: z.string().regex(/^[a-z0-9-]{1,32}$/), keys: z.record(z.string().regex(/^[a-z0-9-]{1,32}$/), z.string().regex(/^[0-9a-f]{64}$/)) }),
  resendApiKey: z.string().min(1).max(512).nullable(),
@@ -19,12 +21,31 @@ export const watchConfigSchema = z.strictObject({
 export type WatchConfig = z.infer<typeof watchConfigSchema>;
 export type Comparable = Extract<Observation, { kind: "comparable" }>;
 export type WatchPause = (point: "observed" | "outbox" | "marked" | "fenced" | "submitted") => Promise<void>;
-export type WatchProposal = { kind: "target"; target: PublicWatchTarget } | { kind: "unavailable"; reason: "no-exact-supported-variant" | "ambiguous-variant" | "watch-limit" };
+export type WatchProposal = { kind: "target"; target: PublicWatchTarget } | { kind: "unavailable"; reason: "no-exact-supported-variant" | "ambiguous-variant" };
+export const watchRefusalReasons = ["service-unconfigured", "unfinished", "no-exact-supported-variant", "ambiguous-variant", "already-watching", "watch-limit", "stale", "expired", "recipient-changed"] as const;
+export type WatchRefusalReason = typeof watchRefusalReasons[number];
+export type PreparedWatch = { kind: "ready"; hunt: string; target: PublicWatchTarget; suggestedPence: number | null; recipient: { revision: string; address: string } | null; otherActive: number } | { kind: "unavailable"; reason: Exclude<WatchRefusalReason, "stale" | "expired" | "recipient-changed"> };
+export type WatchEntry = { available: true; url: string } | { available: false; reason: string };
+export const watchRefusalText: Readonly<Record<WatchRefusalReason, string>> = {
+ "service-unconfigured": "Price watches are not configured on this Scoat server.",
+ unfinished: "Finish the hunt first; a price watch starts from a finished result.",
+ "no-exact-supported-variant": "Price watches support only The Pi Hut Raspberry Pi 5 with one exact variant link, quantity one and UK Royal Mail 1st Class delivery.",
+ "ambiguous-variant": "The finished result links more than one Pi Hut variant, so the exact item to watch is unclear.",
+ "already-watching": "This finished hunt already has an active price watch.",
+ "watch-limit": "This account already has the maximum number of active price watches.",
+ stale: "The public price shown is more than two minutes old or the item changed. Nothing was activated.",
+ expired: "This confirmation expired or was already used. Nothing new was activated.",
+ "recipient-changed": "The alert address changed since this page was shown, or moving alerts to the new address was not confirmed. Nothing was activated.",
+};
+export class WatchRefusal extends Error {
+ constructor(readonly reason: WatchRefusalReason) { super("Watch refused: " + reason); }
+}
 export type SendOutcome = "accepted" | "rejected" | "ambiguous" | "refused" | "expired" | "settled";
 export type CheckOutcome = { kind: "inactive" | "duplicate" } | { kind: "observed"; observation: Observation; alert: string | null; outboxMilliseconds: number };
 
 const watchRow = z.object({ id: z.uuid(), hunt: z.string(), target: z.unknown(), basis_digest: z.string(), baseline_pence: z.number().int(), target_pence: z.number().int(), recipient_revision: z.uuid(), key_version: z.string(), status: z.enum(["active", "cancelled", "expired"]), baseline_observed_at: z.date(), created_at: z.date(), expires_at: z.date(), ended_at: z.date().nullable() });
 const alertState = z.enum(["pending", "submitting", "accepted", "rejected", "cancelled", "unconfirmed"]);
+const recipientRow = z.object({ revision: z.uuid(), address: z.email() });
 const messageSchema = z.strictObject({ from: z.string(), subject: z.string(), text: z.string(), html: z.string(), headers: z.record(z.string(), z.string()) });
 const reserving = "('pending','submitting','accepted','unconfirmed')";
 const pounds = (pence: number) => "GBP " + (pence / 100).toFixed(2);
@@ -53,8 +74,30 @@ export function resolveWatchTarget(snapshot: unknown): WatchProposal {
  return { kind: "target", target: watchTargetSchema.parse({ parser: pihut.parser, seller: pihut.seller, url: pihut.product, variant, sku: known.sku, quantity: 1, delivery: { destination: "GB", service: pihut.service, rule: pihut.rule, lithium: false, membership: "none" } }) };
 }
 
-export async function activeWatchCount(client: pg.PoolClient, scope: AccountScope): Promise<number> {
- return z.number().int().parse((await client.query("SELECT count(*)::integer AS count FROM watches WHERE account=$1 AND incarnation=$2 AND status='active'", [scope.account, scope.incarnation])).rows[0]?.count);
+export function watchUrl(issuer: string, account: string, hunt: string): string {
+ return issuer + "/account/watch?account=" + encodeURIComponent(account) + "&hunt=" + encodeURIComponent(hunt);
+}
+
+export function watchEntry(issuer: string | null, account: string, view: Readonly<{ hunt: string; final: Readonly<{ kind: string }> }>): WatchEntry {
+ if (issuer === null) return { available: false, reason: watchRefusalText["service-unconfigured"] };
+ if (view.final.kind !== "finished") return { available: false, reason: watchRefusalText.unfinished };
+ const resolved = resolveWatchTarget(view);
+ if (resolved.kind === "unavailable") return { available: false, reason: watchRefusalText[resolved.reason] };
+ return { available: true, url: watchUrl(issuer, account, view.hunt) };
+}
+
+export async function prepareWatch(client: pg.PoolClient, scope: AccountScope, hunt: string): Promise<PreparedWatch> {
+ const prefix = [scope.account, scope.incarnation];
+ const finished = await readFinishedResult(client, scope, hunt);
+ if (!finished) return { kind: "unavailable", reason: "unfinished" };
+ const resolved = resolveWatchTarget(finished.snapshot);
+ if (resolved.kind === "unavailable") return resolved;
+ const active = (await client.query("SELECT hunt FROM watches WHERE account=$1 AND incarnation=$2 AND status='active'", prefix)).rows.map(row => z.string().parse(row.hunt));
+ if (active.includes(hunt)) return { kind: "unavailable", reason: "already-watching" };
+ if (active.length >= watchLimits.active) return { kind: "unavailable", reason: "watch-limit" };
+ const proposal = (await client.query("SELECT command FROM memory_commands WHERE account=$1 AND incarnation=$2 AND command->>'op'='watch' AND command->>'hunt'=$3 AND outcome IS NULL AND expires_at>now() ORDER BY expires_at DESC LIMIT 1", [...prefix, hunt])).rows[0];
+ const recipient = (await client.query("SELECT revision,address FROM watch_recipients WHERE account=$1 AND incarnation=$2", prefix)).rows[0];
+ return { kind: "ready", hunt, target: resolved.target, suggestedPence: proposal ? watchCommandSchema.parse(proposal.command).target.pence : null, recipient: recipient ? recipientRow.parse(recipient) : null, otherActive: active.length };
 }
 
 export function maskAddress(address: string): string {
@@ -120,7 +163,8 @@ export async function cancelWatch(client: pg.PoolClient, scope: AccountScope, wa
 
 export async function readWatches(client: pg.PoolClient, scope: AccountScope) {
  const rows = (await client.query("SELECT id,hunt,target,basis_digest,baseline_pence,target_pence,recipient_revision,key_version,status,baseline_observed_at,created_at,expires_at,ended_at FROM watches WHERE account=$1 AND incarnation=$2 ORDER BY created_at DESC LIMIT 20", [scope.account, scope.incarnation])).rows.map(row => watchRow.parse(row));
- const alerts = (await client.query("SELECT watch,day::text AS day,amount_pence,state,attempts,deadline FROM watch_alerts WHERE account=$1 AND incarnation=$2 ORDER BY created_at", [scope.account, scope.incarnation])).rows;
+ const alerts = (await client.query("SELECT watch,day::text AS day,amount_pence,state,attempts,deadline,last_error FROM watch_alerts WHERE account=$1 AND incarnation=$2 ORDER BY created_at", [scope.account, scope.incarnation])).rows;
+ const current = (await client.query("SELECT revision FROM watch_recipients WHERE account=$1 AND incarnation=$2", [scope.account, scope.incarnation])).rows[0]?.revision ?? null;
  const latest = (await client.query("SELECT DISTINCT ON (watch) watch,day::text AS day,observation,observed_at FROM watch_observations WHERE account=$1 AND incarnation=$2 ORDER BY watch,day DESC", [scope.account, scope.incarnation])).rows;
  return {
   kind: "watches" as const,
@@ -130,13 +174,13 @@ export async function readWatches(client: pg.PoolClient, scope: AccountScope) {
    const mine = alerts.filter(alert => alert.watch === row.id);
    const observed = latest.find(item => item.watch === row.id);
    return {
-    watch: row.id, hunt: row.hunt, status: row.status, expiresAt: row.expires_at.toISOString(),
+    watch: row.id, hunt: row.hunt, status: row.status, alertsCurrentRecipient: row.recipient_revision === current, expiresAt: row.expires_at.toISOString(),
     item: { seller: target.seller, url: cleanShopUrl(target), sku: target.sku, variant: target.variant },
     basis: { currency: "GBP", delivery: "UK Royal Mail 1st Class, quantity one, non-member, non-lithium", digest: row.basis_digest },
     baseline: { pence: row.baseline_pence, observedAt: row.baseline_observed_at.toISOString(), source: "public observation at confirmation" },
     target: { pence: row.target_pence },
     lastObservation: observed ? { day: observed.day, observation: observationSchema.parse(observed.observation) } : null,
-    alerts: mine.map(alert => ({ day: alert.day, pence: alert.amount_pence, state: alertState.parse(alert.state), attempts: alert.attempts })),
+    alerts: mine.map(alert => ({ day: alert.day, pence: alert.amount_pence, state: alertState.parse(alert.state), attempts: alert.attempts, reason: z.string().nullable().parse(alert.last_error) })),
     mayStillArrive: mine.filter(alert => alert.state === "submitting" || alert.state === "unconfirmed").length,
    };
   }),
@@ -146,6 +190,7 @@ export async function readWatches(client: pg.PoolClient, scope: AccountScope) {
 export async function deleteWatches(client: pg.PoolClient, scope: AccountScope) {
  const prefix = [scope.account, scope.incarnation];
  const unresolved = z.number().int().parse((await client.query("SELECT count(*)::integer AS count FROM watch_alerts WHERE account=$1 AND incarnation=$2 AND state IN ('submitting','unconfirmed')", prefix)).rows[0]?.count);
+ await client.query("SELECT id FROM watches WHERE account=$1 AND incarnation=$2 ORDER BY id FOR UPDATE", prefix);
  const counts: Record<string, number> = {};
  for (const table of ["watch_alerts", "watch_observations", "watches", "watch_recipients"]) {
   counts[table] = (await client.query(`DELETE FROM ${table} WHERE account=$1 AND incarnation=$2`, prefix)).rowCount ?? 0;
@@ -158,6 +203,17 @@ export async function deleteWatches(client: pg.PoolClient, scope: AccountScope) 
 export class Watches {
  constructor(private readonly deps: Readonly<{ pool: pg.Pool; delivery: Delivery; config: WatchConfig; enqueue: Enqueue | null; pause?: WatchPause }>) {}
 
+ get issuer(): string {
+  return this.deps.config.issuer;
+ }
+
+ async prepare(scope: AccountScope, hunt: string): Promise<PreparedWatch> {
+  return retryTransaction(this.deps.pool, async client => {
+   if (!await activeAccount(client, scope, "SHARE")) throw new Error("Inactive account incarnation");
+   return prepareWatch(client, scope, hunt);
+  });
+ }
+
  private async pause(point: Parameters<WatchPause>[0]) {
   if (this.deps.pause) await this.deps.pause(point);
  }
@@ -166,24 +222,31 @@ export class Watches {
   return this.deps.delivery.observe(target, AbortSignal.timeout(watchLimits.fetchMilliseconds));
  }
 
- async activate(client: pg.PoolClient, input: Readonly<{ scope: AccountScope; key: string; target: PublicWatchTarget; targetPence: number; observation: Comparable; observedAt: number; address: string }>) {
+ async activate(client: pg.PoolClient, input: Readonly<{ scope: AccountScope; hunt: string; target: PublicWatchTarget; targetPence: number; observation: Comparable; observedAt: number; address: string; expectedRecipient: string | null; moveRecipient: boolean }>) {
   const { scope } = input;
+  const prefix = [scope.account, scope.incarnation];
   if (!await activeAccount(client, scope, "SHARE")) throw new Error("Inactive account incarnation");
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", ["scoat-watch-limit:" + scope.account + ":" + scope.incarnation]);
   const fresh = (await client.query("SELECT clock_timestamp() - to_timestamp($1/1000.0) <= make_interval(secs => $2) AS fresh", [input.observedAt, watchLimits.freshObservationSeconds])).rows[0]?.fresh;
-  if (fresh !== true) throw new Error("Public observation is stale; reload the confirmation");
-  const command = (await client.query("SELECT command FROM memory_commands WHERE account=$1 AND incarnation=$2 AND key=$3 AND command IS NOT NULL AND outcome IS NULL AND expires_at>now() FOR UPDATE", [scope.account, scope.incarnation, input.key])).rows[0];
-  const proposal = z.object({ op: z.literal("watch"), hunt: z.string(), target: z.strictObject({ currency: z.literal("GBP"), pence: z.number().int() }) }).safeParse(command?.command);
-  if (!proposal.success || proposal.data.target.pence !== input.targetPence) throw new Error("Watch proposal unavailable");
-  if (await activeWatchCount(client, scope) >= watchLimits.active) throw new Error("Active watch limit reached");
+  if (fresh !== true) throw new WatchRefusal("stale");
+  const prepared = await prepareWatch(client, scope, input.hunt);
+  if (prepared.kind !== "ready") throw new WatchRefusal(prepared.reason);
+  if (JSON.stringify(prepared.target) !== JSON.stringify(input.target) || input.observation.basis.variant !== prepared.target.variant) throw new WatchRefusal("stale");
+  const targetPence = watchTargetPence.parse(input.targetPence);
+  if ((prepared.recipient?.revision ?? null) !== input.expectedRecipient) throw new WatchRefusal("recipient-changed");
+  const moving = prepared.recipient !== null && prepared.recipient.address !== input.address;
+  if (moving && prepared.otherActive > 0 && !input.moveRecipient) throw new WatchRefusal("recipient-changed");
+  const revision = prepared.recipient && !moving ? prepared.recipient.revision : randomUUID();
+  if (moving) {
+   await client.query("SELECT id FROM watches WHERE account=$1 AND incarnation=$2 AND status='active' ORDER BY id FOR UPDATE", prefix);
+   await client.query("UPDATE watches SET recipient_revision=$3 WHERE account=$1 AND incarnation=$2 AND status='active'", [...prefix, revision]);
+   await client.query("UPDATE watch_alerts SET recipient_revision=$3 WHERE account=$1 AND incarnation=$2 AND state='pending'", [...prefix, revision]);
+  }
   const watch = randomUUID();
-  await client.query("INSERT INTO watches(account,incarnation,id,hunt,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,to_timestamp($9/1000.0),$10,gen_random_uuid(),$11)", [scope.account, scope.incarnation, watch, proposal.data.hunt, input.target, input.observation.basis, basisDigest(input.observation), input.observation.amountPence, input.observedAt, input.targetPence, this.deps.config.unsubscribe.version]);
-  const recipient = (await client.query("SELECT revision,address FROM watch_recipients WHERE account=$1 AND incarnation=$2 FOR UPDATE", [scope.account, scope.incarnation])).rows[0];
-  const revision = recipient?.address === input.address ? z.uuid().parse(recipient.revision) : randomUUID();
-  await client.query("INSERT INTO watch_recipients(account,incarnation,revision,address) VALUES($1,$2,$3,$4) ON CONFLICT(account,incarnation) DO UPDATE SET revision=EXCLUDED.revision,address=EXCLUDED.address,verified_at=now()", [scope.account, scope.incarnation, revision, input.address]);
-  await client.query("UPDATE watches SET recipient_revision=$4 WHERE account=$1 AND incarnation=$2 AND id=$3", [scope.account, scope.incarnation, watch, revision]);
-  await client.query("UPDATE memory_commands SET outcome=$4,command=NULL WHERE account=$1 AND incarnation=$2 AND key=$3", [scope.account, scope.incarnation, input.key, { kind: "watching", watch }]);
-  return { watch, baselinePence: input.observation.amountPence, targetPence: input.targetPence };
+  await client.query("INSERT INTO watches(account,incarnation,id,hunt,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,to_timestamp($9/1000.0),$10,$11,$12)", [...prefix, watch, prepared.hunt, prepared.target, input.observation.basis, basisDigest(input.observation), input.observation.amountPence, input.observedAt, targetPence, revision, this.deps.config.unsubscribe.version]);
+  await client.query("INSERT INTO watch_recipients(account,incarnation,revision,address) VALUES($1,$2,$3,$4) ON CONFLICT(account,incarnation) DO UPDATE SET revision=EXCLUDED.revision,address=EXCLUDED.address,verified_at=now()", [...prefix, revision, input.address]);
+  await client.query("UPDATE memory_commands SET outcome=$4,command=NULL WHERE account=$1 AND incarnation=$2 AND command->>'op'='watch' AND command->>'hunt'=$3 AND outcome IS NULL", [...prefix, prepared.hunt, { kind: "watching", watch }]);
+  return { watch, baselinePence: input.observation.amountPence, targetPence, movedWatches: moving ? prepared.otherActive : 0 };
  }
 
  async unsubscribe(token: string) {
@@ -201,11 +264,15 @@ export class Watches {
   if (!enqueue) throw new Error("Queue unavailable");
   return retryTransaction(this.deps.pool, async client => {
    const day = z.string().parse((await client.query("SELECT ((now() AT TIME ZONE 'UTC')::date)::text AS day")).rows[0]?.day);
-   const ended = await client.query("UPDATE watches w SET status='expired',ended_at=clock_timestamp() FROM hunt_accounts a WHERE a.account=w.account AND a.incarnation=w.incarnation AND NOT a.erased AND w.status='active' AND w.expires_at<=now()");
-   await client.query("UPDATE watch_alerts SET state=CASE WHEN state='pending' THEN 'cancelled' ELSE 'unconfirmed' END,outcome_at=clock_timestamp(),last_error='retry-horizon' WHERE state IN ('pending','submitting') AND deadline<=clock_timestamp()");
-   const due = (await client.query("SELECT w.account,w.incarnation,w.id FROM watches w JOIN hunt_accounts a USING(account,incarnation) WHERE NOT a.erased AND w.status='active' AND NOT EXISTS (SELECT 1 FROM watch_observations o WHERE o.account=w.account AND o.incarnation=w.incarnation AND o.watch=w.id AND o.day=$1::date) ORDER BY w.account,w.incarnation,w.id LIMIT 5000 FOR SHARE OF a", [day])).rows;
+   const accounts = (await client.query("SELECT a.account,a.incarnation FROM hunt_accounts a WHERE NOT a.erased AND (EXISTS (SELECT 1 FROM watches w WHERE w.account=a.account AND w.incarnation=a.incarnation AND w.status='active') OR EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=a.account AND l.incarnation=a.incarnation AND l.state IN ('pending','submitting'))) ORDER BY a.account,a.incarnation LIMIT 1000 FOR SHARE")).rows;
+   const fenced = [accounts.map(row => z.string().parse(row.account)), accounts.map(row => z.uuid().parse(row.incarnation))];
+   const scoped = "(account,incarnation) IN (SELECT * FROM unnest($1::text[],$2::uuid[]))";
+   const ended = await client.query(`UPDATE watches SET status='expired',ended_at=clock_timestamp() WHERE ${scoped} AND status='active' AND expires_at<=now()`, fenced);
+   await client.query(`SELECT w.id FROM watches w WHERE ${scoped} AND EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=w.account AND l.incarnation=w.incarnation AND l.watch=w.id AND l.state IN ('pending','submitting') AND l.deadline<=clock_timestamp()) ORDER BY w.account,w.incarnation,w.id FOR SHARE`, fenced);
+   await client.query(`UPDATE watch_alerts SET state=CASE WHEN state='pending' THEN 'cancelled' ELSE 'unconfirmed' END,outcome_at=clock_timestamp(),last_error='retry-horizon' WHERE ${scoped} AND state IN ('pending','submitting') AND deadline<=clock_timestamp()`, fenced);
+   const due = (await client.query(`SELECT w.account,w.incarnation,w.id FROM watches w WHERE ${scoped} AND w.status='active' AND NOT EXISTS (SELECT 1 FROM watch_observations o WHERE o.account=w.account AND o.incarnation=w.incarnation AND o.watch=w.id AND o.day=$3::date) ORDER BY w.account,w.incarnation,w.id LIMIT 5000`, [...fenced, day])).rows;
    for (const row of due) await enqueue.check(client, { account: row.account, incarnation: row.incarnation, watch: row.id, day });
-   const open = (await client.query("SELECT l.account,l.incarnation,l.watch,l.id FROM watch_alerts l JOIN hunt_accounts a USING(account,incarnation) WHERE NOT a.erased AND l.state IN ('pending','submitting') AND l.deadline>clock_timestamp() ORDER BY l.account,l.incarnation,l.id LIMIT 5000 FOR SHARE OF a")).rows;
+   const open = (await client.query(`SELECT account,incarnation,watch,id FROM watch_alerts WHERE ${scoped} AND state IN ('pending','submitting') AND deadline>clock_timestamp() ORDER BY account,incarnation,id LIMIT 5000`, fenced)).rows;
    for (const row of open) await enqueue.send(client, { account: row.account, incarnation: row.incarnation, watch: row.watch, alert: row.id });
    return { checks: due.length, sends: open.length, expired: ended.rowCount ?? 0 };
   });
@@ -253,6 +320,7 @@ export class Watches {
  }
 
  async send(job: SendJob): Promise<SendOutcome> {
+  if (!this.deps.delivery.canSubmit) throw new Error("Mail transport unavailable; no submission marker was written");
   const scope = { account: z.uuid().brand<"AccountId">().parse(job.account), incarnation: z.uuid().brand<"Incarnation">().parse(job.incarnation) };
   const ids = [job.account, job.incarnation, job.watch, job.alert];
   const marked = await retryTransaction(this.deps.pool, async client => {

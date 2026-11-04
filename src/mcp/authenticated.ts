@@ -1,3 +1,4 @@
+import type { ControlCodec } from "../controls/codec.js";
 import { Memory } from "../memory/index.js";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -10,7 +11,7 @@ import { dispatchParsed } from "./index.js";
 import type { ToolCall } from "./index.js";
 import { toHuntRequest } from "./contracts.js";
 
-export function authenticatedDispatch(store: HuntStore, principal: Principal, issuer: string) {
+export function authenticatedDispatch(store: HuntStore, principal: Principal, issuer: string, codec?: ControlCodec) {
   const hunts = new Hunts({
     store,
     knowledge: new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),
@@ -49,6 +50,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         request,
         now: now(),
       });
+      const controls=reply.ok && "view" in reply.value ? codec?.links(issuer,principal.agent,reply.value.view) : undefined;
       return {
         isError: !reply.ok,
         content: [
@@ -56,11 +58,11 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             type: "text",
             text:
               reply.ok && "view" in reply.value
-                ? reply.value.view.text
+                ? reply.value.view.text+(controls ? "\nBrowser controls: "+controls.hub+"\n"+controls.watch.reason : "")
                 : JSON.stringify(reply),
           },
         ],
-        structuredContent: reply,
+        structuredContent: {...reply,...(controls ? {controls} : {})},
       };
     }
     const request = call.input;
@@ -84,6 +86,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         },
         now: now(),
       });
+      const controls=reply.ok && "view" in reply.value ? codec?.links(issuer,principal.agent,reply.value.view) : undefined;
       return {
         isError: !reply.ok,
         content: [
@@ -91,11 +94,11 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             type: "text",
             text:
               reply.ok && "view" in reply.value
-                ? reply.value.view.text
+                ? reply.value.view.text+(controls ? "\nBrowser controls: "+controls.hub+"\n"+controls.watch.reason : "")
                 : JSON.stringify(reply),
           },
         ],
-        structuredContent: reply,
+        structuredContent: {...reply,...(controls ? {controls} : {})},
       };
     }
     return {

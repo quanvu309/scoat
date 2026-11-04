@@ -1,3 +1,6 @@
+import { ControlCodec } from "./controls/codec.js";
+import { Hunts } from "./hunt/index.js";
+import { Knowledge } from "./knowledge/index.js";
 import { createServer } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 import { readFile } from "node:fs/promises";
@@ -18,6 +21,7 @@ export async function createHttpServer() {
     configPath && process.env.DATABASE_URL
       ? new PostgresHuntStore({ databaseUrl: process.env.DATABASE_URL })
       : null;
+  let codec: ControlCodec | undefined;
   let auth: Awaited<ReturnType<typeof createIssuer>> | null = null;
   try {
     if (store && configPath) {
@@ -29,9 +33,13 @@ export async function createHttpServer() {
         await installation.query("COMMIT");
       } catch(error) { await installation.query("ROLLBACK"); throw error; } finally { installation.release(); }
       await maintainAccounts(store.pool);
+      const controlPath=process.env.SCOAT_CONTROL_CONFIG;
+      if(controlPath) codec=new ControlCodec(JSON.parse(await readFile(controlPath,"utf8")));
+      const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),delivery:{readyLink:async()=>{throw new Error("Unavailable");},recheck:async()=>{throw new Error("Unavailable");},email:async()=>{throw new Error("Unavailable");}}});
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
+        codec ? {codec,hunts} : undefined,
       );
     }
   } catch (error) {
@@ -121,7 +129,7 @@ export async function createHttpServer() {
       return;
     }
     const validationMs = performance.now() - authStart;
-    const invoke = authenticatedDispatch(store, principal, auth.issuer);
+    const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {

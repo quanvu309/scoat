@@ -25,7 +25,7 @@ await withDatabase(async databaseUrl=>{
          operations.push({client,hunt:view.hunt,op:"record",ms:performance.now()-begin});
          assert(result.ok);
          const at=performance.now();
-         const inspected=await f.hunts.inspect({person:f.person,hunt:view.hunt,now});
+         const inspected=await f.hunts.view({account:f.scope,hunt:view.hunt,now});
          operations.push({client,hunt:view.hunt,op:"inspect",ms:performance.now()-at});
          assert(inspected.ok);
          assert.deepEqual(inspected.value,result.value.view);

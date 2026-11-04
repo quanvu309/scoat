@@ -32,7 +32,7 @@ export const toolCatalog = {
   scoat_guide: { input: z.strictObject({ job: z.literal("best-benefit"), shop: text.nullable() }), description: "Complete versioned UK/GBP hunt guidance with explicit knowledge gaps.", visibility: ["model"], readOnly: true },
   scoat_hunt: { input: huntInput, description: "Record and resume durable UK/GBP hunts; Scoat calculates totals.", visibility: ["model"], readOnly: false },
   scoat_memory: { input: memoryInput, description: "Read durable profiles and saved results; propose exact browser-approved profile and save commands.", visibility: ["model"], readOnly: false },
-  scoat_card: { input: cardInput, description: "Session-bound hunt read capabilities: open, read, renew and revoke. Person controls remain unavailable.", visibility: ["app"], readOnly: false }
+  scoat_card: { input: cardInput, description: "Session-bound hunt read capabilities: open, read, renew and revoke. Stop and Skip require fresh browser confirmation through server-derived links.", visibility: ["app"], readOnly: false }
 } satisfies Record<string, { input: z.ZodType; description: string; visibility: ("model" | "app")[]; readOnly: boolean }>;
 export type ToolName = keyof typeof toolCatalog;
 export type Requests = { [K in ToolName]: z.infer<(typeof toolCatalog)[K]["input"]> };
@@ -70,7 +70,6 @@ export function dispatchParsed(call: ToolCall) {
   const message = name === "scoat_card" ? "Person authorization unavailable; visibility and grants are not authorization." : toolCatalog[name].description;
   return { isError: true, content: [{ type: "text" as const, text: message }], structuredContent: { ok: false, error: { code, message }, market: "GB", currency: "GBP" } };
 }
-export async function person(_args: unknown): Promise<never> { throw new Error("Person authorization unavailable; use authenticated same-account browser confirmation in P07"); }
 export const fixtureHtml = '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri \'none\'; form-action \'none\'"><title>Scoat foundation</title><p>Scoat UK/GBP fixture. Shopping and controls are unavailable.</p></html>';
 export function mount({ server, invoke = dispatchParsed }: { server: McpServer; invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult> }) {
   server.server.registerCapabilities({ prompts: {} });

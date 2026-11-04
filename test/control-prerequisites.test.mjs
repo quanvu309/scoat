@@ -37,5 +37,5 @@ test("enforcement rejects missing and dead namespace guards and timestamp overwr
  const guard='if ("requestKey" in request && !agentRequestKey.safeParse(request.requestKey).success) return failure("invalid", "Agent request key is invalid or reserved");';
  assert.throws(()=>checkControlPrerequisites(hunt.replace(guard,""),wire),/live wire/);
  assert.throws(()=>checkControlPrerequisites(hunt.replace(guard,`if (false) { ${guard} }`),wire),/live wire/);
- assert.throws(()=>checkControlPrerequisites(hunt.replace('if (state.hunt.stopRequestedAt === null) ',''),wire),/first accepted Stop/);
+ assert.throws(()=>checkControlPrerequisites(hunt.replace('if(state.hunt.stopRequestedAt === null) ',''),wire),/first accepted Stop/);
 });

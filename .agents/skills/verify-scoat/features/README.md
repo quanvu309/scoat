@@ -5,7 +5,7 @@
 - After evidence, exact-set compatibility, discount arithmetic or HuntView changes, load [hunt](hunt.md): ten P03 compiled lanes and bounded performance with separate model-agent, host and runner gates.
 - After shared MCP adapter or driver changes, run all affected branches.
 
-Live shopping, watches and interactive card Person controls remain outside the implemented surface. Real-host support requires separate session evidence.
+Live shopping, watches and the live card remain outside the implemented surface. Real-host support requires separate session evidence.
 
 P04: [durable hunts](durable.md) owns PostgreSQL state, receipts, incarnation tombstones and lifecycle races.
 
@@ -13,4 +13,4 @@ P05: [authentication](auth.md) owns OAuth, browser linking, authenticated HTTPS 
 
 P06: [memory and erasure](memory.md) owns durable profile/saved items, exact session-bound browser approval, explicit enrollment, OAuth ownership inventory, atomic deletion and bounded retention.
 
-P07 prerequisites: [durable hunts](durable.md) verifies reserved agent receipt keys and repeated Stop timestamp preservation. This does not verify browser authorization or a live card.
+P07 browser unit: [browser controls](controls.md) owns signed intent links, fresh same-account login, native Stop/Skip confirmation and atomic compact receipts. Live card and full P07 acceptance remain pending.

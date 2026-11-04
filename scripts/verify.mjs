@@ -1,3 +1,4 @@
+if (process.argv[2] === "p07-controls") { await import("./verify-controls.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p06") { await import("./verify-memory.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p05") { await import("./verify-auth.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p04") { await import("./verify-durable.mjs"); process.exit(process.exitCode ?? 0); }

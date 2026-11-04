@@ -8,8 +8,9 @@ import type { HuntRecord, RowRecord } from "./store.js";
 import type { HuntView } from "./index.js";
 import type { Release } from "../knowledge/index.js";
 
+type PersonReceiptKey = z.core.$brand<"PersonReceiptKey"> & string;
 export type FenceMode = "shared" | "exclusive";
-export type Scope = AccountScope & { hunt: HuntId | null; accountFence: FenceMode; huntFence: FenceMode; rows: readonly RowId[]; request?: { key: RequestKey; digest: string } };
+export type Scope = AccountScope & { hunt: HuntId | null; accountFence: FenceMode; huntFence: FenceMode; rows: readonly RowId[]; request?: { key: RequestKey | PersonReceiptKey; digest: string } };
 export type Snapshot = { hunt: HuntRecord; release: Release; rows: RowRecord[]; offers: Offer[]; compatibility: Compatibility[]; final: HuntView | null };
 export class StoreFailure extends Error { constructor(readonly code: "forbidden" | "missing" | "key-reused", message: string) { super(message); } }
 export function canonical(value: unknown): string {
@@ -22,12 +23,16 @@ export class Tx {
   readonly prefix: string[];
   replay: unknown = null;
   constructor(readonly client: pg.PoolClient, readonly scope: Scope) { this.prefix = [scope.account, scope.incarnation]; }
+  async databaseTime() {
+    const milliseconds=z.coerce.number().parse((await this.client.query("SELECT extract(epoch FROM clock_timestamp())*1000 AS milliseconds")).rows[0]?.milliseconds);
+    return {milliseconds,instant:z.iso.datetime().brand<"UtcInstant">().parse(new Date(milliseconds).toISOString())};
+  }
   async declaredProfile() { return readDeclaredProfile(this.client,this.scope); }
   async snapshot(id: HuntId): Promise<Snapshot | null> {
     const result = await this.client.query("SELECT jsonb_build_object('hunt',h.data,'release',h.release,'final',h.snapshot, 'rows',COALESCE((SELECT jsonb_agg(r.data ORDER BY r.id) FROM hunt_rows r WHERE (r.account,r.incarnation,r.hunt)=(h.account,h.incarnation,h.id)),'[]'), 'offers',COALESCE((SELECT jsonb_agg(o.data ORDER BY o.id) FROM hunt_offers o WHERE (o.account,o.incarnation,o.hunt)=(h.account,h.incarnation,h.id)),'[]'), 'compatibility',COALESCE((SELECT jsonb_agg(c.data ORDER BY c.id) FROM hunt_compatibility c WHERE (c.account,c.incarnation,c.hunt)=(h.account,h.incarnation,h.id)),'[]')) AS value FROM durable_hunts h WHERE account=$1 AND incarnation=$2 AND id=$3", [...this.prefix,id]);
     return result.rows[0]?.value ?? null;
   }
-  async priorReceipt(request: { key: RequestKey; digest: string }): Promise<unknown | null> {
+  async priorReceipt(request: { key: RequestKey | PersonReceiptKey; digest: string }): Promise<unknown | null> {
     const row = (await this.client.query("SELECT digest,reply FROM hunt_receipts WHERE account=$1 AND incarnation=$2 AND key=$3", [...this.prefix,request.key])).rows[0];
     if (row && row.digest !== request.digest) throw new StoreFailure("key-reused", "Request key has different payload");
     return row?.reply === undefined || row.reply === null ? null : JSON.parse(row.reply);

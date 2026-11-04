@@ -38,6 +38,7 @@ function walk(dir) {
     if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]s$/.test(file)) {
       const source = fs.readFileSync(file, "utf8");
       checkSdkImports(file, source);
+      checkControlImports(file,source);
       checkScratchAllocation(file, source);
     }
   }
@@ -49,9 +50,8 @@ export function checkDependencyPair(pkg) {
   if (pkg.dependencies["@modelcontextprotocol/ext-apps"] !== "1.7.5" || pkg.dependencies["@modelcontextprotocol/sdk"] !== "1.32.2") throw new Error("P01 spike supports ext-apps 1.7.5 with SDK 1.32.2; rerun compatibility spike before changing pins");
 }
 export function checkPersonBoundary(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
-  const fn = ast.program.body.find(item => item.type === "ExportNamedDeclaration" && item.declaration?.type === "FunctionDeclaration" && item.declaration.id?.name === "person")?.declaration;
-  if (!fn || fn.body.body.length !== 1 || fn.body.body[0].type !== "ThrowStatement") throw new Error("Person must always throw until separately verified same-account browser confirmation enables controls");
+  const ast=parse(source,{sourceType:"module",plugins:["typescript"]});
+  if(astNodes(ast).some(node=>node.type==="Identifier" && node.name==="person")) throw new Error("Legacy person mint must be removed; browser verification owns authority");
 }
 export function checkHostConfig(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
@@ -142,6 +142,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));
   checkControlPrerequisites(fs.readFileSync("src/hunt/index.ts", "utf8"),fs.readFileSync("src/mcp/index.ts", "utf8"));
+  checkControlVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),fs.readFileSync("scripts/verify.mjs","utf8"));
   checkMemoryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
   checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
@@ -172,6 +173,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkDependencyPair(JSON.parse(fs.readFileSync("package.json", "utf8")));
   const adapter = fs.readFileSync("src/mcp/index.ts", "utf8");
   checkPersonBoundary(adapter);
+  checkBrowserControls(fs.readFileSync("src/controls/codec.ts","utf8"),fs.readFileSync("src/hunt/index.ts","utf8"));
   checkRegistryAdapter(adapter);
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
@@ -192,6 +194,7 @@ export function checkHuntAuthority(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
+    if (["TSTypeAliasDeclaration","TSInterfaceDeclaration"].includes(node.type) && node.id?.name === "Person") throw new Error("Replace structural Person with nominal verified control authority");
     if (node.type === "TSPropertySignature" && node.key?.name === "stackProof") throw new Error("Replace unbound stackProof with exact-set compatibility authority");
     if (node.type === "TSPropertySignature" && node.key?.name === "__brand") throw new Error("Derive identifier brands from validated schemas using z.$brand");
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
@@ -314,10 +317,10 @@ export function checkRemoteBoundary(source) {
 }
 export function checkPublicAuthority(source) {
   const nodes = parsedNodes(source);
-  const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/auth(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
+  const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/(?:auth|controls)(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
   for (const node of nodes) {
     if (node.exportKind === "type") continue;
-    if (((node.type === "ExportDefaultDeclaration" || node.type === "ExportNamedDeclaration") && astNodes(node.declaration).some(part => part.type === "Identifier" && authorityImports.has(part.name))) || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
+    if (((node.type === "ExportDefaultDeclaration" || node.type === "ExportNamedDeclaration") && astNodes(node.declaration).some(part => part.type === "Identifier" && authorityImports.has(part.name))) || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/(?:auth|controls)(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
   }
 }
 export function checkGrantRenewal(source) {
@@ -528,5 +531,33 @@ export function checkControlPrerequisites(hunt,wire) {
  const control=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="control");
  const stop=astNodes(control).find(node=>node.type==="IfStatement" && node.test.type==="BinaryExpression" && member(node.test.left,"control","kind") && node.test.right.value==="stop");
  const preserved=stop?.consequent.body?.[0];
- if (preserved?.type!=="IfStatement" || preserved.test.operator!=="===" || preserved.test.left?.property?.name!=="stopRequestedAt" || !member(preserved.test.left?.object,"state","hunt") || preserved.test.right?.type!=="NullLiteral" || preserved.consequent?.expression?.type!=="AwaitExpression" || !member(preserved.consequent.expression.argument?.callee,"tx","putHunt")) throw new Error("Preserve the first accepted Stop timestamp");
+ if (preserved?.type!=="IfStatement" || preserved.test.operator!=="===" || preserved.test.left?.property?.name!=="stopRequestedAt" || !member(preserved.test.left?.object,"state","hunt") || preserved.test.right?.type!=="NullLiteral" || (preserved.consequent?.expression ?? preserved.consequent?.body?.[0]?.expression)?.type!=="AwaitExpression" || !member((preserved.consequent.expression ?? preserved.consequent.body?.[0]?.expression).argument?.callee,"tx","putHunt")) throw new Error("Preserve the first accepted Stop timestamp");
+}
+
+export function checkBrowserControls(codec,hunt) {
+ const nodes=parsedNodes(codec);
+ const issue=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="issue");
+ const deadline=astNodes(issue).find(node=>node.type==="ObjectProperty" && node.key.name==="deadline");
+ if(deadline?.value.type!=="BinaryExpression" || !member(deadline.value.left?.callee,"Math","floor") || deadline.value.left.arguments[0]?.name!=="databaseTime") throw new Error("Round database milliseconds before signing the strict integer deadline");
+ const verify=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="verify");
+ const constructions=nodes.filter(node=>node.type==="NewExpression" && node.callee.name==="Authority");
+ if(constructions.length!==1 || constructions[0].start<verify?.start || constructions[0].end>verify?.end) throw new Error("Only verified browser confirmation constructs authority");
+ const guard=nodes.find(node=>node.type==="FunctionDeclaration" && node.id.name==="verifiedControl");
+ const first=guard?.body.body[0];
+ if(first?.type!=="IfStatement" || first.test.type!=="UnaryExpression" || !member(first.test.argument?.callee,"valid","has") || first.consequent.type!=="ThrowStatement") throw new Error("Check runtime authority identity before storage");
+ const control=parsedNodes(hunt).find(node=>node.type==="ClassMethod" && node.key.name==="control");
+ const initial=control?.body.body[0]?.declarations?.[0]?.init;
+ if(initial?.callee?.name!=="verifiedControl") throw new Error("Check runtime authority identity before storage");
+ if(!astNodes(control).some(node=>node.type==="AwaitExpression" && member(node.argument?.callee,"tx","databaseTime"))) throw new Error("Check control expiry with transaction database time");
+}
+
+export function checkControlVerification(skill,index,runner) {
+ if(!skill.split("---")[1]?.includes("P07 browser-authorized Stop and Skip") || !skill.split("## Completion")[0].includes("features/controls.md") || !index.includes("[browser controls](controls.md)") || !runner.includes('process.argv[2] === "p07-controls"') || !runner.includes('import("./verify-controls.mjs")')) throw new Error("Route browser controls to features/controls.md and the runnable p07-controls branch");
+}
+
+export function checkControlImports(file,source) {
+ if(!file.startsWith("src/mcp/"))return;
+ for(const node of parsedNodes(source).filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
+  if(node.importKind!=="type" && node.specifiers.some(item=>item.importKind!=="type"))throw new Error("MCP may reference control types but cannot import codec minting values");
+ }
 }

@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { ListToolsRequestSchema, ListToolsResultSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 const text = z.string().min(1).max(2000);
@@ -44,7 +45,7 @@ export type Requests = { [K in ToolName]: z.infer<(typeof toolCatalog)[K]["input
 export function isToolName(name: string): name is ToolName { return Object.hasOwn(toolCatalog, name); }
 export type CardRequest = Requests["scoat_card"];
 export const promptCatalog = { prompts: [], resources: [], apps: [appUri] };
-export const schemas = () => Object.fromEntries(Object.entries(toolCatalog).map(([name, entry]) => [name, z.toJSONSchema(entry.input)]));
+export const schemas = () => Object.fromEntries(Object.entries(toolCatalog).map(([name, entry]) => [name, { ...z.toJSONSchema(entry.input, { target: "draft-7" }), type: "object" }]));
 export function dispatch(name: ToolName, raw: unknown) {
   toolCatalog[name].input.parse(raw);
   const code = name === "scoat_card" ? "forbidden" : "unavailable";
@@ -55,9 +56,13 @@ export async function authenticate(_args: unknown): Promise<never> { throw new E
 export async function person(_args: unknown): Promise<never> { throw new Error("Person authorization unavailable; use authenticated same-account browser confirmation in P07"); }
 export const fixtureHtml = '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri \'none\'; form-action \'none\'"><title>Scoat foundation</title><p>Scoat UK/GBP fixture. Shopping and controls are unavailable.</p></html>';
 export function mount({ server }: { server: McpServer }) {
-  for (const [name, entry] of Object.entries(toolCatalog)) {
-    registerAppTool(server, name, { description: entry.description, inputSchema: entry.input, annotations: { readOnlyHint: entry.readOnly }, _meta: { ui: { visibility: entry.visibility, ...(name === "scoat_hunt" ? { resourceUri: appUri } : {}) } } }, async (raw: unknown) => { if (!isToolName(name)) throw new Error("Unknown registry tool"); return dispatch(name, raw); });
-  }
+  server.server.registerCapabilities({ tools: {} });
+  server.server.setRequestHandler(ListToolsRequestSchema, async () => ListToolsResultSchema.parse({ tools: Object.entries(toolCatalog).map(([name, entry]) => ({ name, description: entry.description, inputSchema: schemas()[name], annotations: { readOnlyHint: entry.readOnly }, _meta: { ui: { visibility: entry.visibility, ...(name === "scoat_hunt" ? { resourceUri: appUri } : {}) } } })) }));
+  server.server.setRequestHandler(CallToolRequestSchema, async request => {
+    const name = request.params.name;
+    if (!isToolName(name) || !toolCatalog[name].input.safeParse(request.params.arguments).success) return { isError: true, content: [{ type: "text", text: "Invalid tool input; use the strict registry schema. Identity and calculated totals are server-owned." }] };
+    return dispatch(name, request.params.arguments);
+  });
   registerAppResource(server, "Scoat foundation fixture", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
 }
 export function createMcpServer() {

@@ -27,7 +27,7 @@ export function checkComments(file, source) {
 }
 export function checkTree(root) {
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (["node_modules", "dist", ".git", "design"].includes(entry.name)) continue;
+    if (["node_modules", "dist", ".git", "design", "arch"].includes(entry.name)) continue;
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) checkTree(full);
     else if (/\.(?:[cm]?[jt]sx?|ya?ml|json|sql)$/.test(full)) checkComments(full, fs.readFileSync(full, "utf8"));

@@ -103,19 +103,9 @@ Design intent moved out of the code. The code has no comments; names and interfa
 
 ## src/mcp/index.ts
 
-- **CardRequest**: App-only. The grant arrives in hidden tool-result _meta for the bound card; it is never in model-visible content.
-- **module**: The one tool registry. tools/list, schemas, visibility and descriptions all derive from it.
-- **module**: MCP prompt and resources. Each body comes from knowledge.renderGuide; there is no second copy.
-- **schemas**: Zod schemas emitted as MCP JSON Schema. Parse unknown straight into branded domain values.
-- **schemas**: TODO Strict keys; GBP integer pence; HTTPS urls; UTC times; bounded text and arrays.
-- **schemas**: TODO Reject any account, actor or person field in input. Outputs: structuredContent + text content.
-- **authenticate**: OAuth issuer+subject maps to one Scoat account across Claude and ChatGPT.
-- **person**: Verifies the app-only grant: bridge session, account, hunt, expiry, allowed actions. Unsupported hosts get read-only text.
-- **mount**: Wires the SDK. Dispatch is one switch to the owning module; no business logic here.
-- **mount**: TODO registerTool for guide/memory; registerAppTool for scoat_hunt with _meta.ui.resourceUri = ui://scoat/hunt.html.
-- **mount**: TODO registerAppResource for the card bundle (text/html;profile=mcp-app), restrictive CSP.
-- **mount**: TODO Every scoat_hunt result: structuredContent = HuntView, content = view.text, _meta.grant = fresh app grant.
-- **mount**: TODO scoat_card: poll -> hunts.inspect; stop/skip -> hunts.control; watch -> memory.run(person).
+P01 now implements strict wire contracts and unavailable/forbidden dispatch. Request types, tool names, descriptions and schemas derive from `toolCatalog`. The SDK's high-level listing loses root discriminated unions; the MCP adapter therefore installs registry-derived list/call request handlers and emits draft-7 object schemas with strict union branches. Invalid inputs receive a fixed error before dispatch, without reflecting private input. Domain functions remain SDK-free and are not called until their implementation phases.
+
+`person()` and `authenticate()` fail closed. App visibility and result metadata are not authentication. See [host support](host-support.md) for the observed compatibility and blocked host gates. The fixture HTML is embedded in the compiled MCP module and served as an MCP App resource; it is not the P07 interactive card. Prompts and knowledge resources remain unavailable until P02.
 
 ## src/memory/index.ts
 
@@ -130,3 +120,25 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **recheckDue**: TODO Email when known pay-today <= target AND better than last notified. Cashback alone never triggers.
 - **unsubscribe**: Signed unsubscribe link from the email; cancels one watch, returns nothing.
 - **profileOf**: @internal Read by Hunts at start when the request carries no profile.
+
+## P01 foundation
+
+Use Node 24.21.0 and the committed npm lockfile. Run `npm ci`, `npm run build`, then `npm start`. The fixture server binds only `127.0.0.1:3000` (`PORT` overrides it), exposes stateless Streamable HTTP at `/mcp` and process readiness at `/healthz`. A ready process does not imply working shopping, OAuth, database or email. The response declares those limitations. No external deployment is supported in this phase.
+
+`npm run verify -- doctor` launches a disposable compiled server, reads readiness, then closes it. `npm run verify -- p01` launches its own process on an ephemeral loopback port and exercises ten declared scenarios. `--lane 1` through `--lane 10` select one. CLI transcripts are primary evidence under `~/tmp/scoat-delivery/p01/run-*/lane-*/transcript.json`; no UI screenshots are claimed. Lanes 6 and 7 remain UNTESTED without real host sessions; lane 8 is PARTIAL with an isolated session-binding fixture, not production authentication. The summary always distinguishes fixture checks from full P01 verification. `SCOAT_EVIDENCE_DIR` selects an absolute evidence directory. Cleanup stops only the child processes each run created and preserves evidence.
+
+`npm run perf -- p01` records five batches of 100 sequential warm raw-client HTTP calls, ten warmup calls excluded, with runner details and raw samples. It checks the proposed 500 ms p95 ceiling locally. Trunk lacks the HTTP operation, so the baseline is unavailable and no speedup ratio is calculated. The fixed 2-vCPU acceptance gate is untested on other hardware. Build success is checked separately by CI. No network service is called by verification or perf.
+
+For disposable dependencies on a Docker-capable machine, choose an unused project and ports for each lane:
+
+```sh
+export DB_PORT=54329 MAIL_PORT=8025 SMTP_PORT=1025 SHOP_PORT=8089
+export DATABASE_URL=postgres://scoat:fixture-only@127.0.0.1:54329/scoat
+docker compose -p scoat-p01-lane1 up -d --wait db mailpit fixture-shop
+npm run db:migrate
+npm run db:seed -- --fixture p01-lane1
+```
+
+`db:migrate` runs the checked-in Drizzle migration journal under an advisory lock. `db:seed` inserts one idempotent UK/GBP fixture-lane marker and prints the stored row. Neither creates fake account identities or shopping results. Both require the explicit lane DSN. The HTTP foundation does not require these dependencies yet. Mailpit captures local email only; P01 sends none. The seller's `/product` route is fixture data, not a production recheck transport; it is never imported into `src/`. A future recheck adapter must stay fixture-only. Stop dependencies with `docker compose -p scoat-p01-lane1 down -v` using the same selected ports/environment. Remove only the lane's volumes. Docker/Compose execution is untested in environments without Docker.
+
+`npm run start:worker` exits nonzero with an explicit P08-unavailable message. GitHub Actions runs install, build, typecheck, lint, tests, repeated Postgres migrations/seeds, HTTP verification and perf on standard `ubuntu-latest`. No runner registration, caches, uploaded artifacts or external services are configured. CI's fixture passes do not discharge the real-host gates.

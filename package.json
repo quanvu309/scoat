@@ -11,7 +11,7 @@
     "lint:comments": "node scripts/check-no-comments.mjs",
     "build": "tsc -p tsconfig.server.json",
     "start": "node dist/server.js",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs test/*.test.ts",
     "verify": "node scripts/verify.mjs",
     "perf": "node scripts/perf.mjs",
     "lint": "npm run lint:comments && node scripts/check-structure.mjs",
@@ -30,7 +30,6 @@
     "@babel/parser": "8.1.0",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
-    "ts5": "npm:typescript@5",
     "typescript": "7.0.2",
     "yaml": "2.9.1"
   },

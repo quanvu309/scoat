@@ -6,6 +6,14 @@ export const proof = { url: "https://www.nike.com/gb/", observedAt: now, note: "
 export const gbp = pence => ({ currency: "GBP", pence });
 export const intent = { product: { kind: "url", url: "https://www.nike.com/gb/t/synthetic?utm_source=test#tracking" }, variant: "UK 6 / black", shop: "nike", budget: gbp(6000) };
 export const release = validateRelease(seed(), now);
+export function officialRelease() {
+  const raw = seed();
+  const fact = { id: "synthetic-nike-domain", shop: "nike", claim: "SYNTHETIC official source fixture, no live retailer assertion", place: "codes", source: proof.url, observedAt: "2026-11-03T00:00:00Z", validUntil: "2026-12-01T00:00:00Z", applies: "online", refreshOwner: "Synthetic fixture owner", authority: "primary", status: "confirmed", kind: "official-domain", domain: "www.nike.com", requires: [], references: [] };
+  raw.shops = [{ id: "nike", label: "Synthetic Nike fixture", status: "supported", facts: [fact.id] }];
+  raw.facts = [fact];
+  raw.rows.find(row => row.place === "codes").facts = [fact.id];
+  return validateRelease(raw, now);
+}
 export function offer(id, kind, fields = {}) {
   return offerSchema.parse({ id, row: release.rows[0].id, seller: "nike", variant: intent.variant, status: { kind: "confirmed" }, proof, validUntil: null, kind, ...(kind === "discount" ? { adjustment: { kind: "fixed", amount: gbp(100) }, code: null, codeOrigin: null, order: 0, minimumSpend: gbp(0) } : {}), ...fields });
 }

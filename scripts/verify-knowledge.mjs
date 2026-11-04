@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { Knowledge, validateRelease, renderGuide, auditSources } from "../dist/knowledge/index.js";
 import { seed, synthetic, at } from "../test/fixtures/knowledge.mjs";
 import { launch, connect } from "./driver.mjs";
+import { scratchDirectory } from "./scratch.mjs";
 import { guideUri, skillUri } from "../dist/mcp/index.js";
 const root = process.env.SCOAT_EVIDENCE_DIR ?? path.join(os.homedir(), `tmp/scoat-delivery/p02/verify-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });
@@ -46,7 +47,7 @@ try {
     return { result, prompt, resource, skill };
   });
   await lane(4, async () => {
-    const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));
+    const directory = await scratchDirectory("p02-live-");
     try {
       const knowledge = new Knowledge(directory);
       const raw = seed();

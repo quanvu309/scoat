@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { BudgetFit, Compatibility, Intent, Line, Money, Offer, PayToday, Quote, Selection, Step } from "../domain.js";
 import { nonempty, compatibilitySchema, moneySchema, offerSchema, parseEvidence, selectionSchema, validateProof } from "./evidence.js";
+import type { Release } from "../knowledge/index.js";
 
 export const benefitLimit = 16;
 export const money = (pence: number): Money => moneySchema.parse({ currency: "GBP", pence });
@@ -32,13 +33,13 @@ export function calculate(price: Extract<Offer, { kind: "price" }>, delivery: Ex
   if (sum > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Pay-today arithmetic overflow");
   return { kind: "known", amount: money(Number(sum)), lines };
 }
-export function priceQuotes(args: { offers: readonly Offer[]; intent: Intent; now: string; compatibility?: readonly Compatibility[]; selection: Selection | null; release?: unknown }): readonly Quote[] {
+export function priceQuotes(args: { offers: readonly Offer[]; intent: Intent; now: string; compatibility?: readonly Compatibility[]; selection: Selection | null; release: Release }): readonly Quote[] {
   if (args.intent.budget) moneySchema.parse(args.intent.budget);
   const offers = args.offers.map(raw => offerSchema.parse(raw));
   if (new Set(offers.map(offer => offer.id)).size !== offers.length) throw new Error("Duplicate offer ID");
   for (const offer of offers) {
     const { id, row, ...input } = offer;
-    parseEvidence(input, { intent: args.intent, seller: offer.seller, now: args.now });
+    parseEvidence(input, { intent: args.intent, seller: offer.seller, now: args.now, release: args.release });
   }
   const byId = new Map(offers.map(offer => [offer.id, offer]));
   const authority = new Set<string>();
@@ -85,7 +86,7 @@ export function priceQuotes(args: { offers: readonly Offer[]; intent: Intent; no
       const sorted = candidates.sort((a, b) => (a.pay.kind === "known" ? a.pay.amount.pence : Infinity) - (b.pay.kind === "known" ? b.pay.amount.pence : Infinity) || b.benefits.length - a.benefits.length || a.rank.localeCompare(b.rank, "en"));
       const best = sorted.find(c => c.steps.length === 0) ?? { benefits: [], steps: [], pay: calculate(price, delivery, []) };
       const selected = requested ? sorted[0] ?? best : best;
-      const conditional = sorted.filter(c => c.steps.length > 0).slice(0, 1).map(c => ({ payToday: c.pay, requires: nonempty(c.steps), budget: budget(c.pay, args.intent) }));
+      const conditional = sorted.filter(c => c.steps.length > 0).slice(0, 1).map(c => ({ selection: { price: price.id, delivery: delivery?.id ?? null, benefits: c.benefits.map(o => o.id) }, payToday: c.pay, requires: nonempty(c.steps), budget: budget(c.pay, args.intent), backLater: c.benefits.filter(o => o.kind === "cashback" || o.kind === "points").map(line), perks: c.benefits.filter(o => o.kind === "perk").map(line) }));
       quotes.push({ id: z.string().brand<"QuoteId">().parse(key(anchor)), seller: price.seller, selection: { price: price.id, delivery: delivery?.id ?? null, benefits: selected.benefits.map(o => o.id) }, guaranteed: best.pay, budget: budget(best.pay, args.intent), conditional, backLater: best.benefits.filter(o => o.kind === "cashback" || o.kind === "points").map(line), perks: best.benefits.filter(o => o.kind === "perk").map(line), limitations, untested: matching.filter(o => o.status.kind === "untested") });
     }
   }

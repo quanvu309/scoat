@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkComments } from "../scripts/check-no-comments.mjs";
-import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkHuntAuthority, checkCandidateSearch, checkViewCoverage } from "../scripts/check-structure.mjs";
+import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkHuntAuthority, checkCandidateSearch, checkViewCoverage, checkCodeAuthority, checkScenarioProjection, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
 test("comment parser rejects comments outside src and accepts URL/regex literals", () => {
   for (const file of ["scripts/past.mjs", "test/past.ts", "vite.config.ts"]) assert.throws(() => checkComments(file, "const x = 1; /" + "/ forbidden"), /comments forbidden/);
@@ -53,4 +53,18 @@ test("candidate search rejects the reproduced unsupported subset expansion", () 
 
 test("finishability cannot lose the authoritative row universe", () => {
   assert.throws(() => checkViewCoverage('export function finishable(rows: readonly RowView[]) { return { ok: true }; }'), /pinned release/);
+});
+
+test("review lint rejects the actual source-label, missing-scenario and coverage shapes", () => {
+  assert.throws(() => checkCodeAuthority('export function parseEvidence(raw: unknown, context: { intent: Intent; seller: string; now: string }) { const offer = offerInputSchema.parse(raw); if (offer.kind === "discount" && offer.code !== null && offer.codeOrigin === "lead" && offer.status.kind !== "untested") throw new Error("Third-party code leads must remain untested"); return offer; }'), /isOfficialSource/);
+  assert.throws(() => checkScenarioProjection('', 'export type HuntView = Readonly<{ offers: readonly Offer[]; best: Quote | null; text: string; }>;'), /all quotes/);
+  assert.throws(() => checkScenarioProjection('export type Quote = Readonly<{ conditional: readonly Readonly<{ payToday: PayToday; requires: NonEmpty<Step>; budget: BudgetFit; }>[]; }>;', ''), /selection, backLater and perks/);
+  assert.throws(() => checkViewCoverage('export function finishable(rows: readonly RowView[], release: Release) { return {ok:true}; }'), /originalSeller/);
+  assert.throws(() => checkViewCoverage('function rowGaps(row: RowView) { const gaps: string[] = []; for (const slot of row.row.slots) { const matches = row.slots.filter(value => value.slot === slot); } return gaps; }'), /slot membership/);
+});
+
+test("scratch lint rejects the original GitHub runner failure", () => {
+  assert.throws(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));'), /scratchDirectory/);
+  assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
+  assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
 });

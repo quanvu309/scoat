@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { rm, readFile } from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
+import { scratchDirectory } from "../scripts/scratch.mjs";
 import { Knowledge, validateRelease, checklist, renderGuide, auditSources, isOfficialSource } from "../src/knowledge/index.ts";
 import { seed, synthetic, at } from "./fixtures/knowledge.mjs";
 
@@ -36,7 +36,7 @@ test("student declaration never verifies; third-party code never becomes confirm
   assert.throws(() => validateRelease(raw, at), /untested/);
 });
 test("confirmed source publication rejects IP literals and local or reserved DNS names", async () => {
-  const directory = await mkdtemp(path.join(os.homedir(), "tmp/scoat-source-boundary-"));
+  const directory = await scratchDirectory("scoat-source-boundary-");
   const knowledge = new Knowledge(directory);
   const sources = ["https://127.0.0.1/code", "https://localhost/code", "https://10.0.0.1/code", "https://[::1]/code", "https://[::ffff:127.0.0.1]/code", "https://2130706433/code", "https://shop.localhost./code", "https://shop.internal/code", "https://shop.local/code", "https://shop.home.arpa/code", "https://shop.example.invalid/code", "https://user:pass@www.nike.com/code"];
   try {
@@ -60,7 +60,7 @@ test("all rows survive unknown eligibility and unknown shop; formats have one so
   for (const guide of guides) { assert.deepEqual(guide, guides[0]); assert.match(guide.gap, /unavailable/); assert.equal(guide.rows[1].slots.length, 4); }
 });
 test("immutable files survive restart, mutation and a second publication", async () => {
-  const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));
+  const directory = await scratchDirectory("p02-test-");
   try {
     const knowledge = new Knowledge(directory);
     const raw = synthetic();
@@ -87,7 +87,7 @@ test("immutable files survive restart, mutation and a second publication", async
 });
 
 test("concurrent publication converges and conflicting content never overwrites", async () => {
-  const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-race-"));
+  const directory = await scratchDirectory("p02-race-");
   try {
     const knowledge = new Knowledge(directory);
     const raw = seed();

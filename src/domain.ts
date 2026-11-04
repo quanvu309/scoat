@@ -84,9 +84,12 @@ export type Quote = Readonly<{
     guaranteed: PayToday;
     budget: BudgetFit;
     conditional: readonly Readonly<{
+        selection: Selection;
         payToday: PayToday;
         requires: NonEmpty<Step>;
         budget: BudgetFit;
+        backLater: readonly Line[];
+        perks: readonly Line[];
     }>[];
     backLater: readonly Line[];
     perks: readonly Line[];

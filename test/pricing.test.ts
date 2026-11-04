@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { priceQuotes, pickBest, calculate } from "../dist/hunt/pricing.js";
 import { fixture, offer, compatibility, gbp } from "./fixtures/hunt.mjs";
+test("conditional scenarios retain only the rewards and offer IDs in their exact authorized set", () => {
+  const f = fixture(), [p,d,student,cashback] = f.offers;
+  const conditionalOnly = priceQuotes({ ...f, compatibility: [compatibility(p,d,student,cashback)] })[0];
+  assert.equal(conditionalOnly.guaranteed.amount.pence,7000);
+  assert.deepEqual(conditionalOnly.backLater,[]);
+  assert.deepEqual(conditionalOnly.conditional[0].selection,{price:p.id,delivery:d.id,benefits:[student.id,cashback.id]});
+  assert.equal(conditionalOnly.conditional[0].backLater[0].offer,cashback.id);
+  assert.equal(conditionalOnly.conditional[0].backLater[0].value.pence,190);
+  const separate = priceQuotes({ ...f, compatibility: [compatibility(p,d,student),compatibility(p,d,cashback)] })[0];
+  assert.deepEqual(separate.conditional[0].backLater,[]);
+  assert.equal(separate.backLater[0].offer,cashback.id);
+});
 test("synthetic Nike separates guaranteed, conditional, cashback and budgets", () => {
   const quote = priceQuotes(fixture())[0];
   assert.equal(quote.guaranteed.amount.pence, 7000);

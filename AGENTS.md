@@ -20,5 +20,10 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Missing Node ambient types under TS7 | Include node in compiler types | checkTypeConfig; missing-types fixture |
 | Driver inherits incompatible Node flags | Fork with an empty execArgv array | checkDriver; inherited-flags fixture |
 | Failed initialization leaves a client running | Close client before rethrowing connect failure | checkDriver; missing-cleanup fixture |
+| Code-origin label bypasses source authority | Validate tested codes against the pinned official domain | checkCodeAuthority; original label-only guard; source rejection and official-source pricing regression |
+| Structured view loses quote scenarios | Keep all quotes in HuntView and render text from that projection | checkScenarioProjection; original HuntView shape; losing, unknown and limited quote regression |
+| Conditional rewards lose attribution | Retain scenario selection, later rewards and perks together | checkScenarioProjection; original conditional shape; exact-set reward regression |
+| Invalid sellers or extra slots count as complete | Check exact recipe slots and exclude the original shop using canonical seller identity | checkViewCoverage; original signatures and slot loop; original-shop, duplicate and extra-slot regression |
+| Fresh hosted runner lacks ~/tmp | Allocate task scratch with scratchDirectory, which creates its parent | checkScratchAllocation; original mkdtemp calls; absent-parent concurrent allocation regression |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

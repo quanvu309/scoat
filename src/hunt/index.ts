@@ -59,6 +59,7 @@ export type HuntView = Readonly<{
     profile: Profile;
     rows: NonEmpty<RowView>;
     offers: readonly Offer[];
+    quotes: readonly Quote[];
     gaps: readonly string[];
     progress: {
         readonly resolved: number;

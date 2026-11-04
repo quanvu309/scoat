@@ -1,5 +1,7 @@
-# Current executable surface
+# Verification feature index
 
-[Foundation](foundation.md) covers MCP discovery, input rejection, denied controls, static app resource delivery, readiness and reconnect. Shopping, hunt state, memory, watches, OAuth and interactive cards are not implemented.
+- After transport, registry, strict input, denied control or static app-resource changes, load [foundation](foundation.md): P01 HTTP lanes, restart checks and unresolved host/confirmation gates.
+- After release validation/publication, lookup, checklist, source-freshness or generated-guidance changes, load [knowledge](knowledge.md): ten P02 scenarios, immutable pins and local performance measurements.
+- After shared MCP adapter or driver changes, load both references and run both branches.
 
-[Knowledge](knowledge.md) covers P02 immutable releases, complete checklists, shared exports, source freshness and the compiled guide.
+Shopping, account memory, OAuth, watches and interactive cards remain outside the implemented surface. Real-host support requires separate session evidence.

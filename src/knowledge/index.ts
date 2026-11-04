@@ -89,9 +89,11 @@ export function renderGuide({ release, request, format: _format }: { release: Re
   const method = [
     "# Scoat best-benefit", `Release: ${release.id}; GB / GBP; published ${release.publishedAt}.`,
     "Pinned historical knowledge, not a claim of current availability. Compare validity with today's time; expired or unknown facts cannot confirm an offer.",
-    "Require source URL plus observed time for every finding. Resolve every slot as checked, person-skipped, or a named gap before finishing. Other sellers must have four distinct seller identities; never count aliases twice.",
-    "Student yes is a declaration, never verification. Verify student eligibility first. Eligibility steps are not guaranteed offers. Seller-issued codes need primary proof; third-party codes remain untested until tested with evidence.",
-    "Scoat computes totals on the server; never submit calculated totals. Only confirmed offers enter guaranteed pay-today. Keep cashback and points separate as back-later; budget uses pay-today only. Hunt calculation is unavailable until P03/P04.",
+    "1. Pin this release ID. Identify the exact product variant, shop, budget and declared eligibility. If any input is missing, name it as a gap; keep every checklist place.",
+    "2. Check each slot below. Require source URL plus observed time for every finding, with applicability, validity and offer status. Other sellers must have four distinct seller identities; never count aliases twice.",
+    "3. Classify findings before using them. Student yes is a declaration, never verification. Verify student eligibility first. Eligibility steps are not guaranteed offers. Seller-issued codes need primary proof; third-party codes remain untested until tested with evidence.",
+    "4. Request a server-computed quote when hunt execution is available. Scoat computes totals on the server; never submit calculated totals. Only confirmed offers enter guaranteed pay-today. Keep cashback and points separate as back-later; budget uses pay-today only. Hunt calculation is unavailable until P03/P04.",
+    "5. Complete only when every slot is checked with evidence, person-skipped, or a named gap. Report PASS for an executed successful check, FAIL for a failed check, and UNTESTED for unavailable evidence or access. Keep unresolved availability explicit; never claim a finished priced hunt while server calculation is unavailable.",
     `Shop: ${entry?.label ?? request.shop ?? "general"}. ${gap ? `Named gap: ${gap}` : "Use sourced facts below."}`,
     ...release.rows.map(row => `${row.place} [slots ${row.slots.join(", ")}]: ${row.label}. ${row.method} Evidence: ${row.proofRequired} Stop: ${row.stopRule}`),
     ...facts.map(fact => `${fact.id}: ${fact.claim}; ${fact.status}; ${fact.authority}; ${fact.applies}; source ${fact.source}; observed ${fact.observedAt}; valid until ${fact.validUntil}; owner ${fact.refreshOwner}; steps ${fact.requires.join(", ")}`)

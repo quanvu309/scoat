@@ -88,7 +88,7 @@ const result=await withDatabase(async databaseUrl=>{
    return {browser:browser.version(),backgroundPolls,samples,requestOperations,secretLeaks:0,observedRotatingSecrets:secrets.size,errors,recordingMs:Date.now()-started};
   }
   await frame.getByRole("button",{name:"Watch unavailable"}).click();
-  await frame.getByText(/Watch requires/).waitFor();
+  await frame.getByText(/Watch through scoat_memory/).waitFor();
   const skip=f.initial.controls.skip.find(item=>item.row===f.initial.value.view.rows[2].row.id);
   const button=frame.getByRole("button",{name:"Skip "+f.initial.value.view.rows[2].row.label,exact:true});
   await button.focus();

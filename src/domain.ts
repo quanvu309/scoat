@@ -1,6 +1,6 @@
-export type Id<Tag extends string> = string & {
-    readonly __brand: Tag;
-};
+import type { z } from "zod";
+import type { moneySchema, proofSchema, statusSchema, adjustmentSchema, offerInputSchema, selectionSchema, compatibilitySchema } from "./hunt/evidence.js";
+export type Id<Tag extends string> = string & z.$brand<Tag>;
 export type AccountId = Id<"AccountId">;
 export type HuntId = Id<"HuntId">;
 export type RowId = Id<"RowId">;
@@ -13,34 +13,15 @@ export type WatchId = Id<"WatchId">;
 export type RequestKey = Id<"RequestKey">;
 export type Url = Id<"PublicHttpsUrl">;
 export type Instant = Id<"UtcInstant">;
-export type RowRevision = number & {
-    readonly __brand: "RowRevision";
-};
+export type RowRevision = number & z.$brand<"RowRevision">;
 export type NonEmpty<T> = readonly [
     T,
     ...T[]
 ];
-export type Money = Readonly<{
-    currency: "GBP";
-    pence: number;
-}>;
-export type Proof = Readonly<{
-    url: Url;
-    observedAt: Instant;
-    note: string;
-}>;
+export type Money = z.infer<typeof moneySchema>;
+export type Proof = z.infer<typeof proofSchema>;
 export type Step = "verify-student" | "join" | "enrol" | "activate" | "apply-code" | "request-price-match";
-export type Status = {
-    readonly kind: "confirmed";
-} | {
-    readonly kind: "needs-step";
-    readonly steps: NonEmpty<Step>;
-} | {
-    readonly kind: "untested";
-} | {
-    readonly kind: "unknown";
-    readonly reason: string;
-};
+export type Status = z.infer<typeof statusSchema>;
 export type Product = {
     readonly kind: "url";
     readonly url: Url;
@@ -59,52 +40,11 @@ export type Profile = Readonly<{
     cards: readonly string[];
     memberships: readonly string[];
 }>;
-export type Adjustment = {
-    readonly kind: "fixed";
-    readonly amount: Money;
-} | {
-    readonly kind: "percent";
-    readonly basisPoints: number;
-    readonly basis: "item" | "remaining" | "delivery";
-};
-type Attested = Readonly<{
-    seller: string;
-    variant: string | null;
-    status: Status;
-    proof: Proof;
-}>;
-export type OfferInput = Attested & ({
-    readonly kind: "price";
-    readonly amount: Money;
-} | {
-    readonly kind: "delivery";
-    readonly amount: Money;
-} | {
-    readonly kind: "discount";
-    readonly adjustment: Adjustment;
-    readonly code: string | null;
-} | {
-    readonly kind: "cashback";
-    readonly amount: Money;
-    readonly programme: string;
-} | {
-    readonly kind: "points";
-    readonly quantity: number;
-    readonly programme: string;
-} | {
-    readonly kind: "perk";
-    readonly description: string;
-});
-export type Offer = OfferInput & Readonly<{
-    id: OfferId;
-    row: RowId;
-}>;
-export type Selection = Readonly<{
-    price: OfferId;
-    delivery: OfferId | null;
-    benefits: readonly OfferId[];
-    stackProof: readonly Proof[];
-}>;
+export type Adjustment = z.infer<typeof adjustmentSchema>;
+export type OfferInput = z.infer<typeof offerInputSchema>;
+export type Offer = OfferInput & Readonly<{ id: OfferId; row: RowId }>;
+export type Selection = z.infer<typeof selectionSchema>;
+export type Compatibility = z.infer<typeof compatibilitySchema>;
 export type Line = Readonly<{
     offer: OfferId;
     label: string;
@@ -138,6 +78,8 @@ export type BudgetFit = {
 export type Quote = Readonly<{
     id: QuoteId;
     seller: string;
+    limitations: readonly string[];
+    untested: readonly Offer[];
     selection: Selection;
     guaranteed: PayToday;
     budget: BudgetFit;

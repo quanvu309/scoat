@@ -106,6 +106,9 @@ export function checkDriver(source) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   walk("src");
+  checkHuntAuthority(fs.readFileSync("src/domain.ts", "utf8"));
+  checkCandidateSearch(fs.readFileSync("src/hunt/pricing.ts", "utf8"));
+  checkViewCoverage(fs.readFileSync("src/hunt/view.ts", "utf8"));
   checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
   checkWire(z.toJSONSchema(promptInput, { target: "draft-7" }));
@@ -129,4 +132,32 @@ export function checkKnowledgeTypes(source) {
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
   }
   visit(ast.program);
+}
+
+export function checkHuntAuthority(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "TSPropertySignature" && node.key?.name === "stackProof") throw new Error("Replace unbound stackProof with exact-set compatibility authority");
+    if (node.type === "TSPropertySignature" && node.key?.name === "__brand") throw new Error("Derive identifier brands from validated schemas using z.$brand");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
+}
+
+export function checkCandidateSearch(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "CallExpression" && node.callee?.property?.name === "sort" && JSON.stringify(node.arguments).includes('"name":"key"')) throw new Error("Precompute candidate rank keys before sorting");
+    if (node.type === "BinaryExpression" && node.operator === "**" && node.right?.type === "MemberExpression" && node.right.object?.name === "benefits" && node.right.property?.name === "length") throw new Error("Enumerate authorized complete sets rather than generating unsupported benefit subsets");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
+}
+
+export function checkViewCoverage(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const finishable = ast.program.body.find(node => node.declaration?.id?.name === "finishable")?.declaration;
+  if (finishable && !finishable.params.some(parameter => parameter.name === "release")) throw new Error("Finishability requires pinned release recipes to detect missing whole rows");
 }

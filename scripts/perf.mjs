@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { launch, connect } from "./driver.mjs";
 
+if (process.argv[2] === "p03") { await import("./perf-hunt.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p02") { await import("./perf-knowledge.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] !== "p01") throw new Error("Supported scope: perf -- p01");
 const server = await launch();

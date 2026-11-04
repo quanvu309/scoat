@@ -1,0 +1,20 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { renderView, finishable } from "../dist/hunt/view.js";
+import { priceQuotes } from "../dist/hunt/pricing.js";
+import { fixture, rows, viewArgs, release } from "./fixtures/hunt.mjs";
+test("one view retains eight rows, four seller slots, gaps, clean links and lifecycle directives", () => {
+  const args=viewArgs(priceQuotes(fixture())); const view=renderView(args);
+  assert.equal(finishable([], release).ok, false);
+  assert.equal(view.rows.length,8); assert.equal(view.rows.find(r=>r.row.place==="other-sellers").slots.length,4);
+  assert.equal(view.progress.resolved,8); assert.equal(view.directive.kind,"finish");
+  assert.equal(view.ready.url,"https://www.nike.com/gb/t/synthetic"); assert.match(view.text,/GBP 63.00 requires verify-student/);
+  const incomplete=rows(); const other=incomplete.find(r=>r.row.place==="other-sellers"); other.slots.pop();
+  assert.equal(finishable(incomplete, release).ok,false);
+  const stopped=renderView({...args,rows:incomplete,stopRequested:true});
+  assert.match(stopped.gaps.join(),/slot-3/); assert.match(stopped.text,/slot-3/); assert.equal(stopped.directive.kind,"name-gaps-and-finish");
+  other.slots[1].seller=other.slots[0].seller; assert.equal(finishable(incomplete, release).ok,false);
+  other.skippedBy="person"; assert.equal(finishable(incomplete, release).ok,true);
+  assert.equal(renderView({...args,final:{kind:"finished",quote:view.best}}).directive.kind,"complete");
+  assert.throws(()=>renderView({...args,rows:args.rows.slice(1)}),/eight/);
+});

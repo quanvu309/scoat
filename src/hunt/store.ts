@@ -1,21 +1,6 @@
 import type { AccountId, HuntId, Instant, Intent, Offer, Profile, Quote, ReleaseId, RequestKey, RowId, RowRevision } from "../domain.js";
-export type SlotRecord = Readonly<{
-    slot: number;
-    state: {
-        readonly kind: "next";
-    } | {
-        readonly kind: "checking";
-        readonly since: Instant;
-    } | {
-        readonly kind: "done";
-        readonly offers: readonly Offer["id"][];
-        readonly none: boolean;
-    } | {
-        readonly kind: "gap";
-        readonly reason: string;
-    };
-    seller: string | null;
-}>;
+import type { SlotCompletion } from "./index.js";
+export type SlotRecord = Readonly<{ slot: number; completion: SlotCompletion; seller: string | null }>;
 export type RowRecord = Readonly<{
     hunt: HuntId;
     row: RowId;

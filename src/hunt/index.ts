@@ -45,17 +45,12 @@ export type Control = {
     readonly kind: "skip";
     readonly row: RowId;
 };
+export type SlotCompletion = { readonly kind: "pending" } | { readonly kind: "checked"; readonly proof: NonEmpty<Proof>; readonly offers: readonly Offer["id"][] } | { readonly kind: "gap"; readonly reason: string };
 export type RowView = Readonly<{
     row: Row;
     revision: RowRevision;
-    state: "next" | "checking" | "done" | "skipped" | "gap";
-    slots: readonly Readonly<{
-        slot: number;
-        state: "next" | "checking" | "done" | "gap";
-        seller: string | null;
-        note: string;
-    }>[];
     skippedBy: "person" | null;
+    slots: readonly Readonly<{ slot: number; seller: string | null; completion: SlotCompletion }>[];
 }>;
 export type HuntView = Readonly<{
     hunt: HuntId;
@@ -64,6 +59,7 @@ export type HuntView = Readonly<{
     profile: Profile;
     rows: NonEmpty<RowView>;
     offers: readonly Offer[];
+    gaps: readonly string[];
     progress: {
         readonly resolved: number;
         readonly total: number;
@@ -93,48 +89,9 @@ export type HuntView = Readonly<{
 export type HuntReply = Readonly<{
     view: HuntView;
 }>;
-export function checkEvidence(args: {
-    offer: OfferInput;
-    intent: Intent;
-    release: Release;
-    row: Row;
-    now: Instant;
-}): Result<OfferInput> {
-    throw new Error("not implemented");
-}
-export function priceQuotes(args: {
-    offers: readonly Offer[];
-    intent: Intent;
-    release: Release;
-    selection: Selection | null;
-}): readonly Quote[] {
-    throw new Error("not implemented");
-}
-export function pickBest(quotes: readonly Quote[]): Quote | null {
-    throw new Error("not implemented");
-}
-export function finishable(rows: readonly RowView[]): {
-    readonly ok: true;
-} | {
-    readonly ok: false;
-    readonly open: NonEmpty<RowId>;
-} {
-    throw new Error("not implemented");
-}
-export function renderView(args: {
-    release: Release;
-    intent: Intent;
-    profile: Profile;
-    rows: readonly RowView[];
-    offers: readonly Offer[];
-    quotes: readonly Quote[];
-    stopRequested: boolean;
-    final: HuntView["final"];
-    ready: ReadyLink | null;
-    hunt: HuntId;
-}): HuntView {
-    throw new Error("not implemented");
-}
+export { checkEvidence, assertRecordAllowed } from "./evidence.js";
+export { priceQuotes, pickBest } from "./pricing.js";
+export { finishable, renderView } from "./view.js";
 export class Hunts {
     constructor(private readonly deps: {
         store: HuntStore;

@@ -46,24 +46,14 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **checkEvidence**: TODO Discount with code from a non-official source => force status untested (never trust caller status).
 - **checkEvidence**: TODO Distinct-seller rows: a seller already used in another slot of this row is refused.
 - **priceQuotes**: Pricing (graft from candidate A). Pure. The agent never supplies totals.
-- **priceQuotes**: TODO Baseline quote per seller: its price + its delivery (missing delivery => PayToday unknown, never zero).
-- **priceQuotes**: TODO Add confirmed same-seller discounts only where a stacking fact allows or stackProof shows it.
-- **priceQuotes**: TODO needs-step / untested lines go into `conditional` scenarios, never into `guaranteed`.
-- **priceQuotes**: TODO cashback and points go only into backLater; budget fit compares pay-today only.
-- **priceQuotes**: TODO Apply reductions in fact order on the declared basis, clamp at zero, round down per line.
-- **pickBest**: Lowest known guaranteed pay-today, then lowest conditional, then stable quote id.
-- **finishable**: Finish gate. Every row must be done, person-skipped or a named gap.
-- **renderView**: Builds the projection, including `text`. Text is always regenerated, never stored.
-- **renderView**: TODO Text: one line per row (tick / checking / next / skipped / gap), best so far, then on finish the
-- **renderView**: TODO breakdown with a source per line, pay today, back later on its own line, gap to budget, steps to claim.
-- **renderView**: TODO Unknown prints "unknown", never £0.
+- **priceQuotes**, **pickBest**, **finishable**, **renderView**: Implemented pure P03 behavior is defined in the P03 section below. Untested leads do not become conditional discounts. Exact complete offer sets are the compatibility authority. Text is regenerated from HuntView.
 - **Hunts**: The only writer of hunt state.
 - **run**: TODO Replay receipt by (account, requestKey) before anything else; different digest => key-reused.
 - **run**: TODO start: read latest release, snapshot profile (request.profile ?? saved profile), build checklist rows.
 - **run**: TODO list: recent hunts for this account, for resume in another chat or host.
 - **run**: TODO record: refuse if row skipped by person or hunt finished; checkEvidence each offer; CAS the row.
 - **run**: TODO   on conflict return Failure{conflict, next:"read the hunt and retry this row"} with no partial write.
-- **run**: TODO   after stop, accept only gap outcomes and corrections, not new searches.
+- **run**: TODO   after Stop, reject every found outcome, including corrections; accept named gaps. Stop does not cancel the host process.
 - **run**: TODO finish: transact lockAll; finishable(rows) else Failure{incomplete, next: names open rows};
 - **run**: TODO   priceQuotes + pickBest (or the selection); mint the ready link via delivery; store final.
 - **run**: TODO Every reply is the fresh renderView, so the agent always sees the directive.
@@ -159,3 +149,20 @@ The raw prompt handler parses the strict `promptInput` schema before rendering. 
 `npm test` covers invalid row configurations, duplicate sellers, dangling/expired facts, provenance, declarations, third-party codes, mutation, reused IDs and restart pinning. `npm run verify -- p02` records ten deterministic service/module scenarios, including actual HTTP tool/prompt/resource retrieval. JSON transcripts are primary evidence, not UI screenshots or real-host verification. P01 lanes 6/7 remain UNTESTED and lane 8 PARTIAL. No model-agent lane or UI completion is claimed.
 
 `npm run perf -- p02` measures validation of a synthetic 100-shop release and guide rendering for each of its shops, with eight shared row recipes per shop, in five batches after warmup. Every measured operation validates its output. File I/O, startup, build, installation and network are excluded. P01 has no equivalent operation, so no speedup ratio is meaningful. The local 100 ms budget is checked; the fixed two-vCPU gate remains untested on this host.
+
+
+## P03 pure evidence, pricing and projection
+
+`src/hunt/index.ts` exports the pure evidence, pricing and view modules. MCP uses the same strict evidence and selection schemas, but hunt commands remain unavailable pending P04. Authenticated controls remain denied pending P05.
+
+Evidence accepts exact seller and nonempty variant attestations at an explicit UTC time. Maximum age is 24 hours, future skew is zero, and an expiry at or before now is rejected. P02 public-source validation checks lexical HTTPS DNS provenance; it does not resolve DNS, fetch retailer pages or certify truth. Code leads remain untested until retailer-tested evidence is supplied.
+
+Compatibility authorizes one complete selected offer-ID set including price and known delivery. All references resolve to current observations of the same seller and variant. No pairwise transitivity or arbitrary unbound proof can authorize a larger set. This phase implements offer-ID authority, not immutable-fact authority.
+
+Discounts run by ascending explicit order then offer ID. Percentages floor each line in integer pence; basis is original item, remaining item or remaining delivery. Fixed discounts affect remaining item. Each discount clamps to its target balance. Minimum spend uses original item price. Exact BigInt intermediates protect multiplication and addition; the final GBP amount must be safe. Enumeration considers valid subsets before ranking by pay-today, then more evidenced benefits, then sorted offer IDs. Quotes tie by stable anchor ID. Cashback, points and perks belong only to their selected supported scenario and never lower pay-today.
+
+At most 16 benefits per anchor are composable. A seventeenth produces a named incomplete-optimum limitation and excludes the quote from best selection. Delivery absence remains unknown, including budget fit. Conditional steps and budget comparisons are separate from guaranteed totals; untested leads stay visible.
+
+Row slots structurally record checked proof, named gap or pending status; person skip belongs to the row. Missing or duplicate slots and duplicate checked sellers remain unresolved even if a caller describes the row as complete. All eight release rows survive every profile state. One HuntView owns progress, gaps, directives, clean product links and money; its text reads those same values.
+
+Run `npm run verify -- p03` and `npm run perf -- p03` after build. These are compiled synthetic module checks. Separate model-agent and real-host sessions and fixed two-vCPU performance acceptance remain required external gates.

@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { priceQuotes, calculate } from "../dist/hunt/pricing.js";
+import { renderView } from "../dist/hunt/view.js";
+import { fixture, offer, compatibility, gbp, viewArgs } from "../test/fixtures/hunt.mjs";
+const root = process.env.SCOAT_EVIDENCE_DIR ?? path.join(os.homedir(), "tmp/scoat-delivery/p03", `verify-${Date.now()}`);
+await fs.mkdir(root, {recursive:true});
+const identity = { head: execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(), status: execFileSync("git",["status","--porcelain"],{encoding:"utf8"}), node:process.version, client:"compiled pure module; synthetic observations", modelAgentSessions:"UNTESTED", realHost:"UNTESTED", screenshots:"not applicable to headless modules" };
+const receipts = [];
+async function lane(number, operation) {
+  const evidence = await operation();
+  const receipt = {...identity,lane:number,status:"PASS",evidence};
+  await fs.writeFile(path.join(root,`lane-${number}.json`),JSON.stringify(receipt,null,2));
+  receipts.push({lane:number,status:"PASS"});
+}
+const base = fixture(); const quote = priceQuotes(base)[0];
+await lane(1,()=>{ assert.equal(quote.guaranteed.amount.pence,7000); return {baseline:"865dc1a: priceQuotes throws not implemented",quote}; });
+await lane(2,()=>{ assert.equal(quote.conditional[0].payToday.amount.pence,6300); assert.equal(quote.backLater[0].value.pence,190); assert.equal(quote.conditional[0].budget.by.pence,300); return renderView(viewArgs([quote])); });
+await lane(3,()=>{ const result=priceQuotes({...base,offers:base.offers.filter(o=>o.kind!=="delivery"),compatibility:[]}); assert.equal(result[0].guaranteed.kind,"unknown"); assert.equal(result[0].budget.kind,"unknown"); return result; });
+await lane(4,()=>{ const [p,d]=base.offers, a=offer("a","discount",{adjustment:{kind:"fixed",amount:gbp(3000)}}), b=offer("b","discount",{adjustment:{kind:"fixed",amount:gbp(2000)}}); const result=priceQuotes({...base,offers:[p,d,a,b],compatibility:[compatibility(p,d,a),compatibility(p,d,b)]}); assert.equal(result[0].guaranteed.amount.pence,4000); return result; });
+await lane(5,()=>{ const foreign={...base.offers[1],seller:"other"}; const result=priceQuotes({...base,offers:[base.offers[0],foreign],compatibility:[]}); assert.equal(result[0].guaranteed.kind,"unknown"); assert.throws(()=>priceQuotes({...base,offers:[{...base.offers[0],variant:"UK 7"}],compatibility:[]})); return result; });
+await lane(6,()=>{ const code=offer("lead","discount",{code:"SYNTHETIC",codeOrigin:"lead",status:{kind:"untested"}}); const result=priceQuotes({...base,offers:[...base.offers,code]}); assert.equal(result[0].guaranteed.amount.pence,7000); assert.equal(result[0].untested.length,1); return result; });
+await lane(7,()=>{ const p=offer("p","price",{amount:gbp(101)}),d=offer("d","delivery",{amount:gbp(0)}), a=offer("a","discount",{adjustment:{kind:"fixed",amount:gbp(1)},order:0}), b=offer("b","discount",{adjustment:{kind:"percent",basisPoints:5000,basis:"remaining"},order:1}); const result=calculate(p,d,[b,a]); assert.equal(result.amount.pence,50); assert.throws(()=>calculate(p,d,[{...a,minimumSpend:gbp(102)}])); return result; });
+await lane(8,()=>{ const args=viewArgs([quote]);args.rows.find(r=>r.row.place==="other-sellers").slots.pop(); const view=renderView(args); assert.match(view.gaps.join(),/slot-3/); assert.equal(view.directive.kind,"continue"); return view; });
+await lane(9,async()=>{ const view=renderView(viewArgs([quote]));assert.match(view.text,/Coverage 8\/8/);assert.match(view.text,/GBP 70.00/);assert.match(view.text,/GBP 63.00 requires verify-student/);await fs.writeFile(path.join(root,"projection.txt"),view.text);return view; });
+await lane(10,()=>{const result=priceQuotes({...base,offers:[...base.offers.slice(0,2),...Array.from({length:17},(_,i)=>offer(`b${i}`,"discount"))],compatibility:[]});assert.match(result[0].limitations[0],/optimum incomplete/);return result;});
+await fs.writeFile(path.join(root,"summary.json"),JSON.stringify({...identity,receipts},null,2));
+process.stdout.write(JSON.stringify({evidence:root,receipts,modelAgentSessions:"UNTESTED",realHost:"UNTESTED"})+"\n");

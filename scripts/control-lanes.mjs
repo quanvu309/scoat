@@ -116,7 +116,7 @@ export async function controlLanes(databaseUrl) {
   for(const table of ["hunt_receipts","oauth_browser_flow_owners"])assert.equal((await f.store.pool.query(`SELECT count(*) AS n FROM ${table} WHERE account=$1`,[scope[0]])).rows[0].n,"0");
   await f.login();assert.equal((await fetch(f.issuer+"/account/control",{method:"POST",headers:{origin:f.issuer,"content-type":"application/x-www-form-urlencoded",cookie:waiting.cookie},body:waiting.body})).status,403);
   lanes.push("control before erasure removed; erasure before control refused; stale confirmation after re-enrollment refused");
-  return {lanes:lanes.map(name=>({name,status:"PASS"})),browser:browser.version(),card:"UNIMPLEMENTED next unit",externalHosts:"UNTESTED"};
+  return {lanes:lanes.map(name=>({name,status:"PASS"})),browser:browser.version(),card:"SEPARATE: npm run verify -- p07-card",externalHosts:"UNTESTED"};
  } finally {await browser?.close();await f.close();}
 }
 

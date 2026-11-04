@@ -107,10 +107,10 @@ const result=await withDatabase(async databaseUrl=>{
   assert(renew>0);assert.equal(operations[renew+1],"read");
   lanes.push("outage remains retryable; actual expired grant renews serially before read");
   const revoked=await context.newPage();await revoked.goto(f.url);await revoked.frameLocator("iframe").getByText("Current hunt",{exact:true}).waitFor();
-  await revoked.evaluate(()=>window.harness.setMode("revoked"));
+  await revoked.evaluate(()=>window.harness.revoke());
   await revoked.frameLocator("iframe").getByText(/Read access ended/).waitFor();
   const terminal=await revoked.evaluate(()=>window.harness.calls.length);await revoked.waitForTimeout(3300);assert.equal(await revoked.evaluate(()=>window.harness.calls.length),terminal);await revoked.close();
-  lanes.push("revoked access is terminal and does not poll");
+  lanes.push("actual server grant revocation is terminal and does not poll");
   const unsupported=await context.newPage();await unsupported.goto(f.url+"?unsupported");await unsupported.frameLocator("iframe").getByText(/Live updates unavailable/).waitFor();assert.equal(await unsupported.evaluate(()=>window.harness.calls.length),0);assert(await unsupported.frameLocator("iframe").getByRole("link",{name:"Open browser controls"}).isVisible());await unsupported.close();
   lanes.push("unsupported host makes zero calls and retains browser fallback");
   const disposed=await context.newPage();await disposed.goto(f.url);await disposed.frameLocator("iframe").getByText("Current hunt",{exact:true}).waitFor();await disposed.evaluate(()=>window.harness.setDelay(700));await disposed.waitForTimeout(3100);await disposed.evaluate(()=>window.harness.unmount());const disposedCount=await disposed.evaluate(()=>window.harness.calls.length);await disposed.waitForTimeout(3500);assert.equal(await disposed.evaluate(()=>window.harness.calls.length),disposedCount);assert.equal(await disposed.locator("iframe").count(),0);await disposed.close();

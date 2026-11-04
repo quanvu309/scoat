@@ -130,10 +130,15 @@ test("production worker refuses a missing mail key before queue installation", a
  await withDatabase(async url => {
   const root = await scratchDirectory("worker-mail-");
   await writeFile(root + "/watch.json", JSON.stringify({ issuer: "https://scoat.invalid", from: "Scoat <alerts@scoat.invalid>", unsubscribe: { version: "v1", keys: { v1: "a".repeat(64) } }, resendApiKey: null }));
+  const admin = new pg.Pool({ connectionString: url });
+  const queueState = async () => {
+   const installed = (await admin.query("SELECT to_regclass('pgboss.job') AS job, to_regclass('pgboss.schedule') AS schedule")).rows[0];
+   return { installed: installed.job !== null, jobs: installed.job === null ? 0 : (await admin.query("SELECT count(*)::integer AS n FROM pgboss.job")).rows[0].n, schedules: installed.schedule === null ? 0 : (await admin.query("SELECT count(*)::integer AS n FROM pgboss.schedule")).rows[0].n };
+  };
+  const before = await queueState().catch(async error => { await admin.end(); throw error; });
   const result = await promisify(execFile)(process.execPath, ["dist/worker.js"], { env: { ...process.env, DATABASE_URL: url, SCOAT_WATCH_CONFIG: root + "/watch.json" }, timeout: 20000 }).then(() => ({ code: 0, stderr: "" }), error => ({ code: error.code, stderr: String(error.stderr) }));
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /requires resendApiKey/);
-  const admin = new pg.Pool({ connectionString: url });
-  try { assert.equal((await admin.query("SELECT to_regclass('pgboss.job') AS job")).rows[0].job, null); } finally { await admin.end(); await rm(root, { recursive: true, force: true }); }
+  try { assert.deepEqual(await queueState(), before); } finally { await admin.end(); await rm(root, { recursive: true, force: true }); }
  });
 });

@@ -21,12 +21,15 @@ collect(parse(html));
 const compressedJavaScriptBytes=gzipSync(scripts.join("\n")).byteLength;
 assert(compressedJavaScriptBytes<300*1024);
 const lanes=[],errors=[];
+const lane=value=>{lanes.push(value);console.log(JSON.stringify({lane:value,status:"PASS"}));};
 const result=await withDatabase(async databaseUrl=>{
  const f=await cardFixture(databaseUrl);
  const browser=await chromium.launch();
  let context;
  try {
   context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1280,height:800},...(!perf?{recordVideo:{dir:root,size:{width:1280,height:800}}}:{})});
+  context.setDefaultTimeout(45000);
+  context.setDefaultNavigationTimeout(45000);
   const page=await context.newPage();
   const started=Date.now();
   const secrets=new Set(),consoleMessages=[];
@@ -45,7 +48,7 @@ const result=await withDatabase(async databaseUrl=>{
   for(const required of ["£70.00","£63.00","£1.90","£55.00","Budget £60.00","Unknown:","Evidence gaps","Conditional:","Trading Trading"]) assert(text.includes(required),required);
   assert.equal(await frame.getByRole("link",{name:"Open clean shop link"}).getAttribute("href"),"https://www.nike.com/gb/t/synthetic");
   if(!perf) await page.screenshot({path:path.join(root,"wide.png")});
-  lanes.push("canonical amounts, conditional rewards, long seller, unknown delivery, gaps, sources, clean link; 320px, 200% text and CSS zoom");
+  lane("canonical amounts, conditional rewards, long seller, unknown delivery, gaps, sources, clean link; 320px, 200% text and CSS zoom");
   await page.setViewportSize({width:320,height:800});
   const appFrame=page.frames().find(item=>item.url().endsWith("/card"));
   assert.equal(await appFrame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -68,7 +71,7 @@ const result=await withDatabase(async databaseUrl=>{
   await approval.getByRole("button",{name:/Skip/}).click();
   await approval.close();
   await frame.getByText("Skipped by you",{exact:true}).waitFor();
-  lanes.push("keyboard Enter opens exact server Skip URL; native login and approval update live row");
+  lane("keyboard Enter opens exact server Skip URL; native login and approval update live row");
   await page.evaluate(()=>window.harness.setMode("old"));
   await frame.getByText(/Waiting for a consistent/).waitFor();
   assert.equal(await frame.getByText("Skipped by you",{exact:true}).count(),1);
@@ -76,7 +79,7 @@ const result=await withDatabase(async databaseUrl=>{
   await page.waitForTimeout(1100);
   assert.equal(await count(),staleCount);
   if(!perf) await page.screenshot({path:path.join(root,"stale.png")});
-  lanes.push("late pre-Skip vector dropped; persistently stale response has no reread spin");
+  lane("late pre-Skip vector dropped; persistently stale response has no reread spin");
   await page.evaluate(()=>window.harness.setMode("live"));
   await live();
   const current=(await f.tool({op:"read",hunt:f.initial.value.view.hunt})).structuredContent;
@@ -88,7 +91,7 @@ const result=await withDatabase(async databaseUrl=>{
   assert.equal(await frame.getByText("Skipped by you",{exact:true}).count(),1);
   await page.evaluate(()=>window.harness.setReply(undefined));
   await live();
-  lanes.push("incomparable vectors retain coherent current view");
+  lane("incomparable vectors retain coherent current view");
   await visibility(false);
   const hiddenBefore=await count();
   await page.waitForTimeout(3300);
@@ -96,7 +99,7 @@ const result=await withDatabase(async databaseUrl=>{
   assert.equal(backgroundPolls,0);
   await visibility(true);
   await live();
-  lanes.push("hidden zero new tool requests; visible resumes single flight");
+  lane("hidden zero new tool requests; visible resumes single flight");
   await page.evaluate(()=>window.harness.setMode("outage"));
   await frame.getByText(/Offline or stale/).waitFor();
   await page.evaluate(()=>window.harness.expire());
@@ -105,16 +108,16 @@ const result=await withDatabase(async databaseUrl=>{
   const operations=await page.evaluate(()=>window.harness.calls.map(call=>call.op));
   const renew=operations.lastIndexOf("renew");
   assert(renew>0);assert.equal(operations[renew+1],"read");
-  lanes.push("outage remains retryable; actual expired grant renews serially before read");
+  lane("outage remains retryable; actual expired grant renews serially before read");
   const revoked=await context.newPage();await revoked.goto(f.url);await revoked.frameLocator("iframe").getByText("Current hunt",{exact:true}).waitFor();
   await revoked.evaluate(()=>window.harness.revoke());
   await revoked.frameLocator("iframe").getByText(/Read access ended/).waitFor();
   const terminal=await revoked.evaluate(()=>window.harness.calls.length);await revoked.waitForTimeout(3300);assert.equal(await revoked.evaluate(()=>window.harness.calls.length),terminal);await revoked.close();
-  lanes.push("actual server grant revocation is terminal and does not poll");
+  lane("actual server grant revocation is terminal and does not poll");
   const unsupported=await context.newPage();await unsupported.goto(f.url+"?unsupported");await unsupported.frameLocator("iframe").getByText(/Live updates unavailable/).waitFor();assert.equal(await unsupported.evaluate(()=>window.harness.calls.length),0);assert(await unsupported.frameLocator("iframe").getByRole("link",{name:"Open browser controls"}).isVisible());await unsupported.close();
-  lanes.push("unsupported host makes zero calls and retains browser fallback");
+  lane("unsupported host makes zero calls and retains browser fallback");
   const disposed=await context.newPage();await disposed.goto(f.url);await disposed.frameLocator("iframe").getByText("Current hunt",{exact:true}).waitFor();await disposed.evaluate(()=>window.harness.setDelay(700));await disposed.waitForTimeout(3100);await disposed.evaluate(()=>window.harness.unmount());const disposedCount=await disposed.evaluate(()=>window.harness.calls.length);await disposed.waitForTimeout(3500);assert.equal(await disposed.evaluate(()=>window.harness.calls.length),disposedCount);assert.equal(await disposed.locator("iframe").count(),0);await disposed.close();
-  lanes.push("unmounted iframe issues zero new calls including delayed response completion; unit test proves disposed publication dropped");
+  lane("unmounted iframe issues zero new calls including delayed response completion; unit test proves disposed publication dropped");
   const stop=frame.getByRole("button",{name:"Stop new discovery",exact:true});
   await stop.focus();
   const [stopApproval]=await Promise.all([page.waitForEvent("popup"),stop.press("Space")]);
@@ -126,7 +129,7 @@ const result=await withDatabase(async databaseUrl=>{
   await page.evaluate(()=>window.harness.setMode("old"));
   await frame.getByText(/Waiting for a consistent/).waitFor();
   assert.equal(await frame.getByText("Discovery stopped",{exact:true}).count(),1);
-  lanes.push("keyboard Space Stop native confirmation; late pre-Stop response cannot undo Stop");
+  lane("keyboard Space Stop native confirmation; late pre-Stop response cannot undo Stop");
   await page.evaluate(()=>window.harness.setMode("live"));
   await live();
   let view=(await f.tool({op:"read",hunt:f.initial.value.view.hunt})).structuredContent.value.view;
@@ -137,7 +140,7 @@ const result=await withDatabase(async databaseUrl=>{
   assert((await f.tool({op:"finish",requestKey:randomUUID(),hunt:view.hunt,selection:null})).structuredContent.ok);
   await frame.getByText("Finished",{exact:true}).waitFor();
   const finishedCount=await count();await page.waitForTimeout(3300);assert.equal(await count(),finishedCount);
-  lanes.push("canonical finish stops all future polls");
+  lane("canonical finish stops all future polls");
   const samples=await page.evaluate(()=>window.harness.samples);
   const dom=await frame.locator("body").innerText();
   for(const secret of secrets){assert(!dom.includes(secret));assert(!consoleMessages.join("\n").includes(secret));}

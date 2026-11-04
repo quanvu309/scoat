@@ -1,0 +1,25 @@
+import { CardTransport } from "../src/card/adapter.ts";
+import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
+const frame=document.querySelector("iframe");
+const bridge=new AppBridge(null,{name:"Scoat local ext-apps harness",version:"1.0.0"},{...(location.search.includes("unsupported")?{}:{serverTools:{}}),openLinks:{}},{hostContext:{theme:"light"}});
+const opened=[],calls=[],samples=[];
+let mode="live",delay=0,replyOverride,pendingRenderAt;
+frame.addEventListener("load",()=>{const win=frame.contentWindow;new win.PerformanceObserver(list=>{for(const entry of list.getEntries()) if(entry.name==="scoat-card-render" && pendingRenderAt!==undefined){samples.push({resultToRenderMs:win.performance.timeOrigin+entry.startTime-performance.timeOrigin-pendingRenderAt});pendingRenderAt=undefined;}}).observe({type:"mark"});});
+bridge.onopenlink=async({url})=>{opened.push(url);window.open(url,"_blank");return {};};
+bridge.oncalltool=async params=>{
+ const start=performance.now();calls.push({op:params.arguments.op,at:start});
+ if(delay) await new Promise(resolve=>setTimeout(resolve,delay));
+ if(mode==="outage") return {isError:true,content:[],_meta:{"scoat/cardFailure":{code:"transient"}}};
+ if(mode==="revoked") return {isError:true,content:[],_meta:{"scoat/cardFailure":{code:"revoked"}}};
+ const result=await (await fetch("/tool",{method:"POST",body:JSON.stringify(params)})).json();
+ if(replyOverride && params.arguments.op==="read") result.structuredContent=replyOverride;
+ if(mode==="old" && params.arguments.op==="read") result.structuredContent=await (await fetch("/initial")).json();
+ const bridgeMs=performance.now()-start;
+ samples.push({op:params.arguments.op,bridgeMs,deliberateDelayMs:delay});
+ if(params.arguments.op==="read") pendingRenderAt=performance.now();
+ return result;
+};
+bridge.oninitialized=async()=>{await bridge.sendToolInput({arguments:{op:"read"}});await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});window.ready=true;};
+window.harness={calls,opened,samples,setMode(value){mode=value;},setReply(value){replyOverride=value;},setDelay(ms){delay=ms;},unmount(){frame.remove();},async expire(){await fetch("/expire",{method:"POST"});},async resend(){await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});}};
+await bridge.connect(new CardTransport(frame.contentWindow,frame.contentWindow));
+frame.src="/card";

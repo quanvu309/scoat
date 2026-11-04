@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { agentRequestKey } from "../hunt/request-key.js";
 import { memoryInput } from "../memory/contracts.js";
 import { pinnedResources } from "./resources.js";
@@ -70,7 +71,7 @@ export function dispatchParsed(call: ToolCall) {
   const message = name === "scoat_card" ? "Person authorization unavailable; visibility and grants are not authorization." : toolCatalog[name].description;
   return { isError: true, content: [{ type: "text" as const, text: message }], structuredContent: { ok: false, error: { code, message }, market: "GB", currency: "GBP" } };
 }
-export const fixtureHtml = '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri \'none\'; form-action \'none\'"><title>Scoat foundation</title><p>Scoat UK/GBP fixture. Shopping and controls are unavailable.</p></html>';
+export const fixtureHtml = readFileSync(new URL("../card/index.html",import.meta.url),"utf8");
 export function mount({ server, invoke = dispatchParsed }: { server: McpServer; invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult> }) {
   server.server.registerCapabilities({ prompts: {} });
   server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [huntPrompt] }));
@@ -94,7 +95,7 @@ export function mount({ server, invoke = dispatchParsed }: { server: McpServer; 
     catch (error) { if (error instanceof z.ZodError) return invalid; throw error; }
     return await invoke(call);
   });
-  registerAppResource(server, "Scoat foundation fixture", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
+  registerAppResource(server, "Scoat live hunt", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
 }
 export function createMcpServer(invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult>) {
   const server = new McpServer({ name: "scoat-foundation", version: "0.1.0" });

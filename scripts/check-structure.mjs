@@ -7,8 +7,8 @@ import { z } from "zod";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
-  const adapter = file.startsWith("src/mcp/") || file === "src/server.ts" || file === "src/card/index.ts";
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const adapter = file.startsWith("src/mcp/") || file === "src/server.ts" || file === "src/card/adapter.ts";
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   for (const item of ast.program.body) {
     if (item.type === "ImportDeclaration") {
       if (/\/(arch|fixtures)\//.test(item.source.value)) throw new Error(`${file}: keep design and fixture imports out of production source`);
@@ -35,7 +35,7 @@ export function checkWorkflow(source) {
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]s$/.test(file)) {
+    if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]sx?$/.test(file)) {
       const source = fs.readFileSync(file, "utf8");
       checkSdkImports(file, source);
       checkControlImports(file,source);
@@ -54,7 +54,7 @@ export function checkPersonBoundary(source) {
   if(astNodes(ast).some(node=>node.type==="Identifier" && node.name==="person")) throw new Error("Legacy person mint must be removed; browser verification owns authority");
 }
 export function checkHostConfig(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const found = new Set();
   const arrays = new Map(astNodes(ast).filter(node=>node.type==="VariableDeclarator" && ["allowedHosts","allowedOrigins"].includes(node.id?.name)).map(node=>[node.id.name,node.init]));
   function exactSocketTemplate(element, prefix) {
@@ -99,7 +99,7 @@ export function checkHostConfig(source) {
   for (const name of ["allowedHosts", "allowedOrigins"]) if (!found.has(name)) throw new Error(`Use exact loopback socket localPort in ${name}`);
 }
 export function checkRegistryAdapter(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && (node.callee?.name === "registerAppTool" || node.callee?.property?.name === "registerTool")) throw new Error("Use registry-derived ListToolsRequestSchema handler; SDK 1.x normalizes root unions to empty objects");
@@ -181,7 +181,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
 }
 
 export function checkKnowledgeTypes(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (["TSParameterProperty", "TSEnumDeclaration", "TSModuleDeclaration"].includes(node.type)) throw new Error("Knowledge must use erasable TypeScript for Node strip-only tests; declare fields explicitly");
@@ -191,7 +191,7 @@ export function checkKnowledgeTypes(source) {
 }
 
 export function checkHuntAuthority(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (["TSTypeAliasDeclaration","TSInterfaceDeclaration"].includes(node.type) && node.id?.name === "Person") throw new Error("Replace structural Person with nominal verified control authority");
@@ -203,7 +203,7 @@ export function checkHuntAuthority(source) {
 }
 
 export function checkCandidateSearch(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && node.callee?.property?.name === "sort" && JSON.stringify(node.arguments).includes('"name":"key"')) throw new Error("Precompute candidate rank keys before sorting");
@@ -214,7 +214,7 @@ export function checkCandidateSearch(source) {
 }
 
 export function checkViewCoverage(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const finishable = ast.program.body.find(node => node.declaration?.id?.name === "finishable")?.declaration;
   if (finishable && !finishable.params.some(parameter => parameter.name === "release")) throw new Error("Finishability requires pinned release recipes to detect missing whole rows");
   if (finishable && !finishable.params.some(parameter => parameter.name === "originalSeller")) throw new Error("Finishability requires originalSeller to exclude the original shop from other-seller coverage");
@@ -233,13 +233,13 @@ function astNodes(root) {
   return result;
 }
 export function checkCodeAuthority(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const evidence = ast.program.body.find(node => node.declaration?.id?.name === "parseEvidence")?.declaration;
   if (evidence && !astNodes(evidence).some(node => node.type === "CallExpression" && node.callee?.name === "isOfficialSource")) throw new Error("Validate retailer-tested code against isOfficialSource and the pinned release; origin labels are not authority");
 }
 export function checkScratchAllocation(file, source) {
   if (file === "scripts/scratch.mjs") return;
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if ((node.type === "ImportSpecifier" && node.imported?.name === "mkdtemp") || (node.type === "CallExpression" && (node.callee?.name === "mkdtemp" || node.callee?.property?.name === "mkdtemp"))) throw new Error(`${file}: use scratchDirectory so an absent ~/tmp parent is created before allocation`);
@@ -248,12 +248,12 @@ export function checkScratchAllocation(file, source) {
   visit(ast.program);
 }
 export function checkScenarioProjection(domain, hunt) {
-  const domainNodes = astNodes(parse(domain, { sourceType: "module", plugins: ["typescript"] }));
+  const domainNodes = astNodes(parse(domain, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   for (const conditional of domainNodes.filter(node => node.type === "TSPropertySignature" && node.key?.name === "conditional")) {
     const fields = new Set(astNodes(conditional.typeAnnotation).filter(node => node.type === "TSPropertySignature").map(node => node.key?.name));
     if (["selection", "backLater", "perks"].some(field => !fields.has(field))) throw new Error("Each conditional scenario must retain selection, backLater and perks from its authorized offer set");
   }
-  const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript"] }));
+  const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   const view = huntNodes.find(node => node.type === "TSTypeAliasDeclaration" && node.id?.name === "HuntView");
   if (view && !astNodes(view).some(node => node.type === "TSPropertySignature" && node.key?.name === "quotes")) throw new Error("Retain all quotes in HuntView so structured and text renderers share every scenario");
 }
@@ -264,7 +264,7 @@ export function checkDurableFences(source) {
 }
 
 export function checkStartReplay(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const method = astNodes(ast).find(node => node.type === "ClassMethod" && node.key?.name === "run");
   const calls = astNodes(method).filter(node => node.type === "CallExpression");
   const replay = calls.find(node => node.callee?.property?.name === "priorReceipt");
@@ -273,7 +273,7 @@ export function checkStartReplay(source) {
 }
 
 export function checkDurableCommands(source) {
-  const nodes = astNodes(parse(source, { sourceType: "module", plugins: ["typescript"] }));
+  const nodes = astNodes(parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   if (nodes.some(node => node.type === "CallExpression" && node.callee?.name === "finishable")) throw new Error("Use canonical HuntView.progress for the finish decision so inferred seller coverage agrees with the rendered view");
 }
 

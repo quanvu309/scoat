@@ -9,12 +9,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint:comments": "node scripts/check-no-comments.mjs",
-    "build": "tsc -p tsconfig.server.json",
+    "build": "node scripts/build.mjs",
     "start": "node dist/server.js",
     "test": "node --test test/*.test.mjs test/*.test.ts",
     "verify": "node scripts/verify.mjs",
     "perf": "node scripts/perf.mjs",
-    "lint": "npm run lint:comments && node scripts/check-structure.mjs",
+    "lint": "npm run lint:comments && node scripts/check-structure.mjs && node scripts/check-card.mjs",
     "db:migrate": "node scripts/database.mjs migrate",
     "db:seed": "node scripts/database.mjs seed",
     "start:worker": "node scripts/worker.mjs",
@@ -27,6 +27,8 @@
     "oidc-provider": "9.13.3",
     "openid-client": "6.8.9",
     "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -34,8 +36,14 @@
     "@types/node": "26.6.6",
     "@types/oidc-provider": "9.13.1",
     "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "parse5": "8.1.0",
     "playwright": "1.64.1",
+    "postcss": "8.5.32",
     "typescript": "7.0.2",
+    "vite": "6.4.1",
+    "vite-plugin-singlefile": "2.3.4",
     "yaml": "2.9.1"
   },
   "engines": {

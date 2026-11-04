@@ -13,4 +13,4 @@ P05: [authentication](auth.md) owns OAuth, browser linking, authenticated HTTPS 
 
 P06: [memory and erasure](memory.md) owns durable profile/saved items, exact session-bound browser approval, explicit enrollment, OAuth ownership inventory, atomic deletion and bounded retention.
 
-P07 browser unit: [browser controls](controls.md) owns signed intent links, fresh same-account login, native Stop/Skip confirmation and atomic compact receipts. Live card and full P07 acceptance remain pending.
+P07 browser unit: [browser controls](controls.md) owns signed intent links, fresh same-account login, native Stop/Skip confirmation and atomic compact receipts. P07 card unit: [live card](card.md) owns the bundled React card, ext-apps bridge, private grants, monotonic snapshots and polling lifecycle. Full P07 external acceptance remains pending.

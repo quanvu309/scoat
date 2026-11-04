@@ -56,4 +56,8 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Erase result recovery is unreachable after losing credentials | Link a credential-free GET form with same-origin Referrer-Policy before erasure and POST the saved status secret; serve the secret confirmation with no-store | checkEraseRecovery; missing confirmation no-store, absent/dead GET, wrong form, missing-link and no-referrer fixtures; Chromium native-form recovery and foreign-Origin rejection |
 | Linking admits a callback started before erasure | Preserve the first link flow start and check suppression under the subject lock | checkLinkSuppression; removed/dead refusal, reset-start and wrong-lock fixtures; stale HTTPS callback and confirmation-spanning-erasure rejection; fresh post-erasure link regression |
 
+| Card bundling deletes emitted server controller modules | Preserve emitted modules while the build cleans once | checkCardBuild; emptyOutDir true negative fixture and compiled controller import |
+| SDK transport logs private card grant messages | Use a source-checked quiet transport with schema validation | checkCardBuild; default PostMessageTransport and console negative fixtures; Chromium rotating-grant DOM/console absence |
+| Card edits miss verification routing | Route P07 live card through header, selector, index and driver | checkCardRouting; missing header, selector, index and driver fixtures |
+
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

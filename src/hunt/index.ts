@@ -58,7 +58,7 @@ export type Control = {
     readonly kind: "skip";
     readonly row: RowId;
 };
-export type SlotCompletion = { readonly kind: "pending" } | { readonly kind: "checked"; readonly checked?: string; readonly proof: NonEmpty<Proof>; readonly offers: readonly Offer["id"][] } | { readonly kind: "gap"; readonly reason: string };
+export type SlotCompletion = { readonly kind: "pending" } | { readonly kind: "checked"; readonly checked?: string | undefined; readonly proof: NonEmpty<Proof>; readonly offers: readonly Offer["id"][] } | { readonly kind: "gap"; readonly reason: string };
 export type RowView = Readonly<{
     row: Row;
     revision: RowRevision;

@@ -4,7 +4,7 @@ Run `npm run verify -- p07-controls` after building. This drives the compiled HT
 
 Inspect `src/controls/codec.ts`, `src/auth/issuer.ts` and `src/hunt/index.ts`. Require cookie/Origin/action/nonce rejection, same-account fresh authentication, database-clock expiry, compact replay, independent repeat Stop/Skip, late writes and erasure. P04 and the focused controls driver must preserve NOWAIT/55P03 contention receipts before releasing barriers.
 
-The live card, external hosts and full P07 acceptance remain unimplemented or untested. Never substitute browser-unit evidence for those gates.
+Run [live card](card.md) for the card unit. External hosts and full P07 acceptance remain untested. Never substitute local browser-unit evidence for those gates.
 
 Configure `SCOAT_CONTROL_CONFIG` with a separate protected JSON file containing `version: 1`, a 1–32 character alphanumeric/underscore/hyphen `keyId`, and a fresh 64 character lowercase hexadecimal `secret`. Generate the secret independently of OAuth and lifecycle keys. Missing configuration disables links and control routes; malformed configured keys fail startup. Restart with a new key ID and secret to rotate. Rotation invalidates outstanding intents and confirmations immediately. Accepted receipt data survives rotation until account erasure; an old confirmation cannot recover it after rotation.
 

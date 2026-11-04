@@ -6,7 +6,7 @@ import { Hunts } from "../hunt/index.js";
 import type { HuntStore } from "../hunt/store.js";
 import { Knowledge } from "../knowledge/index.js";
 import type { Principal } from "../auth/issuer.js";
-import { ReadGrants } from "../auth/grants.js";
+import { ReadGrants, ReadGrantFailure } from "../auth/grants.js";
 import { dispatchParsed } from "./index.js";
 import type { ToolCall } from "./index.js";
 import { toHuntRequest } from "./contracts.js";
@@ -65,11 +65,12 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         structuredContent: {...reply,...(controls ? {controls} : {})},
       };
     }
+    try {
     const request = call.input;
     if (request.op === "open")
       return {
         content: [{ type: "text", text: "Read capability created" }],
-        structuredContent: await grants.open(principal, request.hunt),
+        _meta: { "scoat/readCapability": await grants.open(principal, request.hunt) },
       };
     const result = await grants.use(
       principal,
@@ -103,7 +104,10 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
     }
     return {
       content: [{ type: "text", text: "Read capability updated" }],
-      structuredContent: result,
+      ...(request.op === "renew" ? {_meta:{"scoat/readCapability":result}} : {structuredContent:result}),
     };
+    } catch(error) {
+      return {isError:true,content:[{type:"text",text:"Card read unavailable"}],_meta:{"scoat/cardFailure":{code:error instanceof ReadGrantFailure ? error.code : "transient"}}};
+    }
   };
 }

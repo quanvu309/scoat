@@ -558,6 +558,6 @@ export function checkControlVerification(skill,index,runner) {
 export function checkControlImports(file,source) {
  if(!file.startsWith("src/mcp/"))return;
  for(const node of parsedNodes(source).filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
-  if(node.importKind!=="type" && node.specifiers.some(item=>item.importKind!=="type"))throw new Error("MCP may reference control types but cannot import codec minting values");
+  if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
  }
 }

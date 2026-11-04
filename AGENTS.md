@@ -12,7 +12,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Nonpublic source URLs published as confirmed facts | Use public HTTPS DNS source validation | checkReleaseSources; reproduced loopback/private fact fixtures; publication regression |
 | Union schemas disappear in SDK listing | Derive list/call handlers from registry | checkRegistryAdapter; high-level registration fixture; protocol schema comparison |
 | Schema dialect mismatch | Emit draft-7 for pinned SDK | checkWire; 2020-12 fixture |
-| App visibility mistaken for identity | Remove legacy person mint; verify signed browser confirmation and nominal runtime identity | checkPersonBoundary/checkBrowserControls/checkControlImports/checkHuntAuthority; structural authority and public codec export negative fixtures; native HTTPS controls |
+| App visibility mistaken for identity | Remove legacy person mint; verify nominal browser authority; give MCP only a bound link function | checkPersonBoundary/checkBrowserControls/checkControlImports/checkHuntAuthority; structural authority, full-codec type import and public codec export negative fixtures; native HTTPS controls |
 | Incompatible SDK helpers | Retain tested 1.32.2 / 1.7.5 pins until spike reruns | checkDependencyPair; previous 2.0.4 fixture |
 | Wildcard ports rejected by transport | Use exact local socket port in allowedHosts | checkHostConfig; wildcard-host fixture |
 | Foreign browser Origins accepted by transport | Allow exact loopback HTTP origins at the local socket port and the configured HTTPS issuer | checkHostConfig; missing/empty/foreign-Origin fixtures; raw HTTP Origin test |

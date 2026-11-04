@@ -129,7 +129,7 @@ export async function createHttpServer() {
       return;
     }
     const validationMs = performance.now() - authStart;
-    const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);
+    const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {

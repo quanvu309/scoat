@@ -33,6 +33,7 @@ test("control guards reject observed fractional deadline bug and old structural 
  assert.throws(()=>checkBrowserControls(codec,hunt.replace("await tx.databaseTime()","Date.now()")),/database time/);
  assert.throws(()=>checkHuntAuthority('export type Person = {kind:"person";account:string;incarnation:string};'),/structural Person/);
  assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'import {ControlCodec} from "../controls/codec.js";'),/cannot import codec/);
+ assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'import type {ControlCodec} from "../controls/codec.js";'),/cannot import codec/);
  assert.throws(()=>checkPublicAuthority('export { ControlCodec } from "./controls/codec.js";'),/public barrel/);
 });
 

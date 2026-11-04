@@ -53,3 +53,4 @@ export class ControlCodec {
   return {hub:link({kind:"hub"}),stop:link({kind:"stop"}),skip:view.rows.map(row=>({row:row.row.id,url:link({kind:"skip",row:row.row.id})})),watch:{available:false,reason:"Watch requires P08 verified email and a confirmed target"}};
  }
 }
+export type ControlLinksFor = ControlCodec["links"];

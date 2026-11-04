@@ -110,7 +110,7 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
     assert.throws(() => checkHostConfig(server.replace("    res.setHeader", injected + "\n    res.setHeader")), /immutable/);
   }
   assert.throws(() => checkRemoteBoundary('const x="Authentication is not configured"; async function h(){ try { await auth.authenticate(req); } catch {} const server=createMcpServer(); }'), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal, auth.issuer, codec)", "authenticatedDispatch(store, ignored, auth.issuer, codec)")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec))", "authenticatedDispatch(store, ignored, auth.issuer, codec?.links.bind(codec))")), /verified issuer/);
   assert.throws(() => checkRemoteBoundary(server.replace("res.end(\"Authentication is not configured\");\n      return;", "res.end(\"Authentication is not configured\");")), /Fail closed/);
   for (const value of ['export * from "./auth/identity.js";', 'export { principalFor as safe } from "./auth/identity.js";']) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('export type * from "./auth/issuer.js";'));
@@ -159,14 +159,14 @@ test("P05 guards reject residual alias, result and dead-condition bypasses", asy
   ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
   assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);", "principal = forged; const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));", "principal = forged; const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));")), /verified issuer/);
   const parser = 'const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));';
   const named = replace(issuer, parser, 'const decisionSchema = z.enum(["allow", "deny"]); const decision = decisionSchema.safeParse(submitted.get("decision"));');
   assert.doesNotThrow(() => checkConsentDecision(named));
   const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
   assert.doesNotThrow(() => checkConsentDecision(renamed));
   assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
-  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);", assignment + "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec);")), /verified issuer/);
+  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));", assignment + "const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec));")), /verified issuer/);
   const rejection = issuer.slice(issuer.indexOf("        if (\n          req.method"), issuer.indexOf('        if (decision.data === "deny")'));
   assert.ok(rejection.includes("!decision.success"));
   assert.throws(() => checkConsentDecision(replace(issuer, rejection, "if (false) {" + rejection + "}")), /explicit allow or deny/);

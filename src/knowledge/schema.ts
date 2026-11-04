@@ -6,7 +6,7 @@ export const publicSourceUrl = z.url().refine(value => {
   const parsed = new URL(value);
   const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
   return parsed.protocol === "https:" && !parsed.username && !parsed.password
-    && !z.ipv4().safeParse(host).success && !z.ipv6().safeParse(host).success && !host.startsWith("[") && host.includes(".")
+    && !z.regexes.ipv4.test(host) && !z.regexes.ipv6.test(host) && !host.startsWith("[") && host.includes(".")
     && !/(^|\.)(localhost|local|localdomain|internal|invalid|test|example|onion)$/.test(host)
     && host !== "home.arpa" && !host.endsWith(".home.arpa");
 }, "Publish public HTTPS DNS sources; IP literals and local/reserved names are not public provenance").brand<"PublicHttpsUrl">();

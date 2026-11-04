@@ -10,6 +10,14 @@ test("comment parser rejects comments outside src and accepts URL/regex literals
   assert.throws(() => checkComments("ci.yaml", "jobs:\n  # forbidden\n  a: {}"), /comments forbidden/);
   assert.doesNotThrow(() => checkComments("x.mjs", 'const url="https://example.com"; const re=/a\\/b/;'));
 });
+
+test("browser flow starts cannot mix the application and database clocks",async()=>{
+ const {checkBrowserFlowClock}=await import("../scripts/check-structure.mjs");
+ const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8"),flows=readFileSync(new URL("../src/auth/flows.ts",import.meta.url),"utf8");
+ assert.doesNotThrow(()=>checkBrowserFlowClock(issuer,flows));
+ assert.throws(()=>checkBrowserFlowClock(issuer.replace("{ verifier, nonce, browser: digest(browser), context }","{ initiatedAt: Date.now(), verifier, nonce, browser: digest(browser), context }"),flows),/database clock/);
+ assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("clock_timestamp()","now()")),/database clock/);
+});
 test("structural rules reject each offending fixture with supported fix", () => {
   assert.throws(() => checkSdkImports("src/domain.ts", 'import { Client } from "@modelcontextprotocol/sdk/client/index.js";'), /SDK-free/);
   assert.throws(() => checkSdkImports("src/server.ts", 'import { fixture } from "../fixtures/confirmation.mjs";'), /out of production/);
@@ -189,5 +197,19 @@ test("P06 ownership and enrollment guards reject the original unsafe shapes", as
  assert.throws(()=>checkExplicitEnrollment(original),/explicit browser enrollment/);
  assert.doesNotThrow(()=>checkExplicitEnrollment(readFileSync(new URL("../src/auth/identity.ts",import.meta.url),"utf8")));
  assert.doesNotThrow(()=>checkErasureCoordinator(coordinator));
+ const recheck='if (identities.rows.some(identity => !lockedSubjects.has(JSON.stringify([identity.issuer,identity.subject])))) throw new SerializationConflict("Identity inventory changed");';
+ const lock='for (const subject of lockedSubjects) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[subject]);';
+ const tombstone='await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version) VALUES($1,$2,$3,$4)", [...prefix,pseudonym,keyVersion]);';
+ for (const statement of [recheck,lock,tombstone]) {
+  assert.ok(coordinator.includes(statement));
+  for (const replacement of ["", "if (false) {"+statement+"}", "function unused(){"+statement.replaceAll("await ","void ")+"}"]) {
+   assert.throws(()=>checkErasureCoordinator(coordinator.replace(statement,replacement)),/inventory recheck/);
+  }
+ }
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("const prefix = [scope.account,scope.incarnation]","const prefix = [other.account,scope.incarnation]")),/exclusive active account fence/);
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace(" const authentication = await deleteAuthentication", " if (false) return;\n const authentication = await deleteAuthentication").replace("export async function eraseAccount", "async function unusedErasure")),/fixed owner deletion/);
+ for (const sql of ["INSERT INTO hunt_accounts(account) VALUES($1)"," INSERT INTO oauth_identities VALUES($1)","INSERT INTO public.hunt_accounts VALUES($1)","WITH x AS (INSERT INTO oauth_identities VALUES($1) RETURNING *) SELECT * FROM x"]) {
+  for (const delimiter of ['"','`']) assert.throws(()=>checkExplicitEnrollment("async function resolveIdentity(){await pool.query("+delimiter+sql+delimiter+");}"),/explicit browser enrollment/);
+ }
  assert.throws(()=>checkMemoryVerification("---\ndescription: P05\n---",""),/features\/memory.md/);
 });

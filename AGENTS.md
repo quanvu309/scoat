@@ -46,10 +46,8 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Cursor leaks caller metadata or cannot read the next page | Encode only account/incarnation/collection and scoped position | original extra-kind cursor failed the 100-item probe; compiled recent page-two and 100-saved-item pagination regression |
 | Migration drifts from startup schema or revokes on every boot | Keep SQL equal to exported installation schema and use a one-time version marker | real PostgreSQL migration equality, legacy revocation and second-application preservation; malformed ALTER negative probe |
 | Memory edits miss verification routing | Route P06 from the skill header, selector and feature index | checkMemoryVerification; missing-P06 route fixture |
-
-
-| Enrollment crosses an erase commit after an earlier suppression read | Lock sorted subject identities before the account fence and recheck inventory | lifecycle enrollmentSubjectConflict; original missing advisory lock returns true from the competing PostgreSQL try-lock |
-
+| Enrollment crosses an erase commit after an earlier suppression read | Lock sorted subject identities before the account fence and recheck inventory | checkErasureCoordinator; dead-body, missing-lock, missing-tombstone, wrong-account and missing-recheck fixtures; lifecycle enrollmentSubjectConflict and concurrentIdentityInventory regressions |
 | Memory transcripts overwrite runner memory metadata | Name measured RAM memoryBytes separately from the Memory result | memory-evidence.test.mjs reproduces the original overwritten field and preserves both values |
+| Application clock skew bypasses erasure suppression | Stamp browser flow starts with the database clock and preserve the start through confirmations | checkBrowserFlowClock; original Date.now fixture; lifecycle databaseFlowClock with one-hour application skew |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

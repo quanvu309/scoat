@@ -174,7 +174,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       verifier = oidc.randomPKCECodeVerifier(),
       nonce = oidc.randomNonce(),
       browser = randomBytes(32).toString("base64url");
-    await persistBrowserFlow(pool,digest(state),{ initiatedAt: Date.now(), verifier, nonce, browser: digest(browser), context });
+    await persistBrowserFlow(pool,digest(state),{ verifier, nonce, browser: digest(browser), context });
     const destination = oidc.buildAuthorizationUrl(upstream, {
       redirect_uri: issuer + "/upstream/callback",
       scope: "openid",

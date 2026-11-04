@@ -7,6 +7,7 @@ import { eraseAccount } from "../dist/accounts/erasure.js";
 import { maintainAccounts } from "../dist/accounts/maintenance.js";
 import { Memory } from "../dist/memory/index.js";
 import { postgresAdapter } from "../dist/auth/adapter.js";
+import { persistBrowserFlow } from "../dist/auth/flows.js";
 export async function lifecycleLanes(databaseUrl) {
  const migration = await readFile(new URL("../db/migrations/0002_memory_lifecycle.sql",import.meta.url),"utf8");
  const {authSchema} = await import("../dist/auth/schema.js");
@@ -38,6 +39,14 @@ export async function lifecycleLanes(databaseUrl) {
  }
  const f = await authFixture(databaseUrl);
  try {
+  const clockState=randomUUID(), realNow=Date.now;
+  try {
+   Date.now=()=>realNow()+3600000;
+   await persistBrowserFlow(f.store.pool,clockState,{context:{stage:"login"}});
+  } finally { Date.now=realNow; }
+  const clockRow=(await f.store.pool.query("SELECT (data->>'initiatedAt')::numeric AS initiated_at,extract(epoch FROM clock_timestamp())*1000 AS database_now FROM oauth_browser_flows WHERE state=$1",[clockState])).rows[0];
+  assert.ok(Math.abs(Number(clockRow.database_now)-Number(clockRow.initiated_at))<5000,"Browser starts use the database clock despite an application clock one hour ahead");
+  await f.store.pool.query("DELETE FROM oauth_browser_flows WHERE state=$1",[clockState]);
   const login = await f.login();
   const principal = await f.authenticate(login.token);
   const scope = principal.agent, prefix=[scope.account,scope.incarnation];
@@ -55,6 +64,32 @@ export async function lifecycleLanes(databaseUrl) {
   const holder=await f.store.pool.connect(), observer=await f.store.pool.connect();
   let conflict;
   try {
+  const inventoryStatus=createHash("sha256").update(randomUUID()).digest("hex");
+  const addedSubject="inventory-"+randomUUID();
+  const inventoryClient=new Proxy(holder,{get(target,key){
+   if(key!=="query") return Reflect.get(target,key,target);
+   return async(sql,values)=>{
+    const result=await target.query(sql,values);
+    if(sql==="SELECT issuer,subject FROM oauth_identities WHERE account=$1 AND incarnation=$2 ORDER BY issuer,subject") {
+     await observer.query("BEGIN");
+     try {
+      await observer.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([f.config.upstreamIssuer,addedSubject])]);
+      await observer.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",prefix);
+      await observer.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)",[f.config.upstreamIssuer,addedSubject,...prefix]);
+      await observer.query("COMMIT");
+     } catch(error) { await observer.query("ROLLBACK"); throw error; }
+    }
+    return result;
+   };
+  }});
+  await holder.query("BEGIN");
+  try {
+   await holder.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[inventoryStatus,randomUUID()]);
+   await assert.rejects(eraseAccount(inventoryClient,scope,f.config.lifecycleKey,f.config.lifecycleKeyVersion,inventoryStatus),{code:"40001",message:"Identity inventory changed"});
+   assert.equal((await holder.query("SELECT erased FROM hunt_accounts WHERE account=$1 AND incarnation=$2",prefix)).rows[0].erased,false);
+   assert.equal((await holder.query("SELECT count(*) FROM account_suppression WHERE account=$1",[scope.account])).rows[0].count,"0");
+  } finally { await holder.query("ROLLBACK"); }
+  await observer.query("DELETE FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.upstreamIssuer,addedSubject]);
   const crashed=await f.store.pool.connect();
   crashed.on("error",()=>{});
   try {
@@ -105,6 +140,6 @@ export async function lifecycleLanes(databaseUrl) {
   const otherPrincipal=await f.authenticate(other.token);
   await f.store.pool.query("DELETE FROM oauth_artifacts WHERE model='Session' AND payload->>'uid'=$1",[otherPrincipal.session]);
   await assert.rejects(memory.run({...otherPrincipal.agent,session:otherPrincipal.session},{op:"read"}),/Inactive OAuth session/);
-  return {migration:{legacyArtifactRevoked:true,idempotent:true},expiry:{proposalPayloadRemoved:true,keyReserved:true,ledgerAndStatusPurged:true},rollback:true,backendCrashRollback:true,restart:true,lateWriteFence:true,enrollmentSubjectConflict:true,conflict:{lock:"account",code:conflict},cachedRevokedSession:true};
+  return {migration:{legacyArtifactRevoked:true,idempotent:true},expiry:{proposalPayloadRemoved:true,keyReserved:true,ledgerAndStatusPurged:true},rollback:true,backendCrashRollback:true,restart:true,lateWriteFence:true,enrollmentSubjectConflict:true,concurrentIdentityInventory:true,databaseFlowClock:true,conflict:{lock:"account",code:conflict},cachedRevokedSession:true};
  } finally { await f.close(); }
 }

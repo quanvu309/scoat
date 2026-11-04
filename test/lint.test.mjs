@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkComments } from "../scripts/check-no-comments.mjs";
-import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources } from "../scripts/check-structure.mjs";
+import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
 test("comment parser rejects comments outside src and accepts URL/regex literals", () => {
   for (const file of ["scripts/past.mjs", "test/past.ts", "vite.config.ts"]) assert.throws(() => checkComments(file, "const x = 1; /" + "/ forbidden"), /comments forbidden/);
@@ -39,4 +39,10 @@ test("prompt registration and public-source lint reject reproduced review failur
   assert.doesNotThrow(() => checkRegistryAdapter('server.server.setRequestHandler(GetPromptRequestSchema, handler);'));
   for (const source of ["https://127.0.0.1/code", "https://localhost/code", "https://10.0.0.1/code"]) assert.throws(() => checkReleaseSources({ facts: [{ source }] }), /public HTTPS DNS/);
   assert.doesNotThrow(() => checkReleaseSources({ facts: [{ source: "https://www.nike.com/gb/" }] }));
+});
+
+test("scratch lint rejects the original GitHub runner failure", () => {
+  assert.throws(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));'), /scratchDirectory/);
+  assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
+  assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
 });

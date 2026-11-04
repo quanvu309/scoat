@@ -5,7 +5,7 @@
 - After evidence, exact-set compatibility, discount arithmetic or HuntView changes, load [hunt](hunt.md): ten P03 compiled lanes and bounded performance with separate model-agent, host and runner gates.
 - After shared MCP adapter or driver changes, run all affected branches.
 
-Live shopping, watches and the live card remain outside the implemented surface. Real-host support requires separate session evidence.
+Live shopping and watches remain outside the implemented surface. The P07 live card has local bridge/browser evidence; real-host support requires separate session evidence.
 
 P04: [durable hunts](durable.md) owns PostgreSQL state, receipts, incarnation tombstones and lifecycle races.
 

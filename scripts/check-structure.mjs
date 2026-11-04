@@ -542,6 +542,9 @@ export function checkBrowserControls(codec,hunt) {
  const verify=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="verify");
  const constructions=nodes.filter(node=>node.type==="NewExpression" && node.callee.name==="Authority");
  if(constructions.length!==1 || constructions[0].start<verify?.start || constructions[0].end>verify?.end) throw new Error("Only verified browser confirmation constructs authority");
+ const authorityUses=new Set(nodes.flatMap(node=>node.type==="ClassDeclaration" && node.id?.name==="Authority"?[node.id]:node.type==="TSTypeReference" && node.typeName.name==="Authority"?[node.typeName]:[]));
+ authorityUses.add(constructions[0].callee);
+ if(nodes.some(node=>node.type==="Identifier" && node.name==="Authority" && !authorityUses.has(node))) throw new Error("Only verified browser confirmation constructs authority; never alias or reflect its constructor");
  const guard=nodes.find(node=>node.type==="FunctionDeclaration" && node.id.name==="verifiedControl");
  const first=guard?.body.body[0];
  if(first?.type!=="IfStatement" || first.test.type!=="UnaryExpression" || !member(first.test.argument?.callee,"valid","has") || first.consequent.type!=="ThrowStatement") throw new Error("Check runtime authority identity before storage");
@@ -557,7 +560,9 @@ export function checkControlVerification(skill,index,runner) {
 
 export function checkControlImports(file,source) {
  if(!file.startsWith("src/mcp/"))return;
- for(const node of parsedNodes(source).filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
+ const nodes=parsedNodes(source);
+ if(nodes.some(node=>node.type==="ImportExpression" || node.type==="CallExpression" && node.callee.type==="Import")) throw new Error("MCP cannot import codec authority dynamically; keep imports static and auditable");
+ for(const node of nodes.filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
   if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
  }
 }

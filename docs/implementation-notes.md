@@ -2,14 +2,17 @@
 
 Design intent moved out of the code. The code has no comments; names and interface tests carry meaning.
 
-## src/card/index.ts
+## src/card/
 
-- **CardState**: The card renders HuntView and nothing else. No pricing, checklist or wording logic lives here.
-- **CardBridge**: The bridge surface the card needs. Backed by @modelcontextprotocol/ext-apps App.callServerTool.
-- **mountCard**: Running: progress bar, one row per checklist item (tick, dot while checking, empty circle next, skipped, gap), best so far, buttons Stop here and Skip a place. Done: breakdown with a source per line, You pay today, Back later on its own line, Open ready link, Watch for £X.
-- **mountCard**: TODO Poll scoat_card {op:"poll"} every 3 s while visible and running; stop polling when final is finished.
-- **mountCard**: TODO Back off on failure and show "offline" with the last view; never guess state.
-- **mountCard**: TODO Buttons send scoat_card {op:"act"} with a stable requestKey per click, so retries do not double-apply.
+- **createController** (`index.ts`): Owns a single polling flight, three-second refresh with bounded backoff, visible/mounted/unfinished eligibility and terminal revocation. It retains the last canonical view while stale and refuses dominated, incomparable or irreversible snapshot regressions.
+- **CardBridge** (`index.ts`): Read-only capability open/renew/read plus host link opening. Grant secrets stay in the controller and app-only result metadata.
+- **CardTransport** (`adapter.ts`): Accepts schema-valid messages only from the configured parent window and keeps private bridge messages out of logs.
+- **Card** (`renderer.tsx`): Renders canonical HuntView scenarios, evidence, budgets, progress and clean shop links. Stop and Skip open exact browser confirmations; Watch explains its P08 dependency.
+- **Bundle** (`index.html`): The production MCP resource is a single bundled React document. The historical P01 fixture remains isolated under tests.
+
+## src/controls/codec.ts
+
+Signed intent links describe an action without granting authority. A fresh same-account browser login leads to an exact-action confirmation bound to a Secure HttpOnly cookie and a two-minute database-clock deadline. Only verified confirmations construct nominal authority. Hunts consumes the nonce and applies Stop or Skip in one transaction; replay returns the compact receipt. Agent keys cannot use the reserved `person:` namespace. Text and card share the browser control hub.
 
 ## src/delivery/index.ts
 
@@ -32,7 +35,7 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **PayToday**: Pay-today and back-later are separate ledgers with no shared total.
 - **Quote**: Priced only by the server. Budget fit uses pay-today only; cashback and points never touch it.
 - **Agent**: Minted from OAuth; never from tool input.
-- **Person**: Minted only from authenticated same-account browser confirmation or a proven trustworthy host control channel. App visibility and arbitrary grants are not authorization. P01 always refuses.
+- **VerifiedControl**: Nominal, runtime-checked browser authority from the control codec. App visibility, MCP input and read grants confer no control authority.
 - **Failure**: Every refusal tells the agent what to do next and carries current state when it helps.
 
 ## src/hunt/index.ts
@@ -57,8 +60,8 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **run**: TODO finish: READ COMMITTED transaction with exclusive hunt fence; finishable(rows) else Failure{incomplete, next: names open rows};
 - **run**: TODO   priceQuotes + pickBest (or the selection); mint the ready link via delivery; store final.
 - **run**: TODO Every reply is the fresh renderView, so the agent always sees the directive.
-- **control**: Person controls from the card. Skip is sticky and wins over same-row evidence. Stop asks the agent to name gaps and finish.
-- **inspect**: Card poll. Read-only.
+- **control**: Accepts only verified browser authority. Nonce receipt acceptance and Stop/Skip writes share the account → hunt → receipt → sorted-row transaction. Skip is sticky; repeated Stop preserves its first timestamp.
+- **read**: Returns canonical HuntView after account/incarnation authorization. Card reads also require a bound, live read capability.
 - **readFinishedResult**: Internal Hunts persistence port used by Memory to freeze a finished result.
 - **deleteHunts**: Internal deletion port called only by the Accounts coordinator under its exclusive account fence.
 
@@ -80,9 +83,9 @@ P02 implements this module. See the P02 immutable knowledge section below for va
 
 ## src/mcp/index.ts
 
-P01 now implements strict wire contracts and unavailable/forbidden dispatch. Request types, tool names, descriptions and schemas derive from `toolCatalog`. The SDK's high-level listing loses root discriminated unions; the MCP adapter therefore installs registry-derived list/call request handlers and emits draft-7 object schemas with strict union branches. Invalid inputs receive a fixed error before dispatch, without reflecting private input. Domain functions remain SDK-free and are not called until their implementation phases.
+Strict wire contracts derive names, descriptions and schemas from `toolCatalog`. Registry-derived list/call handlers preserve discriminated unions in draft-7 schemas. Invalid input fails before dispatch without reflecting private values. Domain modules remain SDK-free.
 
-`person()` and `authenticate()` fail closed. App visibility and result metadata are not authentication. See [host support](host-support.md) for the observed compatibility and blocked host gates. The fixture HTML is embedded in the compiled MCP module and served as an MCP App resource; it is not the P07 interactive card. P02 adds the shared knowledge prompt and immutable Markdown resources described below.
+Production `src/mcp/authenticated.ts` builds dispatch from the authenticated principal and uses durable Hunts and Memory. Card open/read/renew/revoke operations require the authenticated session and bound read grants; private capabilities are returned only in app metadata. The adapter receives only a bound control-link function, never the authority codec. See [host support](host-support.md) for local evidence and outstanding external-host gates. P01's unavailable dispatcher and static HTML remain historical test fixtures.
 
 ## src/memory/index.ts
 

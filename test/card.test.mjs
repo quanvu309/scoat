@@ -7,6 +7,7 @@ import { snapshotSchema, capabilitySchema, CardFailure } from "../dist/card/cont
 import { checkComments } from "../scripts/check-no-comments.mjs";
 import { checkSdkImports } from "../scripts/check-structure.mjs";
 import { cardSnapshot } from "./fixtures/card.mjs";
+import { CardTransport } from "../dist/card/adapter.js";
 const flush=async()=>{for(let i=0;i<10;i++) await Promise.resolve();};
 function setup(read=async()=>cardSnapshot()) {
  let now=0, calls=[], timers=new Map(), changes=[];
@@ -60,19 +61,46 @@ test("parsers reject TSX CSS HTML comments and SDK imports in TSX domain",()=>{
 
 test("bundle preserves node controller and transport never logs grant messages",()=>{
  const config=readFileSync("vite.config.ts","utf8"),adapter=readFileSync("src/card/adapter.ts","utf8");
- assert.doesNotThrow(()=>checkCardBuild(config,adapter));
+ const manifest=JSON.parse(readFileSync("package.json","utf8"));
+ assert.doesNotThrow(()=>checkCardBuild(config,adapter,manifest));
+ for(const vite of ["6.4.1","6.4.2","6.4.3","6.4.4"]) assert.throws(()=>checkCardBuild(config,adapter,{...manifest,devDependencies:{...manifest.devDependencies,vite}}),/Pin the verified Vite/);
  assert.throws(()=>checkCardBuild(config.replace("emptyOutDir:false","emptyOutDir:true"),adapter),/Preserve emitted/);
  assert.throws(()=>checkCardBuild(config,'import {PostMessageTransport} from "@modelcontextprotocol/ext-apps"'),/logs secrets/);
  assert.throws(()=>checkCardBuild(config,'console.debug("message", secret)'),/out of logs/);
+ assert.throws(()=>checkCardBuild(config,adapter.replace("if(event.source!==this.source) return;","")),/Reject foreign message sources/);
+ assert.throws(()=>checkCardBuild(config,adapter.replace("if(event.source!==this.source)","if(false && event.source!==this.source)")),/Reject foreign message sources/);
  assert(readFileSync("dist/card/index.html").byteLength>10000);
  assert.equal(typeof createController,"function");
 });
 
+test("transport dispatches only valid messages from its configured source and detaches on close",async()=>{
+ const previous=Object.getOwnPropertyDescriptor(globalThis,"window"),events=new EventTarget(),source={},other={},received=[];
+ Object.defineProperty(globalThis,"window",{value:events,configurable:true});
+ const transport=new CardTransport({postMessage(){}},source);
+ const send=(sender,data)=>{const event=new Event("message");Object.defineProperties(event,{source:{value:sender},data:{value:data}});events.dispatchEvent(event);};
+ try {
+  transport.onmessage=message=>received.push(message);
+  await transport.start();
+  const message={jsonrpc:"2.0",method:"notifications/initialized"};
+  send(other,message);send(source,{invalid:true});assert.deepEqual(received,[]);
+  send(source,message);assert.deepEqual(received,[message]);
+  await transport.close();send(source,message);assert.equal(received.length,1);
+ } finally {
+  await transport.close();
+  if(previous)Object.defineProperty(globalThis,"window",previous);else delete globalThis.window;
+ }
+});
+
 test("card verification routing rejects missing header selector index and driver",()=>{
  const skill=readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),index=readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),driver=readFileSync("scripts/verify.mjs","utf8");
- checkCardRouting(skill,index,driver);
+ const documentation={host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")};
+ checkCardRouting(skill,index,driver,documentation);
  assert.throws(()=>checkCardRouting(skill.replace("P07 live card","card"),index,driver));
  assert.throws(()=>checkCardRouting(skill.replace("features/card.md","features/missing.md"),index,driver));
  assert.throws(()=>checkCardRouting(skill,index.replace("[live card](card.md)","card"),driver));
  assert.throws(()=>checkCardRouting(skill,index,driver.replace('process.argv[2] === "p07-card"','process.argv[2] === "missing"')));
+ assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,host:documentation.host.replace("Fresh same-account browser Stop/Skip and atomic replay","Same-account browser Person confirmation and interactive controls")}),/Document the implemented/);
+ assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,notes:documentation.notes.replace("**createController**","**mountCard**")}),/Document the implemented/);
+ assert.throws(()=>checkCardRouting(skill,index+"Live shopping, watches and the live card remain outside the implemented surface.",driver,documentation),/Document the implemented/);
+ assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,agents:documentation.agents.replace("\n| Card bundling","\n\n| Card bundling")}),/continuous Markdown table/);
 });

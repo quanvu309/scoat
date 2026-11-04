@@ -5,7 +5,15 @@ import type { Snapshot } from "./contracts.js";
 import type { Quote, Line, Money } from "../domain.js";
 const money=(value:Money)=>new Intl.NumberFormat("en-GB",{style:"currency",currency:value.currency}).format(value.pence/100);
 const pay=(value:Quote["guaranteed"])=>value.kind==="known"?money(value.amount):"Unknown: "+value.gaps.join("; ");
-const budget=(value:Quote["budget"])=>value.kind==="over"?"Over budget by "+money(value.by):value.kind==="within"?"Within budget":value.kind==="unknown"?"Budget fit unknown":"No budget set";
+function budget(value:Quote["budget"]):string {
+ switch(value.kind) {
+  case "over": return "Over budget by "+money(value.by);
+  case "within": return "Within budget";
+  case "unknown": return "Budget fit unknown";
+  case "no-budget": return "No budget set";
+  default: throw new Error("Unhandled budget state: "+(value satisfies never));
+ }
+}
 function Lines({title,lines}:{title:string;lines:readonly Line[]}) {return <div><h4>{title}</h4>{lines.length?lines.map((line,i)=><p key={i}>{line.label}: {"pence" in line.value?money(line.value):"points" in line.value?`${line.value.points} points`:line.value.text} · {line.status.kind} <a href={line.proof.url} target="_blank" rel="noreferrer">Source</a></p>):<p className="muted">None confirmed</p>}</div>;}
 export function Card({initial,bridge}:{initial:Snapshot;bridge:CardBridge|undefined}) {
  const [state,setState]=useState<CardState>({snapshot:initial,status:bridge?"stale":"unsupported",message:"Connecting…"});

@@ -1,3 +1,4 @@
+if (process.argv[2] === "p04") { await import("./verify-durable.mjs"); process.exit(process.exitCode ?? 0); }
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";

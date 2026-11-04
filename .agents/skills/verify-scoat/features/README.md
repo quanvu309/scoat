@@ -6,3 +6,5 @@
 - After shared MCP adapter or driver changes, load both references and run both branches.
 
 Shopping, account memory, OAuth, watches and interactive cards remain outside the implemented surface. Real-host support requires separate session evidence.
+
+P04: [durable hunts](durable.md) owns PostgreSQL state, receipts, incarnation tombstones and lifecycle races.

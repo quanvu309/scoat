@@ -109,6 +109,8 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+  checkDurableFences(fs.readFileSync("src/hunt/postgres.ts", "utf8"));
+  checkStartReplay(fs.readFileSync("src/hunt/index.ts", "utf8"));
   walk("src");
   walk("scripts");
   walk("test");
@@ -207,4 +209,18 @@ export function checkScenarioProjection(domain, hunt) {
   const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript"] }));
   const view = huntNodes.find(node => node.type === "TSTypeAliasDeclaration" && node.id?.name === "HuntView");
   if (view && !astNodes(view).some(node => node.type === "TSPropertySignature" && node.key?.name === "quotes")) throw new Error("Retain all quotes in HuntView so structured and text renderers share every scenario");
+}
+
+export function checkDurableFences(source) {
+  if (/lockAll|ISOLATION LEVEL SERIALIZABLE/.test(source)) throw new Error("Use named READ COMMITTED account/hunt fences and addressed rows");
+  if (!source.includes("BEGIN ISOLATION LEVEL READ COMMITTED") || !source.includes("Inactive account incarnation")) throw new Error("Fence every transaction on the persisted account incarnation");
+}
+
+export function checkStartReplay(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const method = astNodes(ast).find(node => node.type === "ClassMethod" && node.key?.name === "run");
+  const calls = astNodes(method).filter(node => node.type === "CallExpression");
+  const replay = calls.find(node => node.callee?.property?.name === "priorReceipt");
+  const knowledge = calls.find(node => node.callee?.property?.name === "read" && node.callee.object?.property?.name === "knowledge");
+  if (!replay || !knowledge || replay.start > knowledge.start) throw new Error("Probe the fenced receipt before start knowledge loading so old replays survive provider failure");
 }

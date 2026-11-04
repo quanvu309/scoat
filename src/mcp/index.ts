@@ -1,4 +1,4 @@
-import { moneySchema, proofSchema, offerInputSchema, selectionSchema } from "../hunt/evidence.js";
+import { moneySchema, proofSchema, offerInputSchema, compatibilitySchema, selectionSchema } from "../hunt/evidence.js";
 import { Knowledge, renderGuide } from "../knowledge/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -12,12 +12,13 @@ const money = moneySchema;
 const profile = z.strictObject({ student: z.enum(["yes", "no", "unknown"]), cards: z.array(text).max(30), memberships: z.array(text).max(30) });
 const proof = proofSchema;
 const offer = offerInputSchema;
-const outcome = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("checking") }), z.strictObject({ kind: z.literal("found"), offers: z.array(offer).min(1).max(50) }), z.strictObject({ kind: z.literal("none"), checked: text, proof: z.array(proof).min(1).max(20) }), z.strictObject({ kind: z.literal("gap"), reason: text })]);
-const huntInput = z.discriminatedUnion("op", [
+const outcome = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("checking") }), z.strictObject({ kind: z.literal("found"), offers: z.array(offer).min(1).max(50) }), z.strictObject({ kind: z.literal("none"), checked: text, seller: text.optional(), proof: z.array(proof).min(1).max(20) }), z.strictObject({ kind: z.literal("gap"), reason: text })]);
+export const huntInput = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("start"), requestKey: id, profile: profile.nullable(), intent: z.strictObject({ product: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("url"), url: z.url({ protocol: /^https$/ }) }), z.strictObject({ kind: z.literal("description"), text })]), variant: text.nullable(), shop: text.nullable(), budget: money.nullable() }) }),
   z.strictObject({ op: z.literal("list") }),
   z.strictObject({ op: z.literal("read"), hunt: id }),
   z.strictObject({ op: z.literal("record"), requestKey: id, hunt: id, row: id, slot: z.number().int().nonnegative(), expected: z.number().int().nonnegative(), outcome }),
+  z.strictObject({ op: z.literal("compatibility"), requestKey: id, hunt: id, evidence: compatibilitySchema }),
   z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: selectionSchema.nullable() })
 ]);
 const memoryInput = z.discriminatedUnion("op", [

@@ -84,3 +84,5 @@ Rejected: A's causal event-set fold and B's ticket and lease workflow engine. Bo
 ## Next implementation step
 
 Implement `checkEvidence`, `priceQuotes`, `pickBest`, `finishable` and `renderView` as pure functions with tests on the Nike example (£70 guaranteed, £63 conditional on verify, £1.90 back later, £3 over budget), then the row store and `Hunts.run`.
+
+P04 uses READ COMMITTED with account lifecycle, hunt lifecycle and sorted addressed row locks in that order. Shared hunt fences let different rows commit concurrently. Single-statement snapshots and atomic rendered receipts bind responses to mutations. Permanent incarnation tombstones reject erased actors and delayed retries. The transaction contract is in docs/implementation-notes.md.

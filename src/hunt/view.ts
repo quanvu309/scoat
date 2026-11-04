@@ -45,13 +45,13 @@ function renderText(view: Omit<HuntView, "text">): string {
   const amount = (pay: Quote["guaranteed"]) => pay.kind === "known" ? `GBP ${(pay.amount.pence / 100).toFixed(2)}` : `unknown: ${pay.gaps.join(", ")}`;
   return [
     `Coverage ${view.progress.resolved}/${view.progress.total}; ${view.directive.kind}`,
-    ...view.rows.map(row => `${row.row.label}: ${row.skippedBy === "person" ? "person-skipped" : row.slots.map(slot => `slot-${slot.slot} ${slot.completion.kind}`).join(", ")}`),
+    ...view.rows.map(row => `${row.row.label}: ${row.skippedBy === "person" ? "person-skipped" : row.slots.map(slot => `slot-${slot.slot} ${slot.completion.kind}${slot.completion.kind === "checked" && slot.completion.checked ? ": " + slot.completion.checked : ""}`).join(", ")}`),
     ...view.gaps,
     ...view.quotes.map(quote => `${quote.seller}: guaranteed ${amount(quote.guaranteed)}; budget ${JSON.stringify(quote.budget)}; conditional ${quote.conditional.map(c => `${amount(c.payToday)} requires ${c.requires.join(", ")}; budget ${JSON.stringify(c.budget)}; selection ${JSON.stringify(c.selection)}; back later ${JSON.stringify(c.backLater)}; perks ${JSON.stringify(c.perks)}`).join("; ")}; back later ${JSON.stringify(quote.backLater)}; perks ${JSON.stringify(quote.perks)}; untested ${quote.untested.map(o => o.id).join(", ")}; ${quote.limitations.join(", ")}`),
     ...(view.ready ? [`Product ${view.ready.url}; claim steps ${view.ready.steps.join(", ")}`] : [])
   ].join("\n");
 }
-export function renderView(args: { release: Release; intent: Intent; profile: Profile; rows: readonly RowView[]; offers: readonly Offer[]; quotes: readonly Quote[]; stopRequested: boolean; final: HuntView["final"]; ready: ReadyLink | null; hunt: HuntId }): HuntView {
+export function renderView(args: { evidenceGaps?: readonly string[]; release: Release; intent: Intent; profile: Profile; rows: readonly RowView[]; offers: readonly Offer[]; quotes: readonly Quote[]; stopRequested: boolean; final: HuntView["final"]; ready: ReadyLink | null; hunt: HuntId }): HuntView {
   if (new Set(args.rows.map(row => row.row.id)).size !== args.rows.length || args.rows.length !== args.release.rows.length) throw new Error("All eight unique release rows required");
   const rows = args.release.rows.map(recipe => {
     const row = args.rows.find(value => value.row.id === recipe.id);
@@ -62,7 +62,7 @@ export function renderView(args: { release: Release; intent: Intent; profile: Pr
   const originalSeller = args.intent.shop ?? rows.find(row => row.row.place === "shop-price")?.slots[0]?.seller ?? null;
   const result = finishable(rows, args.release, originalSeller);
   const open = result.ok ? [] : result.open;
-  const gaps = [...rows.flatMap(row => [...rowGaps(row, originalSeller), ...row.slots.flatMap(slot => slot.completion.kind === "gap" ? [`${row.row.id}/slot-${slot.slot}: ${slot.completion.reason}`] : [])]), ...args.quotes.flatMap(quote => [...(quote.guaranteed.kind === "unknown" ? quote.guaranteed.gaps : []), ...quote.conditional.flatMap(c => c.payToday.kind === "unknown" ? c.payToday.gaps : []), ...quote.limitations].map(gap => `${quote.seller}/${quote.id}: ${gap}`))];
+  const gaps = [...(args.evidenceGaps ?? []), ...rows.flatMap(row => [...rowGaps(row, originalSeller), ...row.slots.flatMap(slot => slot.completion.kind === "gap" ? [`${row.row.id}/slot-${slot.slot}: ${slot.completion.reason}`] : [])]), ...args.quotes.flatMap(quote => [...(quote.guaranteed.kind === "unknown" ? quote.guaranteed.gaps : []), ...quote.conditional.flatMap(c => c.payToday.kind === "unknown" ? c.payToday.gaps : []), ...quote.limitations].map(gap => `${quote.seller}/${quote.id}: ${gap}`))];
   const best = pickBest(args.quotes);
   const ready = args.ready ? { url: cleanLink(args.ready.url), steps: args.ready.steps } : args.intent.product.kind === "url" ? { url: cleanLink(args.intent.product.url), steps: [] } : null;
   const directive: HuntView["directive"] = args.final.kind === "finished" ? { kind: "complete" } : args.stopRequested ? { kind: "name-gaps-and-finish", rows: open } : result.ok ? { kind: "finish" } : { kind: "continue", rows: result.open };

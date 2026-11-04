@@ -37,3 +37,5 @@ jobs:
       - run: npm run perf -- p02
       - run: npm run verify -- p03
       - run: npm run perf -- p03
+      - run: npm run verify -- p04
+      - run: npm run perf -- p04

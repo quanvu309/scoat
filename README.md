@@ -6,6 +6,8 @@ Scoat is a kit for Claude and ChatGPT. It teaches the agent to hunt every benefi
 
 Status: design and type scaffold. Every function body is `not implemented`.
 
+Licensed under the [MIT License](LICENSE).
+
 ## Tools
 
 | Tool | For | Does |

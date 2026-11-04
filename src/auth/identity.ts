@@ -1,3 +1,4 @@
+import { begin } from "../db/lineage.js";
 
 import type pg from "pg";
 import { z } from "zod";
@@ -14,7 +15,7 @@ export async function resolveIdentity(
   z.string().min(1).max(4096).parse(subject);
   const client = await pool.connect();
   try {
-    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    await begin(client);
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       JSON.stringify([issuer, subject]),
     ]);

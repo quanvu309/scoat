@@ -3,6 +3,8 @@ import type { Job } from "pg-boss";
 import pg from "pg";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { confirm } from "../db/lineage.js";
+import type { Admitted } from "../db/lineage.js";
 
 export const queueNames = { daily: "watch-daily", check: "watch-check", send: "watch-send" } as const;
 export async function queueSchemaFor(client: Pick<pg.PoolClient, "query">): Promise<string> {
@@ -40,10 +42,13 @@ function each<T>(schema: z.ZodType<T>, run: (job: T) => Promise<void>) {
 export class WatchQueue implements Enqueue {
  private constructor(private readonly boss: PgBoss) {}
 
- static async open(connectionString: string, role: "worker" | "producer"): Promise<WatchQueue> {
+ static async open(admitted: Admitted, connectionString: string, role: "worker" | "producer"): Promise<WatchQueue> {
   const pool = new pg.Pool({ connectionString, max: 1 });
   let queueSchema: string;
-  try { queueSchema = await queueSchemaFor(pool); } finally { await pool.end(); }
+  try {
+   await confirm(pool, admitted);
+   queueSchema = await queueSchemaFor(pool);
+  } finally { await pool.end(); }
   const boss = new PgBoss({ connectionString, schema: queueSchema, schedule: role === "worker", supervise: role === "worker", migrate: true, persistWarnings: false, max: 4 });
   boss.on("error", () => process.stderr.write(JSON.stringify({ event: "queue_error" }) + "\n"));
   await boss.start();

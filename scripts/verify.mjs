@@ -1,3 +1,4 @@
+if (process.argv[2] === "p09-lineage") { await import("./verify-lineage.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p08") { await import("./verify-watch.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p07-card") { await import("./verify-card.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p07-controls") { await import("./verify-controls.mjs"); process.exit(process.exitCode ?? 0); }

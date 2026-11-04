@@ -1,3 +1,5 @@
+import { begin } from "../db/lineage.js";
+import type { Admitted } from "../db/lineage.js";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
@@ -202,7 +204,11 @@ export async function deleteWatches(client: pg.PoolClient, scope: AccountScope) 
 }
 
 export class Watches {
- constructor(private readonly deps: Readonly<{ pool: pg.Pool; delivery: Delivery; config: WatchConfig; enqueue: Enqueue | null; pause?: WatchPause }>) {}
+ private readonly deps: Readonly<{ pool: pg.Pool; delivery: Delivery; config: WatchConfig; enqueue: Enqueue | null; pause?: WatchPause }>;
+ constructor(deps: Readonly<{ admitted: Admitted; delivery: Delivery; config: WatchConfig; enqueue: Enqueue | null; pause?: WatchPause }>) {
+  const { admitted, ...rest } = deps;
+  this.deps = { ...rest, pool: admitted.pool };
+ }
 
  get available(): boolean {
   return this.deps.config.resendApiKey !== null;
@@ -361,7 +367,7 @@ export class Watches {
   let outcome: SendOutcome;
   let broken = false;
   try {
-   await client.query("BEGIN");
+   await begin(client);
    await client.query("SET LOCAL idle_in_transaction_session_timeout='30s'");
    await client.query("SET LOCAL statement_timeout='30s'");
    await client.query("SET LOCAL lock_timeout='15s'");

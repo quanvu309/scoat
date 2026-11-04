@@ -1,3 +1,4 @@
+import { begin } from "../db/lineage.js";
 import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import type { HuntId, Id } from "../domain.js";
@@ -14,7 +15,7 @@ export class ReadGrants {
   private async query(principal: Principal, sql: string, values: unknown[]) {
     const client = await this.pool.connect();
     try {
-      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await begin(client);
       const active = await client.query(
         "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",
         [principal.agent.account, principal.agent.incarnation],

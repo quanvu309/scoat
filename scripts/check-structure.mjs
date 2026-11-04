@@ -4,6 +4,7 @@ import { parse as yaml } from "yaml";
 import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
+import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -135,6 +136,13 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+  const lineageSources = [];
+  const collectSources = directory => { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const file = directory + "/" + entry.name; if (entry.isDirectory()) collectSources(file); else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts")) lineageSources.push({ file, source: fs.readFileSync(file, "utf8") }); } };
+  collectSources("src");
+  checkLineageFence(lineageSources);
+  checkLineageBegin(fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/transaction.ts", "utf8"));
+  checkLineageIdentity(fs.readFileSync("db/migrations/0004_lineage.sql", "utf8"), fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/schema.ts", "utf8"), fs.readFileSync("db/migrations/meta/_journal.json", "utf8"));
+  checkRuntimeAdmission({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), queue: fs.readFileSync("src/queue/index.ts", "utf8"), watches: fs.readFileSync("src/memory/watches.ts", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
@@ -260,7 +268,7 @@ export function checkScenarioProjection(domain, hunt) {
 
 export function checkDurableFences(source) {
   if (/lockAll|ISOLATION LEVEL SERIALIZABLE/.test(source)) throw new Error("Use named READ COMMITTED account/hunt fences and addressed rows");
-  if (!source.includes("BEGIN ISOLATION LEVEL READ COMMITTED") || !source.includes("Inactive account incarnation")) throw new Error("Fence every transaction on the persisted account incarnation");
+  if (!source.includes("await begin(client);") || !source.includes("Inactive account incarnation")) throw new Error("Fence every transaction on the persisted account incarnation");
 }
 
 export function checkStartReplay(source) {
@@ -383,7 +391,7 @@ export function checkBrowserLink(source) {
   const link = nodes.find(node => node.type === "IfStatement" && node.test.type === "BinaryExpression" && node.test.right?.value === "/account/link");
   const body = link?.consequent.body ?? [];
   const entry = body.find(node => node.type === "IfStatement" && node.test.right?.value === "GET" && astNodes(node.consequent).some(call => call.type === "CallExpression" && call.callee?.name === "upstreamRedirect" && call.arguments[1]?.properties?.some(property => property.value?.value === "link-current")));
-  const consumed = astNodes(link).find(node => node.type === "CallExpression" && member(node.callee,"pool","query") && node.arguments[0]?.value === "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data");
+  const consumed = astNodes(link).find(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data");
   const bound = body.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "BinaryExpression" && test.operator === "!==" && test.right?.value === "link-confirm") && node.consequent.type === "ThrowStatement");
   const candidate = astNodes(link).find(node => node.type === "CallExpression" && node.callee?.name === "upstreamRedirect" && node.arguments[1]?.properties?.some(property => property.value?.value === "link-candidate"));
   const cookie = bound && astNodes(bound.test).some(node => node.type === "BinaryExpression" && node.operator === "!==" && node.left?.callee?.name === "digest" && node.left.arguments[0]?.name === "browser" && member(node.right,"flow","browser"));
@@ -458,7 +466,7 @@ export function checkLinkSuppression(issuer,link) {
  const body = root.body.find(node => node.type === "ExportNamedDeclaration" && node.declaration?.id?.name === "linkIdentity")?.declaration?.body?.body.find(node => node.type === "TryStatement")?.block.body ?? [];
  const message = "Reject pre-erasure link flows under the subject lock using the original database-stamped start";
  requireOrderedStatements(body,`
- await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+ await begin(client);
  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([issuer,subject])]);
  const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([issuer,subject])).digest("hex");
  const suppressed = await client.query("SELECT 1 FROM account_suppression WHERE subject_digest=$1 AND erased_at>=to_timestamp($2/1000.0) AND purge_after>now() LIMIT 1",[pseudonym,startedAt]);

@@ -17,6 +17,17 @@ import { PostgresHuntStore } from "./hunt/postgres.js";
 import { watchSchema } from "./memory/watch-schema.js";
 import { Watches, watchConfigSchema } from "./memory/watches.js";
 import { Delivery } from "./delivery/index.js";
+import { admit, begin, inspect, LineageRefused } from "./db/lineage.js";
+
+async function lineageStatus(pool: import("pg").Pool): Promise<string> {
+  try {
+    const state = await inspect(pool);
+    return state.kind === "unadmitted" ? state.reason : state.kind;
+  } catch {
+    process.stderr.write(JSON.stringify({ event: "lineage_unavailable" }) + "\n");
+    return "database-unavailable";
+  }
+}
 
 export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
   const configPath = process.env.SCOAT_AUTH_CONFIG;
@@ -29,9 +40,10 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
   let watches: Watches | undefined;
   try {
     if (store && configPath) {
+      const admitted = await admit(store.pool, "server");
       const installation = await store.pool.connect();
       try {
-        await installation.query("BEGIN");
+        await begin(installation);
         await installation.query("SELECT pg_advisory_xact_lock(80106)");
         await installation.query(authSchema + memorySchema + lifecycleSchema + watchSchema);
         await installation.query("COMMIT");
@@ -40,7 +52,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       const controlPath=process.env.SCOAT_CONTROL_CONFIG;
       if(controlPath) codec=new ControlCodec(JSON.parse(await readFile(controlPath,"utf8")));
       const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY)});
-      watches = process.env.SCOAT_WATCH_CONFIG ? new Watches({ pool: store.pool, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined;
+      watches = process.env.SCOAT_WATCH_CONFIG ? new Watches({ admitted, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined;
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
@@ -82,12 +94,15 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     }
     res.setHeader("cache-control", "no-store");
     if (req.url === "/healthz" && req.method === "GET") {
-      res.writeHead(auth ? 200 : 503, { "content-type": "application/json" });
+      const lineage = store ? await lineageStatus(store.pool) : "unavailable";
+      const ready = !!auth && lineage === "admitted";
+      res.writeHead(ready ? 200 : 503, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
-          ready: !!auth,
+          ready,
           phase: "P08",
           auth: auth ? "configured" : "unavailable",
+          lineage,
         }),
       );
       return;
@@ -100,6 +115,12 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     if (!auth || !store) {
       res.writeHead(503);
       res.end("Authentication is not configured");
+      return;
+    }
+    const lineage = await lineageStatus(store.pool);
+    if (lineage !== "admitted") {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "service_unavailable", lineage }));
       return;
     }
     if (Number(req.headers["content-length"] ?? 0) > 65536) {
@@ -196,7 +217,14 @@ if (
   const port = Number(process.env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error("PORT must be an integer from 0 to 65535");
-  const server = await createHttpServer();
+  let server: Awaited<ReturnType<typeof createHttpServer>>;
+  try {
+    server = await createHttpServer();
+  } catch (error) {
+    if (!(error instanceof LineageRefused)) throw error;
+    process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: error.reason }) + "\n");
+    process.exit(78);
+  }
   server.listen(port, "127.0.0.1", () => {
     const address = server.address();
     if (address && typeof address !== "string" && process.send)

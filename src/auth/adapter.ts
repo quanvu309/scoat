@@ -80,8 +80,8 @@ export function postgresAdapter(pool: pg.Pool) {
      if (!result.rowCount) throw new Error("Artifact already consumed");
     });
    },
-   async destroy(id) { await pool.query("DELETE FROM oauth_artifacts WHERE model=$1 AND id=$2", [model,id]); },
-   async revokeByGrantId(id) { await pool.query("DELETE FROM oauth_artifacts WHERE model=$1 AND payload->>'grantId'=$2", [model,id]); },
+   async destroy(id) { await transaction(client => client.query("DELETE FROM oauth_artifacts WHERE model=$1 AND id=$2", [model,id])); },
+   async revokeByGrantId(id) { await transaction(client => client.query("DELETE FROM oauth_artifacts WHERE model=$1 AND payload->>'grantId'=$2", [model,id])); },
   };
  };
 }

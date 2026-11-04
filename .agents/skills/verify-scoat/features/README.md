@@ -16,3 +16,5 @@ P06: [memory and erasure](memory.md) owns durable profile/saved items, exact ses
 P07 browser unit: [browser controls](controls.md) owns signed intent links, fresh same-account login, native Stop/Skip confirmation and atomic compact receipts. P07 card unit: [live card](card.md) owns the bundled React card, ext-apps bridge, private grants, monotonic snapshots and polling lifecycle. Full P07 external acceptance remains pending.
 
 P08: [price watches](watches.md) owns browser-confirmed public price watches, verified recipients, the named Pi Hut parser and bounded public fetch, pg-boss wakes, the fenced durable outbox, unsubscribe, cancellation and erasure.
+
+P09 S1: [lineage](lineage.md) owns database lineage identity, admission, the shared fenced transaction opener, seal/unseal fences and runtime refusal of restored or unadmitted databases. The sealed two-database handoff, recovery CLI, operations and the public P09 acceptance story are not implemented yet.

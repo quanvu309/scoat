@@ -1,4 +1,5 @@
 import { deleteAuthentication } from "./erasure.js";
+import { createHmac } from "node:crypto";
 import type pg from "pg";
 import type { AccountScope } from "../domain.js";
 
@@ -7,6 +8,8 @@ export async function linkIdentity(
   target: AccountScope,
   issuer: string,
   subject: string,
+  startedAt: number,
+  lifecycleKey: string,
 ) {
   const client = await pool.connect();
   try {
@@ -14,6 +17,9 @@ export async function linkIdentity(
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       JSON.stringify([issuer, subject]),
     ]);
+    const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([issuer,subject])).digest("hex");
+    const suppressed = await client.query("SELECT 1 FROM account_suppression WHERE subject_digest=$1 AND erased_at>=to_timestamp($2/1000.0) AND purge_after>now() LIMIT 1",[pseudonym,startedAt]);
+    if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");
     const existing = (
       await client.query(
         "SELECT account,incarnation FROM oauth_identities WHERE issuer=$1 AND subject=$2",

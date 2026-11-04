@@ -19,7 +19,7 @@ export async function eraseAccount(client: pg.PoolClient, scope: AccountScope, l
  if (identities.rows.some(identity => !lockedSubjects.has(JSON.stringify([identity.issuer,identity.subject])))) throw new SerializationConflict("Identity inventory changed");
  for (const identity of identities.rows) {
   const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([identity.issuer,identity.subject])).digest("hex");
-  await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version) VALUES($1,$2,$3,$4)", [...prefix,pseudonym,keyVersion]);
+  await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')", [...prefix,pseudonym,keyVersion]);
  }
  const authentication = await deleteAuthentication(client,scope,identities.rows);
  const memory = await deleteMemory(client,scope);

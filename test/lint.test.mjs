@@ -199,7 +199,7 @@ test("P06 ownership and enrollment guards reject the original unsafe shapes", as
  assert.doesNotThrow(()=>checkErasureCoordinator(coordinator));
  const recheck='if (identities.rows.some(identity => !lockedSubjects.has(JSON.stringify([identity.issuer,identity.subject])))) throw new SerializationConflict("Identity inventory changed");';
  const lock='for (const subject of lockedSubjects) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[subject]);';
- const tombstone='await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version) VALUES($1,$2,$3,$4)", [...prefix,pseudonym,keyVersion]);';
+ const tombstone=`await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')", [...prefix,pseudonym,keyVersion]);`;
  for (const statement of [recheck,lock,tombstone]) {
   assert.ok(coordinator.includes(statement));
   for (const replacement of ["", "if (false) {"+statement+"}", "function unused(){"+statement.replaceAll("await ","void ")+"}"]) {
@@ -207,9 +207,26 @@ test("P06 ownership and enrollment guards reject the original unsafe shapes", as
   }
  }
  assert.throws(()=>checkErasureCoordinator(coordinator.replace("const prefix = [scope.account,scope.incarnation]","const prefix = [other.account,scope.incarnation]")),/exclusive active account fence/);
+ assert.throws(()=>checkErasureCoordinator(coordinator.replaceAll("clock_timestamp()","now()")),/suppression tombstones/);
  assert.throws(()=>checkErasureCoordinator(coordinator.replace(" const authentication = await deleteAuthentication", " if (false) return;\n const authentication = await deleteAuthentication").replace("export async function eraseAccount", "async function unusedErasure")),/fixed owner deletion/);
  for (const sql of ["INSERT INTO hunt_accounts(account) VALUES($1)"," INSERT INTO oauth_identities VALUES($1)","INSERT INTO public.hunt_accounts VALUES($1)","WITH x AS (INSERT INTO oauth_identities VALUES($1) RETURNING *) SELECT * FROM x"]) {
   for (const delimiter of ['"','`']) assert.throws(()=>checkExplicitEnrollment("async function resolveIdentity(){await pool.query("+delimiter+sql+delimiter+");}"),/explicit browser enrollment/);
  }
  assert.throws(()=>checkMemoryVerification("---\ndescription: P05\n---",""),/features\/memory.md/);
+});
+
+test("P06 exposes browser recovery and rejects links started before erasure", async () => {
+ const {checkEraseRecovery,checkLinkSuppression}=await import("../scripts/check-structure.mjs");
+ const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8");
+ const link=readFileSync(new URL("../src/auth/link.ts",import.meta.url),"utf8");
+ const recovery='if (url.pathname === "/account/erase-status" && req.method === "GET")';
+ for (const change of [issuer.replace(recovery,'if (false)'),issuer.replace('action="/account/erase-status"','action="/account/erase"'),issuer.replace('href="/account/erase-status"','href="/account/erase"'),issuer.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(change),/GET recovery form/);
+ const refusal='if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");';
+ assert.ok(link.includes(refusal));
+ for (const replacement of ["","if (false) {"+refusal+"}",refusal.replace("suppressed.rowCount","false && suppressed.rowCount")]) assert.throws(()=>checkLinkSuppression(issuer,link.replace(refusal,replacement)),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer.replace("startedAt: flow.initiatedAt","startedAt: Date.now()"),link),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer.replace("flow.context.startedAt,","flow.initiatedAt,"),link),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer,link.replace("pg_advisory_xact_lock(hashtextextended($1,0))","pg_advisory_xact_lock(hashtextextended($1,1))")),/pre-erasure link flows/);
+ assert.doesNotThrow(()=>checkEraseRecovery(issuer));
+ assert.doesNotThrow(()=>checkLinkSuppression(issuer,link));
 });

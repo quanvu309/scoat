@@ -329,7 +329,7 @@ export async function authFixture(databaseUrl) {
     assert.equal(response.status, 200, JSON.stringify(tokens));
     return { token: tokens.access_token, steps, client };
   }
-  async function link(current, candidate) {
+  async function link(current, candidate, pauseAtCandidate = false) {
     identity = current;
     jar.delete(upstreamIssuer);
     let response = await browser(issuer + "/account/link");
@@ -340,6 +340,7 @@ export async function authFixture(databaseUrl) {
       const url = new URL(response.headers.get("location"), previousUrl);
       previousUrl = url.href;
       if (url.pathname === "/upstream/callback") callbacks++;
+      if (pauseAtCandidate && callbacks === 2 && url.pathname === "/upstream/callback") return { callback: url.href, cookie: [...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ") };
       response = await browser(url);
       steps.push({ path: url.pathname, status: response.status });
       if (callbacks === 1 && url.pathname === "/upstream/callback") {

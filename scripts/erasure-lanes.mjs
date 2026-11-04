@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { authFixture } from "./auth-fixture.mjs";
 import { confirm } from "./memory-lanes.mjs";
 import { postgresAdapter } from "../dist/auth/adapter.js";
 import { resolveIdentity } from "../dist/auth/identity.js";
+import { eraseAccount } from "../dist/accounts/erasure.js";
 export async function erasureLanes(databaseUrl) {
  const f = await authFixture(databaseUrl);
  try {
@@ -43,6 +44,8 @@ export async function erasureLanes(databaseUrl) {
   await f.store.pool.query("INSERT INTO hunt_offers(account,incarnation,hunt,row_id,slot,id,data) VALUES($1,$2,$3,$4,1,'erasure-offer',$5)",[...scope,view.hunt,view.rows[0].row.id,{fixture:"SYNTHETIC private offer"}]);
   await f.store.pool.query("INSERT INTO hunt_compatibility VALUES($1,$2,$3,$4,$5)",[...scope,view.hunt,compatibility,{fixture:"SYNTHETIC private compatibility"}]);
   await f.store.pool.query("INSERT INTO hunt_compatibility_members VALUES($1,$2,$3,$4,'erasure-offer')",[...scope,view.hunt,compatibility]);
+  const staleLink=await f.link("other-erasure-subject","upstream-subject-A",true);
+  assert.ok(staleLink.callback);
   const staleLogin=await f.login("host-one","upstream-subject-A","scoat:read scoat:write",true);
   const erased=await confirm(f,f.issuer+"/account/erase","/account/erase","erase");
   assert.equal(erased.result.status,200,await erased.result.clone().text());
@@ -65,8 +68,21 @@ export async function erasureLanes(databaseUrl) {
   const {Memory}=await import("../dist/memory/index.js");
   await assert.rejects(new Memory(f.store.pool,f.issuer).run({...principal.agent,session:principal.session},command),/Inactive account/);
   const status=erased.html.match(/<code>([^<]+)<\/code>/)?.[1]; assert.ok(status);
-  const recovered=await f.browser(f.issuer+"/account/erase-status",{method:"POST",headers:{origin:f.issuer},body:new URLSearchParams({status})});
+  const recoveryPath=erased.html.match(/href="([^"]+)"[^>]*>check the erasure result/)?.[1];
+  assert.equal(recoveryPath,"/account/erase-status");
+  const recoveryUrl=new URL(recoveryPath,f.issuer);
+  const recoveryPage=await fetch(recoveryUrl);
+  assert.equal(recoveryPage.status,200);
+  assert.equal(recoveryPage.headers.get("cache-control"),"no-store");
+  assert.match(recoveryPage.headers.get("content-security-policy"),/form-action 'self'/);
+  const recoveryHtml=await recoveryPage.text();
+  assert.match(recoveryHtml,/<input type="password" name="status"/);
+  const recoveryForm=recoveryHtml.match(/<form method="(post)" action="([^"]+)"/);
+  assert.ok(recoveryForm);
+  assert.equal((await fetch(new URL(recoveryForm[2],recoveryUrl),{method:recoveryForm[1],headers:{origin:"https://foreign.invalid"},body:new URLSearchParams({status})})).status,403);
+  const recovered=await fetch(new URL(recoveryForm[2],recoveryUrl),{method:recoveryForm[1],headers:{origin:recoveryUrl.origin},body:new URLSearchParams({status})});
   assert.equal(recovered.status,200);
+  assert.equal(recovered.headers.get("cache-control"),"no-store");
   assert.ok((await recovered.json()).completed_at);
   assert.equal((await f.browser(f.issuer+"/account/erase",{method:"POST",headers:{origin:f.issuer},body:erased.body})).status,400);
   const ledger=(await f.store.pool.query("SELECT * FROM account_suppression WHERE account=$1",[scope[0]])).rows;
@@ -77,9 +93,27 @@ export async function erasureLanes(databaseUrl) {
   for (const secret of [one.token,status,"SYNTHETIC private","upstream-subject-A"]) assert.ok(!logs.includes(secret),"Ordinary log leaked private data");
   const staleCallback=await fetch(staleLogin.callback,{redirect:"manual",headers:{cookie:staleLogin.cookie}});
   assert.equal(staleCallback.status,400);
+  const staleLinkCallback=await fetch(staleLink.callback,{redirect:"manual",headers:{cookie:staleLink.cookie}});
+  assert.equal(staleLinkCallback.status,400);
   assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.upstreamIssuer,"upstream-subject-A"])).rows[0].count,"0");
   const fresh=await f.login();
-  assert.notEqual((await f.authenticate(fresh.token)).agent.account,scope[0]);
-  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,staleVerifiedCallbackDenied:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
+  const freshPrincipal=await f.authenticate(fresh.token);
+  assert.notEqual(freshPrincipal.agent.account,scope[0]);
+  const earlyTransaction=await f.store.pool.connect();
+  let duringErase;
+  try {
+   await earlyTransaction.query("BEGIN");
+   duringErase=await f.link("other-erasure-subject","upstream-subject-A",true);
+   assert.ok(duringErase.callback);
+   const statusDigest=createHash("sha256").update(randomUUID()).digest("hex");
+   await earlyTransaction.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[statusDigest,randomUUID()]);
+   await eraseAccount(earlyTransaction,freshPrincipal.agent,f.config.lifecycleKey,f.config.lifecycleKeyVersion,statusDigest);
+   await earlyTransaction.query("COMMIT");
+  } catch(error) { await earlyTransaction.query("ROLLBACK"); throw error; }
+  finally { earlyTransaction.release(); }
+  assert.equal((await fetch(duringErase.callback,{redirect:"manual",headers:{cookie:duringErase.cookie}})).status,400);
+  assert.equal((await f.link("other-erasure-subject","upstream-subject-A")).status,200);
+  assert.equal((await resolveIdentity(f.store.pool,f.config.upstreamIssuer,"upstream-subject-A")).account,otherPrincipal.agent.account);
+  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,recoveryFormReachableWithoutCredentials:true,foreignRecoveryOriginDenied:true,staleVerifiedCallbackDenied:true,staleLinkCallbackDenied:true,transactionStartDoesNotWeakenSuppression:true,freshPostErasureLinkAllowed:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
  } finally { await f.close(); }
 }

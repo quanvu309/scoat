@@ -26,7 +26,7 @@ const contextSchema = z.discriminatedUnion("stage", [
   z.strictObject({ stage: z.literal("login"), uid: z.string() }),
   z.strictObject({ stage: z.literal("link-current") }),
   z.strictObject({ stage: z.literal("link-confirm"), target: accountScope }),
-  z.strictObject({ stage: z.literal("link-candidate"), target: accountScope }),
+  z.strictObject({ stage: z.literal("link-candidate"), target: accountScope, startedAt: z.number().int() }),
 ]);
 const flowSchema = z.strictObject({
   initiatedAt: z.number().int(), verifier: z.string(), nonce: z.string(), browser: z.string(), context: contextSchema,
@@ -225,13 +225,18 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       await interaction.save(60);
       res.writeHead(303,{location:interaction.returnTo}); res.end(); return;
     }
+    if (url.pathname === "/account/erase-status" && req.method === "GET") {
+      res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"no-referrer"});
+      res.end(`<title>Check account erasure</title><p>Enter the status secret saved before erasure. Completed results remain available for 24 hours.</p><form method="post" action="/account/erase-status"><label>Status secret <input type="password" name="status" maxlength="128" required autocomplete="off"></label><button>Check erasure result</button></form>`);
+      return;
+    }
     if (url.pathname === "/account/erase-status" && req.method === "POST") {
       if (req.headers.origin !== issuer) throw new Error("Same origin required");
       const status = (await form(req)).get("status");
       if (!status || status.length > 128) throw new Error("Invalid status capability");
       const row = (await pool.query("SELECT operation,completed_at,policy FROM erase_status WHERE digest=$1 AND expires_at>now()", [digest(status)])).rows[0];
       if (!row) throw new Error("Status unavailable");
-      res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify(row)); return;
+      res.writeHead(200,{"content-type":"application/json","cache-control":"no-store","referrer-policy":"no-referrer"}); res.end(JSON.stringify(row)); return;
     }
     if (url.pathname === "/account/erase") {
       if (req.method === "GET") { await upstreamRedirect(res,{stage:"erase"}); return; }
@@ -296,7 +301,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       const browser = browserCookie(req);
       if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "link-confirm")
         throw new Error("Invalid link confirmation");
-      await upstreamRedirect(res, { stage: "link-candidate", target: flow.context.target });
+      await upstreamRedirect(res, { stage: "link-candidate", target: flow.context.target, startedAt: flow.initiatedAt });
       return;
     }
     if (url.pathname === "/.well-known/oauth-protected-resource/mcp") {
@@ -409,7 +414,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
           await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"erase-confirm",target,status:digest(status)}});
           await client.query("COMMIT");
           res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
-          res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Upstream identities and delivered mail are outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
+          res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Upstream identities and delivered mail are outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }
       if (flow.context.stage === "memory") {
@@ -452,6 +457,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
           flow.context.target,
           upstream.serverMetadata().issuer,
           claims.sub,
+          flow.context.startedAt,
+          config.lifecycleKey,
         );
         res.writeHead(200, {
           "content-type": "text/plain",

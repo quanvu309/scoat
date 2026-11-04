@@ -262,20 +262,29 @@ export class Watches {
  async plan(): Promise<{ checks: number; sends: number; expired: number }> {
   const enqueue = this.deps.enqueue;
   if (!enqueue) throw new Error("Queue unavailable");
-  return retryTransaction(this.deps.pool, async client => {
-   const day = z.string().parse((await client.query("SELECT ((now() AT TIME ZONE 'UTC')::date)::text AS day")).rows[0]?.day);
-   const accounts = (await client.query("SELECT a.account,a.incarnation FROM hunt_accounts a WHERE NOT a.erased AND (EXISTS (SELECT 1 FROM watches w WHERE w.account=a.account AND w.incarnation=a.incarnation AND w.status='active') OR EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=a.account AND l.incarnation=a.incarnation AND l.state IN ('pending','submitting'))) ORDER BY a.account,a.incarnation LIMIT 1000 FOR SHARE")).rows;
-   const fenced = [accounts.map(row => z.string().parse(row.account)), accounts.map(row => z.uuid().parse(row.incarnation))];
-   const scoped = "(account,incarnation) IN (SELECT * FROM unnest($1::text[],$2::uuid[]))";
-   const ended = await client.query(`UPDATE watches SET status='expired',ended_at=clock_timestamp() WHERE ${scoped} AND status='active' AND expires_at<=now()`, fenced);
-   await client.query(`SELECT w.id FROM watches w WHERE ${scoped} AND EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=w.account AND l.incarnation=w.incarnation AND l.watch=w.id AND l.state IN ('pending','submitting') AND l.deadline<=clock_timestamp()) ORDER BY w.account,w.incarnation,w.id FOR SHARE`, fenced);
-   await client.query(`UPDATE watch_alerts SET state=CASE WHEN state='pending' THEN 'cancelled' ELSE 'unconfirmed' END,outcome_at=clock_timestamp(),last_error='retry-horizon' WHERE ${scoped} AND state IN ('pending','submitting') AND deadline<=clock_timestamp()`, fenced);
-   const due = (await client.query(`SELECT w.account,w.incarnation,w.id FROM watches w WHERE ${scoped} AND w.status='active' AND NOT EXISTS (SELECT 1 FROM watch_observations o WHERE o.account=w.account AND o.incarnation=w.incarnation AND o.watch=w.id AND o.day=$3::date) ORDER BY w.account,w.incarnation,w.id LIMIT 5000`, [...fenced, day])).rows;
-   for (const row of due) await enqueue.check(client, { account: row.account, incarnation: row.incarnation, watch: row.id, day });
-   const open = (await client.query(`SELECT account,incarnation,watch,id FROM watch_alerts WHERE ${scoped} AND state IN ('pending','submitting') AND deadline>clock_timestamp() ORDER BY account,incarnation,id LIMIT 5000`, fenced)).rows;
-   for (const row of open) await enqueue.send(client, { account: row.account, incarnation: row.incarnation, watch: row.watch, alert: row.id });
-   return { checks: due.length, sends: open.length, expired: ended.rowCount ?? 0 };
-  });
+  const total = { checks: 0, sends: 0, expired: 0 };
+  let cursor: { account: string; incarnation: string } | null = null;
+  for (;;) {
+   const page = await retryTransaction(this.deps.pool, async client => {
+    const day = z.string().parse((await client.query("SELECT ((now() AT TIME ZONE 'UTC')::date)::text AS day")).rows[0]?.day);
+    const accounts = z.array(z.strictObject({ account: z.string(), incarnation: z.uuid() })).parse((await client.query("SELECT a.account,a.incarnation FROM hunt_accounts a WHERE NOT a.erased AND ($1::text IS NULL OR (a.account,a.incarnation)>($1::text,$2::uuid)) AND (EXISTS (SELECT 1 FROM watches w WHERE w.account=a.account AND w.incarnation=a.incarnation AND w.status='active') OR EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=a.account AND l.incarnation=a.incarnation AND l.state IN ('pending','submitting'))) ORDER BY a.account,a.incarnation LIMIT 100 FOR SHARE", [cursor?.account ?? null, cursor?.incarnation ?? null])).rows);
+    const fenced = [accounts.map(row => row.account), accounts.map(row => row.incarnation)];
+    const scoped = "(account,incarnation) IN (SELECT * FROM unnest($1::text[],$2::uuid[]))";
+    const ended = await client.query(`UPDATE watches SET status='expired',ended_at=clock_timestamp() WHERE ${scoped} AND status='active' AND expires_at<=now()`, fenced);
+    await client.query(`SELECT w.id FROM watches w WHERE ${scoped} AND EXISTS (SELECT 1 FROM watch_alerts l WHERE l.account=w.account AND l.incarnation=w.incarnation AND l.watch=w.id AND l.state IN ('pending','submitting') AND l.deadline<=clock_timestamp()) ORDER BY w.account,w.incarnation,w.id FOR SHARE`, fenced);
+    await client.query(`UPDATE watch_alerts SET state=CASE WHEN state='pending' THEN 'cancelled' ELSE 'unconfirmed' END,outcome_at=clock_timestamp(),last_error='retry-horizon' WHERE ${scoped} AND state IN ('pending','submitting') AND deadline<=clock_timestamp()`, fenced);
+    const due = (await client.query(`SELECT w.account,w.incarnation,w.id FROM watches w WHERE ${scoped} AND w.status='active' AND NOT EXISTS (SELECT 1 FROM watch_observations o WHERE o.account=w.account AND o.incarnation=w.incarnation AND o.watch=w.id AND o.day=$3::date) ORDER BY w.account,w.incarnation,w.id`, [...fenced, day])).rows;
+    for (const row of due) await enqueue.check(client, { account: row.account, incarnation: row.incarnation, watch: row.id, day });
+    const open = (await client.query(`SELECT account,incarnation,watch,id FROM watch_alerts WHERE ${scoped} AND state IN ('pending','submitting') AND deadline>clock_timestamp() ORDER BY account,incarnation,id`, fenced)).rows;
+    for (const row of open) await enqueue.send(client, { account: row.account, incarnation: row.incarnation, watch: row.watch, alert: row.id });
+    return { checks: due.length, sends: open.length, expired: ended.rowCount ?? 0, last: accounts.at(-1), size: accounts.length };
+   });
+   total.checks += page.checks;
+   total.sends += page.sends;
+   total.expired += page.expired;
+   if (!page.last || page.size < 100) return total;
+   cursor = page.last;
+  }
  }
 
  async check(job: CheckJob): Promise<CheckOutcome> {

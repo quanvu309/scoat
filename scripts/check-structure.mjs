@@ -621,6 +621,10 @@ export function checkWatchLockOrder(watches) {
  if (!scope || plan.slice(1).some(item => !item.text.includes("WHERE ${} AND"))) throw new Error("Plan must scope watch and alert work to the fenced accounts");
  const horizon = plan.findIndex(item => /UPDATE watch_alerts/.test(item.text));
  if (horizon < 1 || !/FROM watches w[\s\S]*FOR SHARE/.test(plan[horizon - 1].text)) throw new Error("Plan must lock watch rows before alert rows");
+ const planning = astNodes(method(nodes, "plan"));
+ const advancing = planning.find(node => node.type === "AssignmentExpression" && node.operator === "=" && node.left?.name === "cursor" && fieldOf(node.right, "page", "last"));
+ const loop = planning.find(node => node.type === "ForStatement" && node.test === null && node.start < plan[0].node.start && node.end > advancing?.end);
+ if (!plan[0].text.includes("(a.account,a.incarnation)>($1::text,$2::uuid)") || !loop || !advancing || sqlOf(method(nodes, "plan")).some(item => !/FROM hunt_accounts/.test(item.text) && /FROM (watches w|watch_alerts) WHERE/.test(item.text) && /\bLIMIT\b/.test(item.text))) throw new Error("Plan must advance account keyset pages and enqueue every fenced watch and alert");
  const erase = locking(method(nodes, "deleteWatches"));
  if (!erase.length || !/SELECT id FROM watches[\s\S]*FOR UPDATE/.test(erase[0].text)) throw new Error("Erasure must lock watch rows before alert, recipient and queue rows");
 }

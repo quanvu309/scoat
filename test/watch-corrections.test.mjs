@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
-import pg from "pg";
+import { createServer } from "node:net";
 import { PgBoss } from "pg-boss";
 import { withDatabase } from "../scripts/durable-database.mjs";
 import { watchFixture } from "../scripts/watch-fixture.mjs";
@@ -126,19 +126,54 @@ test("PostgreSQL watch corrections: lock order, all-state queue erasure, absent 
  });
 });
 
-test("production worker refuses a missing mail key before queue installation", async () => {
+test("planning reaches every account beyond 1000 and every due watch beyond 5000", async () => {
  await withDatabase(async url => {
-  const root = await scratchDirectory("worker-mail-");
+  const w = await watchFixture(url);
+  try {
+   const base = await w.seedWatch();
+   const accounts = Array.from({ length: 1001 }, () => "0" + randomUUID().slice(1));
+   const incarnations = accounts.map(() => randomUUID());
+   await w.pool.query("INSERT INTO hunt_accounts(account,incarnation) SELECT * FROM unnest($1::text[],$2::uuid[])", [accounts, incarnations]);
+   await w.pool.query("INSERT INTO watches(account,incarnation,id,hunt,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version) SELECT a.account,a.incarnation,gen_random_uuid(),'page-'||gen_random_uuid(),w.target,w.basis,w.basis_digest,w.baseline_pence,w.baseline_observed_at,w.target_pence,w.recipient_revision,w.key_version FROM watches w, unnest($1::text[],$2::uuid[]) a(account,incarnation), generate_series(1,6) WHERE w.id=$3", [accounts, incarnations, base.watch]);
+   const tail = await w.seedWatch({ account: "ffffffff-ffff-4fff-8fff-fffffffffff1" });
+   const expired = await w.seedWatch({ account: "ffffffff-ffff-4fff-8fff-fffffffffff0" });
+   await w.pool.query("UPDATE watches SET expires_at=now()-interval '1 minute' WHERE id=$1", [expired.watch]);
+   w.state.pence = 5000;
+   const alert = await w.watches().check(job(tail, "2027-04-01"));
+   assert.ok(alert.alert);
+   await w.pool.query("UPDATE watch_alerts SET deadline=now()-interval '1 minute' WHERE id=$1", [alert.alert]);
+   const checks = new Set(), sends = new Set();
+   const planner = new Watches({ pool: w.pool, delivery: w.delivery, config: w.config, enqueue: { check: async (_client, value) => { checks.add(value.watch); }, send: async (_client, value) => { sends.add(value.alert); } } });
+   const planned = await planner.plan();
+   const expected = (await w.pool.query("SELECT id FROM watches WHERE status='active'")).rows.map(row => row.id);
+   assert.equal(checks.has(tail.watch), true);
+   assert.equal(expected.length, 6008);
+   assert.deepEqual(checks, new Set(expected));
+   assert.equal(planned.checks, expected.length);
+   assert.equal(planned.expired, 1);
+   assert.equal(sends.size, 0);
+   assert.equal((await w.pool.query("SELECT status FROM watches WHERE id=$1", [expired.watch])).rows[0].status, "expired");
+   assert.equal((await w.pool.query("SELECT state FROM watch_alerts WHERE id=$1", [alert.alert])).rows[0].state, "cancelled");
+  } finally { await w.close(); }
+ });
+});
+
+test("production worker refuses a missing mail key before database access", async () => {
+ const root = await scratchDirectory("worker-mail-");
+ let connections = 0;
+ const database = createServer(socket => { connections++; socket.destroy(); });
+ try {
+  await new Promise(resolve => database.listen(0, "127.0.0.1", resolve));
+  const address = database.address();
+  assert.ok(address && typeof address === "object");
+  const url = "postgres://unused:unused@127.0.0.1:" + address.port + "/unused";
   await writeFile(root + "/watch.json", JSON.stringify({ issuer: "https://scoat.invalid", from: "Scoat <alerts@scoat.invalid>", unsubscribe: { version: "v1", keys: { v1: "a".repeat(64) } }, resendApiKey: null }));
-  const admin = new pg.Pool({ connectionString: url });
-  const queueState = async () => {
-   const installed = (await admin.query("SELECT to_regclass('pgboss.job') AS job, to_regclass('pgboss.schedule') AS schedule")).rows[0];
-   return { installed: installed.job !== null, jobs: installed.job === null ? 0 : (await admin.query("SELECT count(*)::integer AS n FROM pgboss.job")).rows[0].n, schedules: installed.schedule === null ? 0 : (await admin.query("SELECT count(*)::integer AS n FROM pgboss.schedule")).rows[0].n };
-  };
-  const before = await queueState().catch(async error => { await admin.end(); throw error; });
   const result = await promisify(execFile)(process.execPath, ["dist/worker.js"], { env: { ...process.env, DATABASE_URL: url, SCOAT_WATCH_CONFIG: root + "/watch.json" }, timeout: 20000 }).then(() => ({ code: 0, stderr: "" }), error => ({ code: error.code, stderr: String(error.stderr) }));
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /requires resendApiKey/);
-  try { assert.deepEqual(await queueState(), before); } finally { await admin.end(); await rm(root, { recursive: true, force: true }); }
- });
+  assert.equal(connections, 0);
+ } finally {
+  await new Promise(resolve => database.close(resolve));
+  await rm(root, { recursive: true, force: true });
+ }
 });

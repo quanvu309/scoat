@@ -92,6 +92,14 @@ test("plan and erasure lock account fences before watch, alert and queue rows", 
  assert.throws(() => checkWatchLockOrder(watches.replace(" await client.query(\"SELECT id FROM watches WHERE account=$1 AND incarnation=$2 ORDER BY id FOR UPDATE\", prefix);\n const counts", " const counts")), /Erasure must lock watch rows/);
 });
 
+test("planning advances beyond the first page without dropping work inside a fence", () => {
+ assert.doesNotThrow(() => checkWatchLockOrder(watches));
+ assert.throws(() => checkWatchLockOrder(watches.replace("AND ($1::text IS NULL OR (a.account,a.incarnation)>($1::text,$2::uuid))", "")), /advance account keyset/);
+ assert.throws(() => checkWatchLockOrder(watches.replace("cursor = page.last;", "")), /advance account keyset/);
+ assert.throws(() => checkWatchLockOrder(watches.replace("ORDER BY w.account,w.incarnation,w.id`", "ORDER BY w.account,w.incarnation,w.id LIMIT 5000`")), /advance account keyset/);
+ assert.throws(() => checkWatchLockOrder(watches.replace("ORDER BY account,incarnation,id`", "ORDER BY account,incarnation,id LIMIT 5000`")), /advance account keyset/);
+});
+
 test("a recipient change re-points every active watch only with explicit consent", () => {
  assert.doesNotThrow(() => checkWatchRecipient(watches));
  const repoint = "UPDATE watches SET recipient_revision=$3 WHERE account=$1 AND incarnation=$2 AND status='active'";

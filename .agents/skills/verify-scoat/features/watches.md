@@ -25,7 +25,8 @@ Browser refusals cover `email_verified` false, a missing email claim and a forei
 - Queue deletion removes 18 scoped jobs across six states and a legacy `watch-send-dead` queue, and preserves another account's 18 jobs.
 - A sender without a mail transport writes no marker, and `startWorker` refuses it.
 - RFC 8058 one-click works over HTTPS in both form encodings. Duplicate, extra, wrong-value, file, malformed, oversized and text bodies return 400 and leave the watch active.
-- `dist/worker.js` exits without `resendApiKey` and installs no queue schema.
+- `dist/worker.js` exits without `resendApiKey` before opening any database connection; the test uses its own TCP listener.
+- Planner keyset pagination covers 1,004 accounts and all 6,008 due watches, including final-page expiry and overdue-alert cancellation.
 
 The P07 card lane checks the unconfigured explanation and the MCP `service-unconfigured` result.
 

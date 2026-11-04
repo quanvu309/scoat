@@ -1,0 +1,1995 @@
+# GENERATED — DO NOT EDIT. Edit the sibling .ds file; this regenerates automatically.
+
+# ─── PRIMITIVES ────────────────────────────────────────
+# Fixed values. Same in every mode. External tools can treat this
+# section as the constants catalog.
+
+# Red colors
+red: "#FB2C36"  # seed · hidden
+red.50: "#FBF3F2"
+red.100: "#FAE7E5"
+red.200: "#F7C9C4"
+red.300: "#F9A8A0"
+red.400: "#FA7870"
+red.500: "#FB2C36"
+red.600: "#C2001C"
+red.700: "#980014"
+red.800: "#7B000E"
+red.900: "#590007"
+red.950: "#3F0003"
+
+# Orange colors
+orange: "#FF6900"  # seed · hidden
+orange.50: "#FAF3F1"
+orange.100: "#F9EAE4"
+orange.200: "#F6D3C5"
+orange.300: "#F7BAA0"
+orange.400: "#FA976A"
+orange.500: "#FF6900"
+orange.600: "#BB4B00"
+orange.700: "#913800"
+orange.800: "#722B00"
+orange.900: "#501C00"
+orange.950: "#350F00"
+
+# Amber colors
+amber: "#FE9A00"  # seed · hidden
+amber.50: "#F9F4EF"
+amber.100: "#F7EEE4"
+amber.200: "#F4DEC9"
+amber.300: "#F4CDA8"
+amber.400: "#F7B675"
+amber.500: "#FE9A00"
+amber.600: "#B86E00"
+amber.700: "#8B5200"
+amber.800: "#6C3E00"
+amber.900: "#492800"
+amber.950: "#2D1700"
+
+# Yellow colors
+yellow: "#F0B100"  # seed · hidden
+yellow.50: "#F8F5EF"
+yellow.100: "#F6EFE4"
+yellow.200: "#F0E3CB"
+yellow.300: "#EED6AB"
+yellow.400: "#EDC578"
+yellow.500: "#F0B100"
+yellow.600: "#AD7E00"
+yellow.700: "#825E00"
+yellow.800: "#644700"
+yellow.900: "#422E00"
+yellow.950: "#281A00"
+
+# Lime colors
+lime: "#7CCF00"  # seed · hidden
+lime.50: "#F2F7F0"
+lime.100: "#EAF3E5"
+lime.200: "#D7E9CA"
+lime.300: "#C1E1AA"
+lime.400: "#A2D876"
+lime.500: "#7CCF00"
+lime.600: "#589500"
+lime.700: "#417100"
+lime.800: "#315600"
+lime.900: "#1F3A00"
+lime.950: "#102300"
+
+# Green colors
+green: "#00C950"  # seed · hidden
+green.50: "#F1F7F2"
+green.100: "#E6F2E7"
+green.200: "#CBE7CE"
+green.300: "#ABDEB1"
+green.400: "#78D387"
+green.500: "#00C950"
+green.600: "#009238"
+green.700: "#006F29"
+green.800: "#00561E"
+green.900: "#003B12"
+green.950: "#002508"
+
+# Emerald colors
+emerald: "#00BC7D"  # seed · hidden
+emerald.50: "#F2F6F4"
+emerald.100: "#E6F1EA"
+emerald.200: "#C9E3D4"
+emerald.300: "#A8D7BD"
+emerald.400: "#75C99E"
+emerald.500: "#00BC7D"
+emerald.600: "#00895A"
+emerald.700: "#006944"
+emerald.800: "#005234"
+emerald.900: "#003922"
+emerald.950: "#002414"
+
+# Teal colors
+teal: "#00BBA7"  # seed · hidden
+teal.50: "#F2F6F5"
+teal.100: "#E6F0EE"
+teal.200: "#CAE3DE"
+teal.300: "#A9D7CE"
+teal.400: "#76C8BA"
+teal.500: "#00BBA7"
+teal.600: "#008879"
+teal.700: "#00685C"
+teal.800: "#005148"
+teal.900: "#003831"
+teal.950: "#00231E"
+
+# Cyan colors
+cyan: "#00B8DB"  # seed · hidden
+cyan.50: "#F1F6F7"
+cyan.100: "#E6F0F3"
+cyan.200: "#CAE3EA"
+cyan.300: "#AAD6E4"
+cyan.400: "#77C7DE"
+cyan.500: "#00B8DB"
+cyan.600: "#0086A0"
+cyan.700: "#00667A"
+cyan.800: "#004F5F"
+cyan.900: "#003642"
+cyan.950: "#00212A"
+
+# Sky colors
+sky: "#00A6F4"  # seed · hidden
+sky.50: "#F1F6F9"
+sky.100: "#E5EFF6"
+sky.200: "#C7DFF0"
+sky.300: "#A5CFEE"
+sky.400: "#70BBEF"
+sky.500: "#00A6F4"
+sky.600: "#0079B4"
+sky.700: "#005D8B"
+sky.800: "#00486E"
+sky.900: "#00324D"
+sky.950: "#001F33"
+
+# Blue colors
+blue: "#2B7FFF"  # seed · hidden
+blue.50: "#F2F5FA"
+blue.100: "#E4ECF8"
+blue.200: "#C2D5F4"
+blue.300: "#9DBFF5"
+blue.400: "#6AA1F8"
+blue.500: "#2B7FFF"
+blue.600: "#045ACE"
+blue.700: "#0046A4"
+blue.800: "#023783"
+blue.900: "#032760"
+blue.950: "#021A42"
+
+# Indigo colors
+indigo: "#615FFF"  # seed · hidden
+indigo.50: "#F3F5FB"
+indigo.100: "#E6E9F8"
+indigo.200: "#C7CEF5"
+indigo.300: "#A8B3F7"
+indigo.400: "#828DFA"
+indigo.500: "#615FFF"
+indigo.600: "#4740CD"
+indigo.700: "#3732A4"
+indigo.800: "#2C2983"
+indigo.900: "#1F1E61"
+indigo.950: "#151445"
+
+# Violet colors
+violet: "#8E51FF"  # seed · hidden
+violet.50: "#F5F4FA"
+violet.100: "#EBE8F8"
+violet.200: "#D4CCF5"
+violet.300: "#BEAEF6"
+violet.400: "#A485F9"
+violet.500: "#8E51FF"
+violet.600: "#6C30CD"
+violet.700: "#5523A4"
+violet.800: "#441D83"
+violet.900: "#311560"
+violet.950: "#210E44"
+
+# Purple colors
+purple: "#AD46FF"  # seed · hidden
+purple.50: "#F6F4FA"
+purple.100: "#EFE8F8"
+purple.200: "#DDCBF4"
+purple.300: "#CEACF5"
+purple.400: "#BC81F8"
+purple.500: "#AD46FF"
+purple.600: "#861CCE"
+purple.700: "#690FA4"
+purple.800: "#540F83"
+purple.900: "#3C0A5F"
+purple.950: "#290742"
+
+# Fuchsia colors
+fuchsia: "#E12AFB"  # seed · hidden
+fuchsia.50: "#F9F3FA"
+fuchsia.100: "#F5E7F7"
+fuchsia.200: "#EDCBF2"
+fuchsia.300: "#E9ABF2"
+fuchsia.400: "#E47BF4"
+fuchsia.500: "#E12AFB"
+fuchsia.600: "#AA00BF"
+fuchsia.700: "#840095"
+fuchsia.800: "#690077"
+fuchsia.900: "#4B0055"
+fuchsia.950: "#33003A"
+
+# Pink colors
+pink: "#F6339A"  # seed · hidden
+pink.50: "#FAF3F5"
+pink.100: "#F9E7ED"
+pink.200: "#F5CADA"
+pink.300: "#F6A9C7"
+pink.400: "#F67AB0"
+pink.500: "#F6339A"
+pink.600: "#BE0072"
+pink.700: "#950058"
+pink.800: "#770045"
+pink.900: "#560030"
+pink.950: "#3B0020"
+
+# Rose colors
+rose: "#FF2056"  # seed · hidden
+rose.50: "#FBF3F3"
+rose.100: "#FAE6E7"
+rose.200: "#F9C9CA"
+rose.300: "#FBA7AB"
+rose.400: "#FD7682"
+rose.500: "#FF2056"
+rose.600: "#C2003C"
+rose.700: "#98002D"
+rose.800: "#7A0022"
+rose.900: "#590016"
+rose.950: "#3E000D"
+
+# Slate colors
+slate: "#62748E"  # seed · hidden
+slate.50: "#F8F8F9"
+slate.100: "#EFF1F2"
+slate.200: "#DEE1E6"
+slate.300: "#C0C7D1"
+slate.400: "#95A2B4"
+slate.500: "#62748E"
+slate.600: "#48576D"
+slate.700: "#394557"
+slate.800: "#2E3846"
+slate.900: "#222934"
+slate.950: "#181D25"
+
+# Gray colors
+gray: "#6A7282"  # seed · hidden
+gray.50: "#F8F8F9"
+gray.100: "#F0F0F2"
+gray.200: "#DFE1E4"
+gray.300: "#C3C6CC"
+gray.400: "#9BA0AC"
+gray.500: "#6A7282"
+gray.600: "#4F5663"
+gray.700: "#3F444F"
+gray.800: "#333740"
+gray.900: "#25292F"
+gray.950: "#1A1D22"
+
+# Zinc colors
+zinc: "#71717B"  # seed · hidden
+zinc.50: "#F8F8F9"
+zinc.100: "#F0F0F1"
+zinc.200: "#E0E0E2"
+zinc.300: "#C5C5C9"
+zinc.400: "#A0A0A7"
+zinc.500: "#71717B"
+zinc.600: "#55555D"
+zinc.700: "#43434A"
+zinc.800: "#37373C"
+zinc.900: "#28282C"
+zinc.950: "#1D1D20"
+
+# Neutral colors
+neutral: "#737373"  # seed
+neutral.50: "#F8F8F8"
+neutral.100: "#F0F0F0"
+neutral.200: "#E1E1E1"
+neutral.300: "#C6C6C6"
+neutral.400: "#A1A1A1"
+neutral.500: "#737373"
+neutral.600: "#575757"
+neutral.700: "#454545"
+neutral.800: "#373737"
+neutral.900: "#292929"
+neutral.950: "#1D1D1D"
+
+# Stone colors
+stone: "#79716B"  # seed · hidden
+stone.50: "#F8F8F8"
+stone.100: "#F1F0F0"
+stone.200: "#E2E0DF"
+stone.300: "#C8C5C3"
+stone.400: "#A5A09B"
+stone.500: "#79716B"
+stone.600: "#5C5550"
+stone.700: "#49433F"
+stone.800: "#3B3633"
+stone.900: "#2B2826"
+stone.950: "#1F1C1B"
+
+# Semantic aliases
+color.glow: "#F8F8F8"  # neutral.50
+color.on-error: "#F8F8F8"  # neutral.50
+color.on-info: "#F8F8F8"  # neutral.50
+color.on-primary: "#F8F8F8"  # neutral.50 · pinned
+color.on-quaternary: "#292929"  # neutral.900 · pinned
+color.on-secondary: "#F8F8F8"  # neutral.50 · pinned
+color.on-success: "#F8F8F8"  # neutral.50
+color.on-tertiary: "#F8F8F8"  # neutral.50 · pinned
+color.on-warning: "#292929"  # neutral.900
+color.shadow: "#1D1D1D"  # neutral.950
+
+# Primary colors
+primary: "#0080FF"  # seed · pinned
+primary.50: "#F2F5FA"
+primary.100: "#E3ECF8"
+primary.200: "#C0D6F4"
+primary.300: "#98C0F5"
+primary.400: "#61A2F8"
+primary.500: "#0080FF"
+primary.600: "#005FC0"
+primary.700: "#004998"
+primary.800: "#003A7B"
+primary.900: "#00295B"
+primary.950: "#001B41"
+
+# Quaternary colors
+quaternary: "#FFDD00"  # seed · pinned
+quaternary.50: "#F8F5E9"
+quaternary.100: "#F8F4E0"
+quaternary.200: "#F6EFCC"
+quaternary.300: "#F7EBB1"
+quaternary.400: "#F9E582"
+quaternary.500: "#FFDD00"
+quaternary.600: "#B49C00"
+quaternary.700: "#867300"
+quaternary.800: "#645600"
+quaternary.900: "#403600"
+quaternary.950: "#231D00"
+
+# Secondary colors
+secondary: "#FF3377"  # seed · pinned
+secondary.50: "#FBF3F4"
+secondary.100: "#FAE7EA"
+secondary.200: "#F8CAD1"
+secondary.300: "#FAAAB8"
+secondary.400: "#FC7C98"
+secondary.500: "#FF3377"
+secondary.600: "#C50054"
+secondary.700: "#9A0040"
+secondary.800: "#7B0032"
+secondary.900: "#590022"
+secondary.950: "#3D0015"
+
+# Tertiary colors
+tertiary: "#FF9900"  # seed · pinned
+tertiary.50: "#F9F4EF"
+tertiary.100: "#F8EDE4"
+tertiary.200: "#F5DEC9"
+tertiary.300: "#F5CDA8"
+tertiary.400: "#F8B675"
+tertiary.500: "#FF9900"
+tertiary.600: "#B86D00"
+tertiary.700: "#8C5200"
+tertiary.800: "#6C3E00"
+tertiary.900: "#492800"
+tertiary.950: "#2D1700"
+
+# Spacing
+spacing.1: 4  # claimed
+spacing.2: 8  # claimed
+spacing.3: 12  # claimed
+spacing.4: 16  # claimed
+spacing.5: 24  # claimed
+spacing.6: 32  # claimed
+spacing.7: 48  # claimed
+spacing.8: 64  # claimed
+spacing.9: 96  # claimed
+spacing.10: 128  # claimed
+spacing.11: 44
+spacing.12: 48
+spacing.13: 52
+spacing.14: 56
+spacing.15: 60
+spacing.16: 64
+spacing.17: 68
+spacing.18: 72
+spacing.19: 76
+spacing.20: 80
+spacing.21: 84
+spacing.22: 88
+spacing.23: 92
+spacing.24: 96
+spacing.25: 100
+spacing.26: 104
+spacing.27: 108
+spacing.28: 112
+spacing.29: 116
+spacing.30: 120
+spacing.31: 124
+spacing.32: 128
+spacing.none: 0  # claimed
+spacing.overlap.2xl: -32  # custom
+spacing.overlap.lg: -16  # custom
+spacing.overlap.md: -8  # custom
+spacing.overlap.sm: -4  # custom
+spacing.overlap.xl: -24  # custom
+spacing.overlap.xs: -2  # custom
+
+# Radius
+radius.1: 2  # custom
+radius.2: 4  # custom
+radius.2xl: 16  # radius.6
+radius.3: 6  # custom
+radius.3xl: 20  # radius.7
+radius.4: 8  # custom
+radius.5: 12  # custom
+radius.6: 16  # custom
+radius.7: 20  # custom
+radius.8: 24  # custom
+radius.9: 32  # custom
+radius.10: 40  # custom
+radius.11: 48  # custom
+radius.12: 64  # custom
+radius.13: 96  # custom
+radius.4xl: 24  # radius.8
+radius.5xl: 32  # radius.9
+radius.6xl: 40  # radius.10
+radius.7xl: 48  # radius.11
+radius.8xl: 64  # radius.12
+radius.9xl: 96  # radius.13
+radius.full: 9999  # claimed
+radius.lg: 8  # radius.4
+radius.md: 6  # radius.3
+radius.none: 0  # claimed
+radius.sm: 4  # radius.2
+radius.xl: 12  # radius.5
+radius.xs: 2  # radius.1
+
+# Typography
+font.family: Manrope  # custom
+font.family.mono: "JetBrains Mono"  # custom
+font.family.sans: Manrope  # font.family
+font.family.serif: "Noto Serif"  # custom
+font.letterSpacing.1: -0.05  # custom
+font.letterSpacing.2: -0.025  # custom
+font.letterSpacing.3: -0.0125  # custom
+font.letterSpacing.4: 0  # custom
+font.letterSpacing.5: 0.025  # custom
+font.letterSpacing.6: 0.1  # custom
+font.lineHeight.1: 1  # custom
+font.lineHeight.2: 1.25  # custom
+font.lineHeight.3: 1.375  # custom
+font.lineHeight.4: 1.5  # custom
+font.lineHeight.5: 1.625  # custom
+font.lineHeight.6: 2  # custom
+font.size.1: 12  # custom
+font.size.2: 14  # custom
+font.size.3: 16  # custom
+font.size.4: 20  # custom
+font.size.5: 24  # custom
+font.size.6: 32  # custom
+font.size.7: 36  # custom
+font.size.8: 40  # custom
+font.size.9: 48  # custom
+font.size.10: 64  # custom
+font.size.11: 80  # custom
+font.size.12: 96  # custom
+font.size.13: 128  # custom
+font.size.base: 12
+font.weight.1: 100  # custom
+font.weight.2: 200  # custom
+font.weight.3: 300  # custom
+font.weight.4: 400  # custom
+font.weight.5: 500  # custom
+font.weight.6: 600  # custom
+font.weight.7: 700  # custom
+font.weight.8: 800  # custom
+font.weight.9: 900  # custom
+
+# Opacity
+visibility.1: 0.05  # custom
+visibility.2: 0.1  # custom
+visibility.3: 0.2  # custom
+visibility.4: 0.4  # custom
+visibility.5: 0.5  # custom
+visibility.6: 0.6  # custom
+visibility.7: 0.8  # custom
+visibility.8: 0.9  # custom
+visibility.9: 0.95  # custom
+visibility.invisible: 0  # custom
+visibility.opaque: 1  # custom
+
+# Stroke Width
+stroke.width.0: 0
+stroke.width.0.5: 0.25
+stroke.width.1: 0.5  # claimed
+stroke.width.2: 0.75  # claimed
+stroke.width.3: 1  # custom
+stroke.width.4: 1.25  # claimed
+stroke.width.5: 1.5  # custom
+stroke.width.6: 2  # custom
+stroke.width.7: 2.5  # custom
+stroke.width.8: 3  # claimed
+stroke.width.9: 4  # custom
+stroke.width.hairline: 0.25
+stroke.width.none: 0  # custom
+stroke.width.thick: 8  # custom
+stroke.width.thicker: 16  # custom
+stroke.width.thickest: 48  # custom
+
+# Typography Composites
+typography.body.lg:
+  fontSize: 18
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.5  # font.lineHeight.normal
+typography.body.md:
+  fontSize: 16  # font.size.md
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.5  # font.lineHeight.normal
+typography.body.sm:
+  fontSize: 14  # font.size.sm
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.5  # font.lineHeight.normal
+typography.button:
+  fontSize: 14  # font.size.sm
+  fontWeight: 600  # font.weight.firm
+  lineHeight: 1.25  # font.lineHeight.tight
+typography.caption:
+  fontSize: 12  # font.size.xs
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.4
+typography.code:
+  fontFamily: JetBrains Mono  # font.family.mono
+  fontSize: 14  # font.size.sm
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.5  # font.lineHeight.normal
+typography.display.lg:
+  fontSize: 64  # font.size.6xl
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.1
+typography.display.md:
+  fontSize: 52
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.1
+typography.display.sm:
+  fontSize: 44
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.15
+typography.editorial.lg:
+  fontFamily: Noto Serif  # font.family.serif
+  fontSize: 64  # font.size.6xl
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.1
+typography.editorial.md:
+  fontFamily: Noto Serif  # font.family.serif
+  fontSize: 52
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.1
+typography.editorial.sm:
+  fontFamily: Noto Serif  # font.family.serif
+  fontSize: 44
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.15
+typography.h1:
+  fontSize: 36  # font.size.3xl
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.2
+typography.h2:
+  fontSize: 30
+  fontWeight: 700  # font.weight.bold
+  lineHeight: 1.25
+typography.h3:
+  fontSize: 24  # font.size.xl
+  fontWeight: 600  # font.weight.firm
+  lineHeight: 1.3
+typography.h4:
+  fontSize: 20  # font.size.lg
+  fontWeight: 600  # font.weight.firm
+  lineHeight: 1.35
+typography.input:
+  fontSize: 16  # font.size.md
+  fontWeight: 400  # font.weight.soft
+  lineHeight: 1.4
+typography.label:
+  fontSize: 14  # font.size.sm
+  fontWeight: 500  # font.weight.mid
+  lineHeight: 1.4
+
+# Shadows
+shadow.2xl:
+  - {y: 25, blur: 50, spread: -12, color: "rgba(0,0,0,0.25)"}
+shadow.2xs:
+  - {y: 1, color: "rgba(0,0,0,0.05)"}
+shadow.inner:
+  - {y: 2, blur: 4, color: "rgba(0,0,0,0.06)"}
+shadow.lg:
+  - {y: 4, blur: 6, spread: -2, color: "rgba(0,0,0,0.05)"}
+  - {y: 10, blur: 15, spread: -3, color: "rgba(0,0,0,0.1)"}
+shadow.md:
+  - {y: 2, blur: 4, spread: -1, color: "rgba(0,0,0,0.06)"}
+  - {y: 4, blur: 6, spread: -1, color: "rgba(0,0,0,0.1)"}
+shadow.sm:
+  - {y: 1, blur: 2, color: "rgba(0,0,0,0.05)"}
+shadow.xl:
+  - {y: 10, blur: 10, spread: -5, color: "rgba(0,0,0,0.04)"}
+  - {y: 20, blur: 25, spread: -5, color: "rgba(0,0,0,0.1)"}
+shadow.xs:
+  - {y: 1, blur: 1, color: "rgba(0,0,0,0.05)"}
+
+
+# ─── SEMANTICS ─────────────────────────────────────────
+# Mode-keyed resolvers. Each entry carries per-mode branches
+# ($default, dark, density.compact, etc.). External tools can
+# emit these as themed tokens / CSS custom properties.
+
+# Red colors
+red.bold:  # custom
+  $default: "#980014"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.faint:  # custom
+  $default: "#FAE7E5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.firm:  # custom
+  $default: "#C2001C"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.hint:  # custom
+  $default: "#FBF3F2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.intense:  # custom
+  $default: "#590007"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.mid:  # custom
+  $default: "#FB2C36"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.soft:  # custom
+  $default: "#F9A8A0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.strong:  # custom
+  $default: "#7B000E"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+red.subtle:  # custom
+  $default: "#F7C9C4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Orange colors
+orange.bold:  # custom
+  $default: "#913800"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.faint:  # custom
+  $default: "#F9EAE4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.firm:  # custom
+  $default: "#BB4B00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.hint:  # custom
+  $default: "#FAF3F1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.intense:  # custom
+  $default: "#501C00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.mid:  # custom
+  $default: "#FF6900"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.soft:  # custom
+  $default: "#F7BAA0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.strong:  # custom
+  $default: "#722B00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+orange.subtle:  # custom
+  $default: "#F6D3C5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Amber colors
+amber.bold:  # custom
+  $default: "#8B5200"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.faint:  # custom
+  $default: "#F7EEE4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.firm:  # custom
+  $default: "#B86E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.hint:  # custom
+  $default: "#F9F4EF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.intense:  # custom
+  $default: "#492800"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.mid:  # custom
+  $default: "#FE9A00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.soft:  # custom
+  $default: "#F4CDA8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.strong:  # custom
+  $default: "#6C3E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+amber.subtle:  # custom
+  $default: "#F4DEC9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Yellow colors
+yellow.bold:  # custom
+  $default: "#825E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.faint:  # custom
+  $default: "#F6EFE4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.firm:  # custom
+  $default: "#AD7E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.hint:  # custom
+  $default: "#F8F5EF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.intense:  # custom
+  $default: "#422E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.mid:  # custom
+  $default: "#F0B100"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.soft:  # custom
+  $default: "#EED6AB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.strong:  # custom
+  $default: "#644700"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+yellow.subtle:  # custom
+  $default: "#F0E3CB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Lime colors
+lime.bold:  # custom
+  $default: "#417100"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.faint:  # custom
+  $default: "#EAF3E5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.firm:  # custom
+  $default: "#589500"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.hint:  # custom
+  $default: "#F2F7F0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.intense:  # custom
+  $default: "#1F3A00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.mid:  # custom
+  $default: "#7CCF00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.soft:  # custom
+  $default: "#C1E1AA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.strong:  # custom
+  $default: "#315600"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+lime.subtle:  # custom
+  $default: "#D7E9CA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Green colors
+green.bold:  # custom
+  $default: "#006F29"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.faint:  # custom
+  $default: "#E6F2E7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.firm:  # custom
+  $default: "#009238"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.hint:  # custom
+  $default: "#F1F7F2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.intense:  # custom
+  $default: "#003B12"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.mid:  # custom
+  $default: "#00C950"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.soft:  # custom
+  $default: "#ABDEB1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.strong:  # custom
+  $default: "#00561E"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+green.subtle:  # custom
+  $default: "#CBE7CE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Emerald colors
+emerald.bold:  # custom
+  $default: "#006944"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.faint:  # custom
+  $default: "#E6F1EA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.firm:  # custom
+  $default: "#00895A"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.hint:  # custom
+  $default: "#F2F6F4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.intense:  # custom
+  $default: "#003922"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.mid:  # custom
+  $default: "#00BC7D"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.soft:  # custom
+  $default: "#A8D7BD"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.strong:  # custom
+  $default: "#005234"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+emerald.subtle:  # custom
+  $default: "#C9E3D4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Teal colors
+teal.bold:  # custom
+  $default: "#00685C"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.faint:  # custom
+  $default: "#E6F0EE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.firm:  # custom
+  $default: "#008879"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.hint:  # custom
+  $default: "#F2F6F5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.intense:  # custom
+  $default: "#003831"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.mid:  # custom
+  $default: "#00BBA7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.soft:  # custom
+  $default: "#A9D7CE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.strong:  # custom
+  $default: "#005148"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+teal.subtle:  # custom
+  $default: "#CAE3DE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Cyan colors
+cyan.bold:  # custom
+  $default: "#00667A"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.faint:  # custom
+  $default: "#E6F0F3"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.firm:  # custom
+  $default: "#0086A0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.hint:  # custom
+  $default: "#F1F6F7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.intense:  # custom
+  $default: "#003642"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.mid:  # custom
+  $default: "#00B8DB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.soft:  # custom
+  $default: "#AAD6E4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.strong:  # custom
+  $default: "#004F5F"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+cyan.subtle:  # custom
+  $default: "#CAE3EA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Sky colors
+sky.bold:  # custom
+  $default: "#005D8B"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.faint:  # custom
+  $default: "#E5EFF6"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.firm:  # custom
+  $default: "#0079B4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.hint:  # custom
+  $default: "#F1F6F9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.intense:  # custom
+  $default: "#00324D"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.mid:  # custom
+  $default: "#00A6F4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.soft:  # custom
+  $default: "#A5CFEE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.strong:  # custom
+  $default: "#00486E"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+sky.subtle:  # custom
+  $default: "#C7DFF0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Blue colors
+blue.bold:  # custom
+  $default: "#0046A4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.faint:  # custom
+  $default: "#E4ECF8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.firm:  # custom
+  $default: "#045ACE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.hint:  # custom
+  $default: "#F2F5FA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.intense:  # custom
+  $default: "#032760"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.mid:  # custom
+  $default: "#2B7FFF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.soft:  # custom
+  $default: "#9DBFF5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.strong:  # custom
+  $default: "#023783"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+blue.subtle:  # custom
+  $default: "#C2D5F4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Indigo colors
+indigo.bold:  # custom
+  $default: "#3732A4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.faint:  # custom
+  $default: "#E6E9F8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.firm:  # custom
+  $default: "#4740CD"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.hint:  # custom
+  $default: "#F3F5FB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.intense:  # custom
+  $default: "#1F1E61"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.mid:  # custom
+  $default: "#615FFF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.soft:  # custom
+  $default: "#A8B3F7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.strong:  # custom
+  $default: "#2C2983"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+indigo.subtle:  # custom
+  $default: "#C7CEF5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Violet colors
+violet.bold:  # custom
+  $default: "#5523A4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.faint:  # custom
+  $default: "#EBE8F8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.firm:  # custom
+  $default: "#6C30CD"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.hint:  # custom
+  $default: "#F5F4FA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.intense:  # custom
+  $default: "#311560"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.mid:  # custom
+  $default: "#8E51FF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.soft:  # custom
+  $default: "#BEAEF6"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.strong:  # custom
+  $default: "#441D83"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+violet.subtle:  # custom
+  $default: "#D4CCF5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Purple colors
+purple.bold:  # custom
+  $default: "#690FA4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.faint:  # custom
+  $default: "#EFE8F8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.firm:  # custom
+  $default: "#861CCE"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.hint:  # custom
+  $default: "#F6F4FA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.intense:  # custom
+  $default: "#3C0A5F"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.mid:  # custom
+  $default: "#AD46FF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.soft:  # custom
+  $default: "#CEACF5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.strong:  # custom
+  $default: "#540F83"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+purple.subtle:  # custom
+  $default: "#DDCBF4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Fuchsia colors
+fuchsia.bold:  # custom
+  $default: "#840095"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.faint:  # custom
+  $default: "#F5E7F7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.firm:  # custom
+  $default: "#AA00BF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.hint:  # custom
+  $default: "#F9F3FA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.intense:  # custom
+  $default: "#4B0055"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.mid:  # custom
+  $default: "#E12AFB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.soft:  # custom
+  $default: "#E9ABF2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.strong:  # custom
+  $default: "#690077"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+fuchsia.subtle:  # custom
+  $default: "#EDCBF2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Pink colors
+pink.bold:  # custom
+  $default: "#950058"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.faint:  # custom
+  $default: "#F9E7ED"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.firm:  # custom
+  $default: "#BE0072"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.hint:  # custom
+  $default: "#FAF3F5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.intense:  # custom
+  $default: "#560030"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.mid:  # custom
+  $default: "#F6339A"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.soft:  # custom
+  $default: "#F6A9C7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.strong:  # custom
+  $default: "#770045"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+pink.subtle:  # custom
+  $default: "#F5CADA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Rose colors
+rose.bold:  # custom
+  $default: "#98002D"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.faint:  # custom
+  $default: "#FAE6E7"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.firm:  # custom
+  $default: "#C2003C"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.hint:  # custom
+  $default: "#FBF3F3"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.intense:  # custom
+  $default: "#590016"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.mid:  # custom
+  $default: "#FF2056"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.soft:  # custom
+  $default: "#FBA7AB"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.strong:  # custom
+  $default: "#7A0022"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+rose.subtle:  # custom
+  $default: "#F9C9CA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Slate colors
+slate.bold:  # custom
+  $default: "#394557"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.faint:  # custom
+  $default: "#EFF1F2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.firm:  # custom
+  $default: "#48576D"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.hint:  # custom
+  $default: "#F8F8F9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.intense:  # custom
+  $default: "#222934"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.mid:  # custom
+  $default: "#62748E"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.soft:  # custom
+  $default: "#C0C7D1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.strong:  # custom
+  $default: "#2E3846"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+slate.subtle:  # custom
+  $default: "#DEE1E6"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Gray colors
+gray.bold:  # custom
+  $default: "#3F444F"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.faint:  # custom
+  $default: "#F0F0F2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.firm:  # custom
+  $default: "#4F5663"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.hint:  # custom
+  $default: "#F8F8F9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.intense:  # custom
+  $default: "#25292F"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.mid:  # custom
+  $default: "#6A7282"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.soft:  # custom
+  $default: "#C3C6CC"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.strong:  # custom
+  $default: "#333740"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+gray.subtle:  # custom
+  $default: "#DFE1E4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Zinc colors
+zinc.bold:  # custom
+  $default: "#43434A"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.faint:  # custom
+  $default: "#F0F0F1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.firm:  # custom
+  $default: "#55555D"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.hint:  # custom
+  $default: "#F8F8F9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.intense:  # custom
+  $default: "#28282C"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.mid:  # custom
+  $default: "#71717B"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.soft:  # custom
+  $default: "#C5C5C9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.strong:  # custom
+  $default: "#37373C"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+zinc.subtle:  # custom
+  $default: "#E0E0E2"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Neutral colors
+neutral.bold:  # custom
+  $default: "#454545"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.faint:  # custom
+  $default: "#F0F0F0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.firm:  # custom
+  $default: "#575757"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.hint:  # custom
+  $default: "#F8F8F8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.intense:  # custom
+  $default: "#292929"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.mid:  # custom
+  $default: "#737373"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.soft:  # custom
+  $default: "#C6C6C6"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.strong:  # custom
+  $default: "#373737"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+neutral.subtle:  # custom
+  $default: "#E1E1E1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Stone colors
+stone.bold:  # custom
+  $default: "#49433F"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.faint:  # custom
+  $default: "#F1F0F0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.firm:  # custom
+  $default: "#5C5550"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.hint:  # custom
+  $default: "#F8F8F8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.intense:  # custom
+  $default: "#2B2826"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.mid:  # custom
+  $default: "#79716B"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.soft:  # custom
+  $default: "#C8C5C3"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.strong:  # custom
+  $default: "#3B3633"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+stone.subtle:  # custom
+  $default: "#E2E0DF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Semantic aliases
+color.error:  # ref
+  $default: "#FB2C36"  # red.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.error.container:  # ref
+  $default: "#FBF3F2"  # red.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.info:  # ref
+  $default: "#2B7FFF"  # blue.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.info.container:  # ref
+  $default: "#F2F5FA"  # blue.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.on-surface:  # ref · pinned
+  $default: "#373737"  # neutral.strong
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.on-surface.selected:  # ref
+  $default: "#454545"  # neutral.bold
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.outline:  # ref · pinned
+  $default: "#C6C6C6"  # neutral.soft
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.outline.variant:  # ref · pinned
+  $default: "#E1E1E1"  # neutral.subtle
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.primary:  # ref · pinned
+  $default: "#0080FF"  # primary.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.primary.container:  # ref
+  $default: "#F2F5FA"  # primary.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.quaternary:  # ref · pinned
+  $default: "#FFDD00"  # quaternary.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.quaternary.container:  # ref
+  $default: "#F8F5E9"  # quaternary.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.secondary:  # ref · pinned
+  $default: "#FF3377"  # secondary.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.secondary.container:  # ref
+  $default: "#FBF3F4"  # secondary.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.success:  # ref
+  $default: "#00C950"  # green.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.success.container:  # ref
+  $default: "#F1F7F2"  # green.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface:  # ref · pinned
+  $default: "#F8F8F8"  # neutral.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface.container:  # ref · pinned
+  $default: "#F0F0F0"  # neutral.faint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface.container.high:  # ref
+  $default: "#E1E1E1"  # neutral.subtle
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface.hover:  # ref
+  $default: "#F0F0F0"  # neutral.faint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface.pressed:  # ref
+  $default: "#E1E1E1"  # neutral.subtle
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.surface.selected:  # ref
+  $default: "#F2F5FA"  # primary.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.tertiary:  # ref · pinned
+  $default: "#FF9900"  # tertiary.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.tertiary.container:  # ref
+  $default: "#F9F4EF"  # tertiary.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.text.disabled:  # ref · pinned
+  $default: "#C6C6C6"  # neutral.soft
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.text.display:  # ref
+  $default: "#005FC0"  # primary.firm
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.text.display.alt:  # ref
+  $default: "#C50054"  # secondary.firm
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.text.primary:  # ref · pinned
+  $default: "#454545"  # neutral.bold
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.text.secondary:  # ref · pinned
+  $default: "#575757"  # neutral.firm
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.warning:  # ref
+  $default: "#FF6900"  # orange.mid
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+color.warning.container:  # ref
+  $default: "#FAF3F1"  # orange.hint
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Primary colors
+primary.bold:  # custom
+  $default: "#004998"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.faint:  # custom
+  $default: "#E3ECF8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.firm:  # custom
+  $default: "#005FC0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.hint:  # custom
+  $default: "#F2F5FA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.intense:  # custom
+  $default: "#00295B"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.mid:  # custom
+  $default: "#0080FF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.soft:  # custom
+  $default: "#98C0F5"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.strong:  # custom
+  $default: "#003A7B"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+primary.subtle:  # custom
+  $default: "#C0D6F4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Quaternary colors
+quaternary.bold:  # custom
+  $default: "#867300"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.faint:  # custom
+  $default: "#F8F4E0"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.firm:  # custom
+  $default: "#B49C00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.hint:  # custom
+  $default: "#F8F5E9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.intense:  # custom
+  $default: "#403600"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.mid:  # custom
+  $default: "#FFDD00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.soft:  # custom
+  $default: "#F7EBB1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.strong:  # custom
+  $default: "#645600"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+quaternary.subtle:  # custom
+  $default: "#F6EFCC"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Secondary colors
+secondary.bold:  # custom
+  $default: "#9A0040"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.faint:  # custom
+  $default: "#FAE7EA"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.firm:  # custom
+  $default: "#C50054"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.hint:  # custom
+  $default: "#FBF3F4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.intense:  # custom
+  $default: "#590022"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.mid:  # custom
+  $default: "#FF3377"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.soft:  # custom
+  $default: "#FAAAB8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.strong:  # custom
+  $default: "#7B0032"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+secondary.subtle:  # custom
+  $default: "#F8CAD1"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Tertiary colors
+tertiary.bold:  # custom
+  $default: "#8C5200"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.faint:  # custom
+  $default: "#F8EDE4"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.firm:  # custom
+  $default: "#B86D00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.hint:  # custom
+  $default: "#F9F4EF"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.intense:  # custom
+  $default: "#492800"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.mid:  # custom
+  $default: "#FF9900"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.soft:  # custom
+  $default: "#F5CDA8"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.strong:  # custom
+  $default: "#6C3E00"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+tertiary.subtle:  # custom
+  $default: "#F5DEC9"
+  # transform theme.dark: mirror
+  # transform accessibility.high-contrast: outward(1)
+
+# Spacing
+spacing.2xl:  # custom
+  $default: 32
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.3xl:  # custom
+  $default: 48
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.4xl:  # custom
+  $default: 64
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.5xl:  # custom
+  $default: 96
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.6xl:  # custom
+  $default: 128
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.lg:  # custom
+  $default: 16
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.md:  # custom
+  $default: 12
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.sm:  # custom
+  $default: 8
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.xl:  # custom
+  $default: 24
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+spacing.xs:  # custom
+  $default: 4
+  # transform density.compact: shift(-1)
+  # transform accessibility.large-text: shift(+1)
+
+# Typography
+font.letterSpacing.loose:  # custom
+  $default: 0.1
+  # transform accessibility.large-text: shift(+1)
+font.letterSpacing.none:  # custom
+  $default: -0.05
+  # transform accessibility.large-text: shift(+1)
+font.letterSpacing.normal:  # custom
+  $default: 0
+  # transform accessibility.large-text: shift(+1)
+font.letterSpacing.relaxed:  # custom
+  $default: 0.025
+  # transform accessibility.large-text: shift(+1)
+font.letterSpacing.snug:  # custom
+  $default: -0.0125
+  # transform accessibility.large-text: shift(+1)
+font.letterSpacing.tight:  # custom
+  $default: -0.025
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.loose:  # custom
+  $default: 2
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.none:  # custom
+  $default: 1
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.normal:  # custom
+  $default: 1.5
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.relaxed:  # custom
+  $default: 1.625
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.snug:  # custom
+  $default: 1.375
+  # transform accessibility.large-text: shift(+1)
+font.lineHeight.tight:  # custom
+  $default: 1.25
+  # transform accessibility.large-text: shift(+1)
+font.size.2xl:  # claimed
+  $default: 32
+  # transform accessibility.large-text: shift(+1)
+font.size.3xl:  # claimed
+  $default: 36
+  # transform accessibility.large-text: shift(+1)
+font.size.4xl:  # claimed
+  $default: 40
+  # transform accessibility.large-text: shift(+1)
+font.size.5xl:  # claimed
+  $default: 48
+  # transform accessibility.large-text: shift(+1)
+font.size.6xl:  # claimed
+  $default: 64
+  # transform accessibility.large-text: shift(+1)
+font.size.7xl:  # claimed
+  $default: 80
+  # transform accessibility.large-text: shift(+1)
+font.size.8xl:  # claimed
+  $default: 96
+  # transform accessibility.large-text: shift(+1)
+font.size.9xl:  # claimed
+  $default: 128
+  # transform accessibility.large-text: shift(+1)
+font.size.lg:  # claimed
+  $default: 20
+  # transform accessibility.large-text: shift(+1)
+font.size.md:  # claimed
+  $default: 16
+  # transform accessibility.large-text: shift(+1)
+font.size.sm:  # claimed
+  $default: 14
+  # transform accessibility.large-text: shift(+1)
+font.size.xl:  # claimed
+  $default: 24
+  # transform accessibility.large-text: shift(+1)
+font.size.xs:  # claimed
+  $default: 12
+  # transform accessibility.large-text: shift(+1)
+font.weight.bold:  # custom
+  $default: 700
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.faint:  # custom
+  $default: 200
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.firm:  # custom
+  $default: 600
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.hint:  # custom
+  $default: 100
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.intense:  # custom
+  $default: 900
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.mid:  # custom
+  $default: 500
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.soft:  # custom
+  $default: 400
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.strong:  # custom
+  $default: 800
+  # transform accessibility.high-contrast: shift(+1)
+font.weight.subtle:  # custom
+  $default: 300
+  # transform accessibility.high-contrast: shift(+1)
+
+# Opacity
+visibility.bold:  # custom
+  $default: 0.8
+  # transform accessibility.high-contrast: shift(+1)
+visibility.faint:  # custom
+  $default: 0.1
+  # transform accessibility.high-contrast: shift(+1)
+visibility.firm:  # custom
+  $default: 0.6
+  # transform accessibility.high-contrast: shift(+1)
+visibility.hint:  # custom
+  $default: 0.05
+  # transform accessibility.high-contrast: shift(+1)
+visibility.intense:  # custom
+  $default: 0.95
+  # transform accessibility.high-contrast: shift(+1)
+visibility.mid:  # custom
+  $default: 0.5
+  # transform accessibility.high-contrast: shift(+1)
+visibility.soft:  # custom
+  $default: 0.4
+  # transform accessibility.high-contrast: shift(+1)
+visibility.strong:  # custom
+  $default: 0.9
+  # transform accessibility.high-contrast: shift(+1)
+visibility.subtle:  # custom
+  $default: 0.2
+  # transform accessibility.high-contrast: shift(+1)
+
+# Stroke Width
+stroke.width.bold:  # custom
+  $default: 2.5
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.faint:  # custom
+  $default: 0.75
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.firm:  # custom
+  $default: 2
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.hint:  # custom
+  $default: 0.5
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.intense:  # custom
+  $default: 4
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.mid:  # custom
+  $default: 1.5
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.soft:  # custom
+  $default: 1.25
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.strong:  # custom
+  $default: 3
+  # transform accessibility.high-contrast: shift(+1)
+stroke.width.subtle:  # custom
+  $default: 1
+  # transform accessibility.high-contrast: shift(+1)
+
+
+# Hidden palettes / tokens (from .ds `hide:`)
+$hide:
+  - red
+  - orange
+  - amber
+  - yellow
+  - lime
+  - green
+  - emerald
+  - teal
+  - cyan
+  - sky
+  - blue
+  - indigo
+  - violet
+  - purple
+  - fuchsia
+  - pink
+  - rose
+  - slate
+  - gray
+  - zinc
+  - stone
+
+# Pinned palettes / tokens (from .ds `pin:`)
+$pin:
+  - primary
+  - secondary
+  - tertiary
+  - quaternary
+  - color.primary
+  - color.on-primary
+  - color.secondary
+  - color.on-secondary
+  - color.tertiary
+  - color.on-tertiary
+  - color.quaternary
+  - color.on-quaternary
+  - color.surface
+  - color.surface.container
+  - color.on-surface
+  - color.text.primary
+  - color.text.secondary
+  - color.text.disabled
+  - color.outline
+  - color.outline.variant

@@ -60,6 +60,28 @@ const result=await withDatabase(async databaseUrl=>{
   assert.equal(await appFrame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await appFrame.evaluate(()=>{document.documentElement.style.zoom="";});
   await page.setViewportSize({width:1280,height:800});
+  if(perf) {
+   await page.evaluate(()=>window.harness.setDelay(150));
+   await page.waitForTimeout(6500);
+   await page.evaluate(()=>window.harness.setDelay(0));
+   await visibility(false);
+   const hiddenBefore=await count();
+   await page.waitForTimeout(3300);
+   const backgroundPolls=(await count())-hiddenBefore;
+   assert.equal(backgroundPolls,0);
+   await visibility(true);
+   await page.waitForTimeout(1000);
+   const samples=await page.evaluate(()=>window.harness.samples);
+   const requestOperations=await page.evaluate(()=>window.harness.calls.map(call=>call.op));
+   const dom=await frame.locator("body").innerText();
+   for(const secret of secrets){assert(!dom.includes(secret));assert(!consoleMessages.join("\n").includes(secret));}
+   assert(secrets.size>=1);
+   assert(samples.filter(sample=>sample.resultToRenderMs!==undefined).length>=2);
+   assert(samples.some(sample=>sample.deliberateDelayMs===150));
+   assert.equal(errors.length,0,errors.join("\n"));
+   lane("bounded local render and bridge timing samples, deliberate delay separated, hidden zero requests");
+   return {browser:browser.version(),backgroundPolls,samples,requestOperations,secretLeaks:0,observedRotatingSecrets:secrets.size,errors,recordingMs:Date.now()-started};
+  }
   await frame.getByRole("button",{name:"Watch unavailable"}).click();
   await frame.getByText(/Watch requires/).waitFor();
   const skip=f.initial.controls.skip.find(item=>item.row===f.initial.value.view.rows[2].row.id);

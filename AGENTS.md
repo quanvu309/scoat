@@ -50,4 +50,6 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Enrollment crosses an erase commit after an earlier suppression read | Lock sorted subject identities before the account fence and recheck inventory | lifecycle enrollmentSubjectConflict; original missing advisory lock returns true from the competing PostgreSQL try-lock |
 
+| Memory transcripts overwrite runner memory metadata | Name measured RAM memoryBytes separately from the Memory result | memory-evidence.test.mjs reproduces the original overwritten field and preserves both values |
+
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

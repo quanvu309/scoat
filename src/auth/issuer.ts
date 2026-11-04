@@ -305,7 +305,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         if (!consumed.rowCount) throw new Error("Confirmation already used");
         return watches.activate(client, { scope: flow.context.target, key: flow.context.key, target: flow.context.watchTarget, targetPence: flow.context.targetPence, observation: flow.context.observation, observedAt: flow.context.observedAt, address: flow.context.address });
       });
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin" });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin", "cache-control": "no-store" });
       res.end(`<title>Watch active</title><h1>Watch active</h1><p>Watch ${escapeHtml(activated.watch)} checks the public delivered price daily. An alert needs a price at or below GBP ${(activated.targetPence / 100).toFixed(2)} and strictly below the GBP ${(activated.baselinePence / 100).toFixed(2)} baseline.</p><p>Every alert email has a one-step unsubscribe link.</p>`);
       return;
     }

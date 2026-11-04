@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkWatchSender, checkWatchErasure, checkPublicFetch, checkWatchVerification } from "../scripts/check-structure.mjs";
+import { checkWatchSender, checkWatchErasure, checkPublicFetch, checkWatchVerification, checkWatchResponses } from "../scripts/check-structure.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const watches = read("src/memory/watches.ts"), queue = read("src/queue/index.ts"), erasure = read("src/accounts/erasure.ts"), fetch = read("src/delivery/fetch.ts");
@@ -37,6 +37,18 @@ test("public fetch pins validated addresses, checks every redirect hop and never
  assert.throws(() => checkPublicFetch(fetch.replace("|| !hosts.has(current.hostname)", "")), /every redirect hop/);
  assert.throws(() => checkPublicFetch(fetch.replace("lookup: pin,", "")), /pinned address/);
  assert.throws(() => checkPublicFetch(fetch.replace("rejectUnauthorized: true,", "rejectUnauthorized: false,")), /TLS hostnames/);
+});
+
+test("watch responses reject undeclared provider fields and disable activation caching", () => {
+ const delivery = read("src/delivery/index.ts"), issuer = read("src/auth/issuer.ts");
+ assert.doesNotThrow(() => checkWatchResponses(delivery, issuer));
+ assert.throws(() => checkWatchResponses(delivery.replace("const accepted = z.strictObject", "const accepted = z.object"), issuer), /strict object schema/);
+ const start = issuer.indexOf('if (url.pathname === "/account/watch")');
+ const end = issuer.indexOf('if (url.pathname === "/watch/unsubscribe")', start);
+ assert.ok(start >= 0 && end > start);
+ const oldRoute = issuer.slice(start, end).replace(', "cache-control": "no-store"', "");
+ assert.notEqual(oldRoute, issuer.slice(start, end));
+ assert.throws(() => checkWatchResponses(delivery, issuer.slice(0, start) + oldRoute + issuer.slice(end)), /activation response/);
 });
 
 test("P08 verification routes through the existing skill, feature index and runnable branch", () => {

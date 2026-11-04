@@ -621,6 +621,14 @@ export function checkPublicFetch(source) {
  if (!astNodes(get).some(node => node.type === "ObjectProperty" && node.key?.name === "rejectUnauthorized" && node.value?.value === true)) throw new Error("Verify seller TLS hostnames");
 }
 
+export function checkWatchResponses(delivery, issuer) {
+ const accepted = parsedNodes(delivery).find(node => node.type === "VariableDeclarator" && node.id?.name === "accepted");
+ if (!astNodes(accepted?.init).some(node => node.type === "CallExpression" && member(node.callee, "z", "strictObject"))) throw new Error("Parse the Resend accepted response with a strict object schema");
+ const route = parsedNodes(issuer).find(node => node.type === "IfStatement" && astNodes(node.test).some(part => part.type === "StringLiteral" && part.value === "/account/watch"));
+ const headers = astNodes(route?.consequent).filter(node => node.type === "CallExpression" && member(node.callee, "res", "writeHead"));
+ if (!headers.length || headers.some(call => !astNodes(call.arguments[1]).some(node => node.type === "ObjectProperty" && node.key?.value === "cache-control" && node.value?.value === "no-store"))) throw new Error("Serve the watch activation response with cache-control no-store");
+}
+
 export function checkWatchVerification(skill, index, runner) {
  if (!skill.split("---")[1]?.includes("P08") || !skill.split("## Completion")[0].includes("features/watches.md") || !index.includes("[price watches](watches.md)") || !runner.includes('process.argv[2] === "p08"')) throw new Error("Route P08 watch changes to features/watches.md and the runnable p08 branch");
 }
@@ -629,5 +637,6 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
  checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));
+ checkWatchResponses(fs.readFileSync("src/delivery/index.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"));
  checkWatchVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
 }

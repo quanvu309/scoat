@@ -90,7 +90,7 @@ export class Delivery {
   } catch {
    body = null;
   }
-  const accepted = z.object({ id: z.string().min(1).max(256) }).safeParse(body);
+  const accepted = z.strictObject({ id: z.string().min(1).max(256) }).safeParse(body);
   if (response.status === 200 && accepted.success) return { kind: "accepted", id: accepted.data.id };
   if (response.status === 409 || response.status === 429 || response.status >= 500 || response.status === 200) return { kind: "ambiguous", reason: "status-" + response.status };
   return { kind: "rejected", status: response.status };

@@ -4,6 +4,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Risk | Required fix | Enforcement and negative proof |
 | --- | --- | --- |
+| Watch responses accept undeclared mail fields or permit activation caching | Strictly parse provider acceptance and serve activation with no-store | checkWatchResponses; original loose-schema and missing-header fixtures; real HTTP mail-response regression |
 | Lost renewal response leaves a live card permanently revoked | Discard the prior capability before awaiting renewal and reopen through authenticated MCP after transient failure | checkCardRenewal; missing/dead disposal fixtures; lost-committed-response controller and native Chromium lanes |
 | Card hides actionable canonical evidence | Render slot proof links, finished quote and status steps and reasons | checkCardProjection; missing projection fixtures; native proof-link, status-step and finished-quote assertions |
 | Agent receipt keys occupy browser namespace or repeat Stop changes its timestamp | Reject reserved agent keys before store access and preserve the first Stop | checkControlPrerequisites; missing/dead guard and timestamp-overwrite fixtures; PostgreSQL receipt absence and repeated Stop |

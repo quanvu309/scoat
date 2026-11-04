@@ -102,9 +102,13 @@ export async function watchLanes(databaseUrl, evidence, head) {
    assert.equal(refusal.status(), 409);
    assert.equal(refusal.headers()["cache-control"], "no-store");
    assert.match(await page.locator("body").innerText(), /Enter a target from GBP 0.01 to GBP 100000.00/);
+   assert.equal(await page.locator('form[action="/account/watch"] input[name="confirmation"]').inputValue(), confirmation);
    assert.equal((await pool.query("SELECT count(*)::integer AS n FROM watches WHERE account=$1", [scope.account])).rows[0].n, 0);
   }
-  assert.equal((await postTarget("60.00")).status(), 200);
+  await page.getByLabel("Your target delivered price (GBP)").fill("60.00");
+  const corrected = page.waitForResponse(response => response.url() === f.issuer + "/account/watch" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Confirm price watch", exact: true }).click();
+  assert.equal((await corrected).status(), 200);
   await page.getByText("Watch active").waitFor();
   await page.screenshot({ path: path.join(evidence, "p08-review-2-active.png"), fullPage: true });
   const replayed = await memory({ op: "read", collection: "watches" });

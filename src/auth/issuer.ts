@@ -56,7 +56,8 @@ function browserCookie(req: IncomingMessage) {
 }
 const watchHeaders = { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin", "cache-control": "no-store" } as const;
 const pounds = (pence: number) => "GBP " + (pence / 100).toFixed(2);
-function watchRefusalPage(reason: WatchRefusalReason, retry: string | null) {
+function watchRefusalPage(reason: WatchRefusalReason, retry: string | null, correction: Readonly<{ confirmation: string; moveRecipient: boolean }> | null = null) {
+  if (reason === "invalid-target" && correction) return `<title>Correct your watch target</title><h1>Correct your watch target</h1><p>${escapeHtml(watchRefusalText[reason])}</p><p>Your recipient choice is unchanged.</p><form method="post" action="/account/watch"><input type="hidden" name="confirmation" value="${escapeHtml(correction.confirmation)}"><input type="hidden" name="decision" value="watch">${correction.moveRecipient ? '<input type="hidden" name="recipient" value="move">' : ""}<label>Your target delivered price (GBP)<input name="target" inputmode="decimal" required pattern="[0-9]{1,6}(\\.[0-9]{1,2})?" maxlength="16"></label><button>Confirm price watch</button></form>`;
   const recovery = reason === "already-watching" || reason === "watch-limit" ? "Stop a watch from the link in its alert email or ask your agent to unwatch it, then start again." : reason === "service-unconfigured" || reason === "unfinished" || reason === "no-exact-supported-variant" || reason === "ambiguous-variant" ? "No price watch can start for this hunt." : "";
   const again = retry ? `<p><a href="${escapeHtml(retry)}">Start again with a fresh public price</a></p>` : "<p>Choose Watch price again from your hunt card or hunt text to start with a fresh public price.</p>";
   return `<title>Price watch not started</title><h1>Price watch not started</h1><p>${escapeHtml(watchRefusalText[reason])}</p>${recovery ? `<p>${escapeHtml(recovery)}</p>` : ""}${again}`;
@@ -357,7 +358,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       } catch (error) {
         if (!(error instanceof WatchRefusal)) throw error;
         res.writeHead(409, watchHeaders);
-        res.end(watchRefusalPage(error.reason, retry));
+        res.end(watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" }));
       }
       return;
     }

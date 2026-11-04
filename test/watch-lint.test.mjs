@@ -154,6 +154,9 @@ test("watch activation requires configured mail and catches invalid browser targ
  const outside = issuer.replace("      try {\n        const pence = targetPence(fields.target);", "      const pence = targetPence(fields.target);\n      try {");
  assert.notEqual(outside, issuer);
  assert.throws(() => check(watches, outside), /inside the typed watch-refusal boundary/);
+ assert.throws(() => check(watches, issuer.replace('form method="post" action="/account/watch"', 'form method="get" action="/account/watch"')), /correction form/);
+ assert.throws(() => check(watches, issuer.replace('escapeHtml(correction.confirmation)', '"missing"')), /correction form/);
+ assert.throws(() => check(watches, issuer.replace('moveRecipient: fields.recipient === "move"', 'moveRecipient: false')), /correction form/);
 });
 
 test("queue setup, erasure and fixture teardown share an isolated application namespace", () => {

@@ -671,6 +671,9 @@ export function checkWatchActivation(watches, issuer, server) {
  if (!/watchTargetPence\.safeParse/.test(body) || !/if \(!amount\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body) || !/if \(!pence\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body)) throw new Error("Return typed invalid-target refusals for malformed and out-of-range prices");
  const caught = parsedNodes(issuer).some(node => node.type === "TryStatement" && node.handler && issuer.slice(node.handler.start, node.handler.end).includes("error instanceof WatchRefusal") && node.block.body.some(statement => statement.type === "VariableDeclaration" && statement.declarations.some(declaration => declaration.init?.type === "CallExpression" && declaration.init.callee?.name === "targetPence")));
  if (!caught) throw new Error("Parse browser target prices inside the typed watch-refusal boundary");
+ const refusal = method(parsedNodes(issuer), "watchRefusalPage");
+ const refusalBody = refusal ? issuer.slice(refusal.start, refusal.end) : "";
+ if (!refusalBody.includes('form method="post" action="/account/watch"') || !refusalBody.includes('escapeHtml(correction.confirmation)') || !refusalBody.includes('correction.moveRecipient') || !issuer.includes('watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" })')) throw new Error("Render an invalid-target correction form retaining the confirmation and recipient choice");
 }
 export function checkWatchWorker(worker, delivery) {
  const start = method(parsedNodes(worker), "startWorker");

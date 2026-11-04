@@ -146,9 +146,13 @@ The ID must match its filename. Latest is chosen by published timestamp then ID;
 
 `renderGuide` provides one canonical Markdown body for tool, prompt, resource and skill exports. It deliberately does not depend on wall clock. Every output warns that pinned facts are historical, requires checking expiry, and excludes unknown/expired claims from confirmed offers. `auditSources` separately takes an explicit current instant and reports freshness without rewriting a pin. `isOfficialSource` also requires an explicit current instant. A student declaration never verifies eligibility. Third-party code facts cannot be published as confirmed.
 
+Published source URLs follow the [production source register](../knowledge/sources/README.md): HTTPS DNS names with lexical nonpublic-host rejection. The boundary does not perform network requests or guarantee DNS reachability. Synthetic fixtures use example-domain URLs and never supply production facts.
+
 ### MCP surface
 
 `scoat_guide` returns the canonical method, release ID, complete rows, scoped facts and named shop gap over compiled HTTP. Prompt `hunt-best-benefit` accepts an optional shop. Read the default guide or skill Markdown at `scoat://knowledge/<release>/guide` and `scoat://knowledge/<release>/SKILL.md`. Registration snapshots releases at process startup. Every release present on disk gets its own pinned guide and skill resource; restarts retain old URI content while the default tool and prompt advance to latest. Rendering a historical pin is also supported by `Knowledge.read` plus `renderGuide`. There are exactly four product tools. Hunt, memory, OAuth and person/card controls remain denied or unavailable. Exact Origin protections are unchanged.
+
+The raw prompt handler parses the strict `promptInput` schema before rendering. Unknown arguments and unknown prompt names return invalid-params errors. Tool and prompt boundaries both reject extra fields; high-level SDK prompt registration is banned because it strips them.
 
 ### Evidence and limits
 

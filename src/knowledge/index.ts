@@ -3,17 +3,25 @@ import { readFile, readdir, mkdir, writeFile, link, unlink } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isIP } from "node:net";
 import type { Intent, Profile, Url } from "../domain.js";
 
 const text = z.string().trim().min(1);
 const key = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const instant = z.iso.datetime().brand<"UtcInstant">();
-const url = z.url().refine(value => { const parsed = new URL(value); return parsed.protocol === "https:" && !parsed.username && !parsed.password; }, "Public HTTPS source required").brand<"PublicHttpsUrl">();
+export const publicSourceUrl = z.url().refine(value => {
+  const parsed = new URL(value);
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  return parsed.protocol === "https:" && !parsed.username && !parsed.password
+    && isIP(host) === 0 && !host.startsWith("[") && host.includes(".")
+    && !/(^|\.)(localhost|local|localdomain|internal|invalid|test|example|onion)$/.test(host)
+    && host !== "home.arpa" && !host.endsWith(".home.arpa");
+}, "Publish public HTTPS DNS sources; IP literals and local/reserved names are not public provenance").brand<"PublicHttpsUrl">();
 export const places = ["shop-price", "other-sellers", "student", "membership", "codes", "cashback", "price-match", "card-perks"] as const;
 const place = z.enum(places);
 const fact = z.strictObject({
   id: key.brand<"FactId">(), shop: key, claim: text, place,
-  source: url, observedAt: instant, validUntil: instant,
+  source: publicSourceUrl, observedAt: instant, validUntil: instant,
   applies: z.enum(["online", "in-store", "both"]), refreshOwner: text,
   authority: z.enum(["primary", "third-party"]),
   status: z.enum(["confirmed", "needs-step", "untested", "unknown"]),

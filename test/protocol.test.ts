@@ -36,6 +36,21 @@ test("strict schemas reject forged identities and totals before dispatch", () =>
   assert.throws(() => dispatch("scoat_memory", { op: "watch", hunt: "h", requestKey: "k", target: { currency: "GBP", pence: 1.5 } }));
   assert.throws(() => dispatch("scoat_memory", { op: "watch", hunt: "h", requestKey: "k", target: { currency: "GBP", pence: 1, total: 0 } }));
 });
+test("prompts reject unexpected arguments before rendering and preserve valid guidance", async () => {
+  const server = await launch();
+  let client;
+  try {
+    client = await connect(server.base);
+    assert.deepEqual((await client.listPrompts()).prompts.map(prompt => prompt.name), ["hunt-best-benefit"]);
+    const prompt = await client.getPrompt({ name: "hunt-best-benefit", arguments: { shop: "nike" } });
+    const guide = await client.callTool({ name: "scoat_guide", arguments: { job: "best-benefit", shop: "nike" } });
+    assert.equal(prompt.messages[0].content.text, guide.content[0].text);
+    assert.equal((await client.getPrompt({ name: "hunt-best-benefit" })).messages.length, 1);
+    for (const field of ["identity", "account", "person", "total"]) await assert.rejects(client.getPrompt({ name: "hunt-best-benefit", arguments: { shop: "nike", [field]: "forged" } }), error => error.code === -32602);
+    await assert.rejects(client.getPrompt({ name: "unknown" }), error => error.code === -32602);
+  } finally { if (client) await client.close(); await server.close(); }
+  assert.deepEqual(server.logs, []);
+});
 test("ordinary HTTP client sees app-only tool but cannot authorize it", async () => {
   const server = await launch();
   let client;

@@ -1,11 +1,12 @@
 import { Knowledge, renderGuide } from "../knowledge/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { ListToolsRequestSchema, ListToolsResultSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ListToolsRequestSchema, ListToolsResultSchema, CallToolRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema, McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 const text = z.string().min(1).max(2000);
 const id = z.string().min(1).max(128);
+export const promptInput = z.strictObject({ shop: z.string().optional() });
 const money = z.strictObject({ currency: z.literal("GBP"), pence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
 const profile = z.strictObject({ student: z.enum(["yes", "no", "unknown"]), cards: z.array(text).max(30), memberships: z.array(text).max(30) });
 const proof = z.strictObject({ url: z.url({ protocol: /^https$/ }), observedAt: z.iso.datetime(), note: text });
@@ -50,7 +51,8 @@ const releases = await knowledge.list();
 const release = await knowledge.read({ release: "latest" });
 export const guideUri = `scoat://knowledge/${release.id}/guide`;
 export const skillUri = `scoat://knowledge/${release.id}/SKILL.md`;
-export const promptCatalog = { prompts: ["hunt-best-benefit"], resources: releases.flatMap(pinned => [`scoat://knowledge/${pinned.id}/guide`, `scoat://knowledge/${pinned.id}/SKILL.md`]), apps: [appUri] };
+const huntPrompt = { name: "hunt-best-benefit", description: "Pinned complete UK/GBP hunt method", arguments: [{ name: "shop", required: false }] };
+export const promptCatalog = { prompts: [huntPrompt.name], resources: releases.flatMap(pinned => [`scoat://knowledge/${pinned.id}/guide`, `scoat://knowledge/${pinned.id}/SKILL.md`]), apps: [appUri] };
 export const schemas = () => Object.fromEntries(Object.entries(toolCatalog).map(([name, entry]) => [name, { ...z.toJSONSchema(entry.input, { target: "draft-7" }), type: "object" }]));
 export function dispatch(name: ToolName, raw: unknown) {
   toolCatalog[name].input.parse(raw);
@@ -67,7 +69,13 @@ export async function authenticate(_args: unknown): Promise<never> { throw new E
 export async function person(_args: unknown): Promise<never> { throw new Error("Person authorization unavailable; use authenticated same-account browser confirmation in P07"); }
 export const fixtureHtml = '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri \'none\'; form-action \'none\'"><title>Scoat foundation</title><p>Scoat UK/GBP fixture. Shopping and controls are unavailable.</p></html>';
 export function mount({ server }: { server: McpServer }) {
-  server.registerPrompt("hunt-best-benefit", { description: "Pinned complete UK/GBP hunt method", argsSchema: { shop: z.string().optional() } }, async ({ shop }) => ({ messages: [{ role: "user", content: { type: "text", text: renderGuide({ release, request: { job: "best-benefit", shop: shop ?? null }, format: "prompt" }).method } }] }));
+  server.server.registerCapabilities({ prompts: {} });
+  server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [huntPrompt] }));
+  server.server.setRequestHandler(GetPromptRequestSchema, async request => {
+    const parsed = promptInput.safeParse(request.params.arguments ?? {});
+    if (request.params.name !== huntPrompt.name || !parsed.success) throw new McpError(ErrorCode.InvalidParams, "Use hunt-best-benefit with only an optional shop argument");
+    return { messages: [{ role: "user", content: { type: "text", text: renderGuide({ release, request: { job: "best-benefit", shop: parsed.data.shop ?? null }, format: "prompt" }).method } }] };
+  });
   for (const pinned of releases) for (const format of ["resource", "skill"] as const) {
     const uri = `scoat://knowledge/${pinned.id}/${format === "skill" ? "SKILL.md" : "guide"}`;
     server.registerResource(`${pinned.id}-${format}`, uri, { mimeType: "text/markdown" }, async () => ({ contents: [{ uri, mimeType: "text/markdown", text: renderGuide({ release: pinned, request: { job: "best-benefit", shop: null }, format }).method }] }));

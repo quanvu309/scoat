@@ -43,17 +43,28 @@ export function checkPersonBoundary(source) {
 }
 export function checkHostConfig(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
-  let found = false;
+  const found = new Set();
+  function exactSocketTemplate(element, prefix) {
+    if (element?.type !== "TemplateLiteral" || element.quasis.length !== 2 || element.expressions.length !== 1) return false;
+    const expression = element.expressions[0];
+    return element.quasis[0].value.cooked === prefix && element.quasis[1].value.cooked === ""
+      && expression.type === "MemberExpression" && expression.property?.name === "localPort"
+      && expression.object?.type === "MemberExpression" && expression.object.object?.name === "req"
+      && expression.object.property?.name === "socket";
+  }
   function visit(node) {
     if (!node || typeof node !== "object") return;
-    if (node.type === "ObjectProperty" && node.key?.name === "allowedHosts") {
-      found = true;
-      if (node.value.type !== "ArrayExpression" || node.value.elements.some(element => element.type !== "TemplateLiteral" || !element.expressions.some(expression => expression.type === "MemberExpression" && expression.property?.name === "localPort"))) throw new Error("Use exact socket localPort in allowedHosts; SDK does not support wildcard ports");
+    if (node.type === "ObjectProperty" && ["allowedHosts", "allowedOrigins"].includes(node.key?.name)) {
+      const name = node.key.name;
+      const prefixes = name === "allowedHosts" ? ["localhost:", "127.0.0.1:"] : ["http://localhost:", "http://127.0.0.1:"];
+      found.add(name);
+      const elements = node.value.type === "ArrayExpression" ? node.value.elements : [];
+      if (elements.length !== 2 || elements.some((element, index) => !exactSocketTemplate(element, prefixes[index]))) throw new Error(`Use exact loopback socket localPort in ${name}`);
     }
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
   }
   visit(ast.program);
-  if (!found) throw new Error("Use exact socket localPort in allowedHosts");
+  for (const name of ["allowedHosts", "allowedOrigins"]) if (!found.has(name)) throw new Error(`Use exact loopback socket localPort in ${name}`);
 }
 export function checkRegistryAdapter(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });

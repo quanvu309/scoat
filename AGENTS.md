@@ -12,6 +12,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | App visibility mistaken for identity | person always throws in P01 | checkPersonBoundary; forged-person fixture; direct-call protocol test |
 | Incompatible SDK helpers | Retain tested 1.32.2 / 1.7.5 pins until spike reruns | checkDependencyPair; previous 2.0.4 fixture |
 | Wildcard ports rejected by transport | Use exact local socket port in allowedHosts | checkHostConfig; wildcard-host fixture |
+| Foreign browser Origins accepted by transport | Allow only exact loopback HTTP origins at the local socket port | checkHostConfig; missing/empty/foreign-Origin fixtures; raw HTTP Origin test |
 | Extra product tools | Keep four registry names | checkTools; extra-tool fixture |
 | Paid or self-hosted CI runner | Use standard ubuntu-latest | checkWorkflow; self-hosted fixture |
 | Missing Node ambient types under TS7 | Include node in compiler types | checkTypeConfig; missing-types fixture |

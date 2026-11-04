@@ -16,6 +16,10 @@ test("structural rules reject each offending fixture with supported fix", () => 
   assert.throws(() => checkWire({ type: "object", properties: {} }), /z.strictObject/);
   assert.throws(() => checkWorkflow("jobs:\n  bad:\n    runs-on: self-hosted"), /ubuntu-latest/);
   assert.throws(() => checkHostConfig('const config = {allowedHosts: ["localhost:*"]};'), /localPort/);
+  const hosts = 'allowedHosts: [`localhost:${req.socket.localPort}`, `127.0.0.1:${req.socket.localPort}`]';
+  assert.throws(() => checkHostConfig(`const config = {${hosts}};`), /allowedOrigins/);
+  assert.throws(() => checkHostConfig(`const config = {${hosts}, allowedOrigins: []};`), /allowedOrigins/);
+  assert.throws(() => checkHostConfig(`const config = {${hosts}, allowedOrigins: [\`https://attacker.invalid:\${req.socket.localPort}\`]};`), /allowedOrigins/);
   assert.throws(() => checkRegistryAdapter('registerAppTool(server, "scoat_hunt", {inputSchema: huntInput});'), /root unions/);
   assert.throws(() => checkTypeConfig({compilerOptions:{}}), /node to tsconfig/);
   assert.throws(() => checkTools(["scoat_guide", "extra"]), /four Scoat/);

@@ -12,7 +12,7 @@ export function createHttpServer() {
     }
     if (req.url !== "/mcp") { res.writeHead(404); res.end(); return; }
     const server = createMcpServer();
-    const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts: [`localhost:${req.socket.localPort}`, `127.0.0.1:${req.socket.localPort}`] });
+    const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts: [`localhost:${req.socket.localPort}`, `127.0.0.1:${req.socket.localPort}`], allowedOrigins: [`http://localhost:${req.socket.localPort}`, `http://127.0.0.1:${req.socket.localPort}`] });
     res.on("close", () => { void transport.close(); void server.close(); });
     try { await server.connect(transport); await transport.handleRequest(req, res); }
     catch { if (!res.headersSent) res.writeHead(500); res.end(); }

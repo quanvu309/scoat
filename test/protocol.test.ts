@@ -1,7 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { request } from "node:http";
 import { launch, connect } from "../scripts/driver.mjs";
 import { toolCatalog, dispatch, person, schemas } from "../dist/mcp/index.js";
+
+test("HTTP transport rejects foreign Origins and accepts native and loopback clients", async () => {
+  const server = await launch();
+  async function status(origin?: string) {
+    return await new Promise<number>((resolve, reject) => {
+      const req = request(new URL("/mcp", server.base), {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...(origin === undefined ? {} : { origin }) }
+      }, res => { res.resume(); res.on("end", () => resolve(res.statusCode ?? 0)); res.on("error", reject); });
+      req.on("error", reject);
+      req.end(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }));
+    });
+  }
+  try {
+    assert.equal(await status("https://attacker.invalid"), 403);
+    assert.equal(await status("null"), 403);
+    assert.equal(await status(), 200);
+    const port = new URL(server.base).port;
+    assert.equal(await status(`http://127.0.0.1:${port}`), 200);
+    assert.equal(await status(`http://localhost:${port}`), 200);
+    assert.equal(await status("http://127.0.0.1:1"), 403);
+  } finally { await server.close(); }
+  assert.deepEqual(server.logs, []);
+});
 
 test("strict schemas reject forged identities and totals before dispatch", () => {
   for (const field of ["account", "person", "actor", "total", "payToday"]) {

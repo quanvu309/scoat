@@ -32,7 +32,7 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **PayToday**: Pay-today and back-later are separate ledgers with no shared total.
 - **Quote**: Priced only by the server. Budget fit uses pay-today only; cashback and points never touch it.
 - **Agent**: Minted from OAuth; never from tool input.
-- **Person**: Minted only from a verified app-only grant. An agent cannot construct one.
+- **Person**: Minted only from authenticated same-account browser confirmation or a proven trustworthy host control channel. App visibility and arbitrary grants are not authorization. P01 always refuses.
 - **Failure**: Every refusal tells the agent what to do next and carries current state when it helps.
 
 ## src/hunt/index.ts
@@ -128,6 +128,8 @@ Use Node 24.21.0 and the committed npm lockfile. Run `npm ci`, `npm run build`, 
 `npm run verify -- doctor` launches a disposable compiled server, reads readiness, then closes it. `npm run verify -- p01` launches its own process on an ephemeral loopback port and exercises ten declared scenarios. `--lane 1` through `--lane 10` select one. CLI transcripts are primary evidence under `~/tmp/scoat-delivery/p01/run-*/lane-*/transcript.json`; no UI screenshots are claimed. Lanes 6 and 7 remain UNTESTED without real host sessions; lane 8 is PARTIAL with an isolated session-binding fixture, not production authentication. The summary always distinguishes fixture checks from full P01 verification. `SCOAT_EVIDENCE_DIR` selects an absolute evidence directory. Cleanup stops only the child processes each run created and preserves evidence.
 
 `npm run perf -- p01` records five batches of 100 sequential warm raw-client HTTP calls, ten warmup calls excluded, with runner details and raw samples. It checks the proposed 500 ms p95 ceiling locally. Trunk lacks the HTTP operation, so the baseline is unavailable and no speedup ratio is calculated. The fixed 2-vCPU acceptance gate is untested on other hardware. Build success is checked separately by CI. No network service is called by verification or perf.
+
+The HTTP adapter accepts absent Origin headers for native clients and explicit loopback HTTP origins at the exact local socket port. Other present Origins receive 403. The raw HTTP protocol test covers this boundary; the structural check rejects missing, empty or foreign origin allowlists.
 
 For disposable dependencies on a Docker-capable machine, choose an unused project and ports for each lane:
 

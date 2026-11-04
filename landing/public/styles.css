@@ -57,6 +57,11 @@ html {
   text-size-adjust: 100%;
 }
 
+html:has(.sheet:modal),
+body:has(.sheet:modal) {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--background);
@@ -99,6 +104,19 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+a,
+button {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+a:active,
+button:active {
+  opacity: 0.72;
+}
+
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
@@ -109,8 +127,8 @@ a {
   display: flex;
   flex-direction: column;
   min-block-size: 100svh;
-  padding-block: var(--page-pad-block);
-  padding-inline: var(--page-pad-inline);
+  padding-block: calc(var(--page-pad-block) + env(safe-area-inset-top, 0px)) calc(var(--page-pad-block) + env(safe-area-inset-bottom, 0px));
+  padding-inline: calc(var(--page-pad-inline) + env(safe-area-inset-left, 0px)) calc(var(--page-pad-inline) + env(safe-area-inset-right, 0px));
   overflow: clip;
   isolation: isolate;
 }
@@ -124,6 +142,7 @@ a {
   display: inline-flex;
   color: var(--foreground);
   border-radius: 12px;
+  transition: opacity var(--duration-micro) var(--ease-micro);
 }
 
 .brand-mark {
@@ -219,9 +238,8 @@ a {
   line-height: 1.22;
   text-decoration: none;
   border-radius: 999px;
-  user-select: none;
-  -webkit-user-select: none;
   transition:
+    opacity var(--duration-micro) var(--ease-micro),
     background-color var(--duration-micro) var(--ease-micro),
     color var(--duration-micro) var(--ease-micro),
     transform var(--duration-micro) var(--ease-micro);
@@ -479,20 +497,26 @@ a {
 }
 
 .footer-link {
-  min-block-size: 24px;
+  min-block-size: 44px;
+  min-inline-size: 44px;
   border-radius: 4px;
   text-decoration-line: underline;
   text-decoration-color: transparent;
   text-underline-offset: 3px;
   transition:
+    opacity var(--duration-micro) var(--ease-micro),
     color var(--duration-micro) var(--ease-micro),
     text-decoration-color var(--duration-micro) var(--ease-micro);
 }
 
 .sheet {
-  inline-size: min(440px, 100% - 32px);
+  inset-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+  inset-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  inline-size: min(440px, 100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
   max-inline-size: none;
-  max-block-size: min(640px, 100% - 32px);
+  max-block-size: min(640px, 100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -553,11 +577,12 @@ a {
   inset-inline-end: 14px;
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 44px;
+  block-size: 44px;
   border-radius: 999px;
   color: var(--muted-foreground);
   transition:
+    opacity var(--duration-micro) var(--ease-micro),
     background-color var(--duration-micro) var(--ease-micro),
     color var(--duration-micro) var(--ease-micro);
 }
@@ -659,6 +684,7 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .brand,
   .button,
   .button-icon,
   .footer-link,

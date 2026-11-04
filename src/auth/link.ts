@@ -1,3 +1,4 @@
+import { deleteAuthentication } from "./erasure.js";
 import type pg from "pg";
 import type { AccountScope } from "../domain.js";
 
@@ -51,19 +52,18 @@ export async function linkIdentity(
         throw new Error(
           "Linking an account with existing hunts requires a separately verified data migration",
         );
+      const privateState = await client.query("SELECT 1 FROM memory_profiles WHERE account=$1 AND incarnation=$2 UNION ALL SELECT 1 FROM memory_items WHERE account=$1 AND incarnation=$2 UNION ALL SELECT 1 FROM memory_commands WHERE account=$1 AND incarnation=$2 UNION ALL SELECT 1 FROM hunt_receipts WHERE account=$1 AND incarnation=$2 UNION ALL SELECT 1 FROM oauth_read_grants WHERE account=$1 AND incarnation=$2 LIMIT 1",[existing.account,existing.incarnation]);
+      if (privateState.rowCount) throw new Error("Linking an account with private memory requires separate migration");
       const others = await client.query(
         "SELECT 1 FROM oauth_identities WHERE account=$1 AND incarnation=$2 AND (issuer<>$3 OR subject<>$4) LIMIT 1",
         [existing.account, existing.incarnation, issuer, subject],
       );
       if (others.rowCount) throw new Error("Linking an account with other identities requires a separately verified data migration");
       await client.query(
-        "UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2",
+        "UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2",
         [existing.account, existing.incarnation],
       );
-      await client.query(
-        "DELETE FROM oauth_artifacts WHERE payload->>'accountId'=$1",
-        [existing.account],
-      );
+      await deleteAuthentication(client,existing,[]);
     }
     await client.query(
       "INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4) ON CONFLICT(issuer,subject) DO UPDATE SET account=EXCLUDED.account,incarnation=EXCLUDED.incarnation",

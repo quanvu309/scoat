@@ -97,7 +97,7 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
     assert.throws(() => checkHostConfig(server.replace("    res.setHeader", injected + "\n    res.setHeader")), /immutable/);
   }
   assert.throws(() => checkRemoteBoundary('const x="Authentication is not configured"; async function h(){ try { await auth.authenticate(req); } catch {} const server=createMcpServer(); }'), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal)", "authenticatedDispatch(store, ignored)")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal, auth.issuer)", "authenticatedDispatch(store, ignored, auth.issuer)")), /verified issuer/);
   assert.throws(() => checkRemoteBoundary(server.replace("res.end(\"Authentication is not configured\");\n      return;", "res.end(\"Authentication is not configured\");")), /Fail closed/);
   for (const value of ['export * from "./auth/identity.js";', 'export { principalFor as safe } from "./auth/identity.js";']) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('export type * from "./auth/issuer.js";'));
@@ -107,14 +107,14 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
   assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
-  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
+  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
   assert.doesNotThrow(() => checkConsentDecision(issuer));
   assert.doesNotThrow(() => checkConsentDecision(issuer.replace("!decision.success", '!z.enum(["allow","deny"]).safeParse(submitted.get("decision")).success')));
   assert.throws(() => checkRemoteBoundary(server.replace("!(error instanceof InvalidCredential)", "false")), /infrastructure failures/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('throw new errors.InvalidTarget("Explicit resource required");', 'return resource;')), /missing explicit resource/);
-  assert.throws(() => checkBrowserLink(issuer.replace('req.method === "GET"', 'req.method === "UNAVAILABLE"')), /Start linking in a browser/);
+  assert.throws(() => checkBrowserLink(issuer.replace('url.pathname === "/account/link"', 'url.pathname === "/account/unavailable"')), /Start linking in a browser/);
   assert.throws(() => checkBrowserLink(issuer.replace('DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data', 'SELECT data FROM oauth_browser_flows WHERE state=$1')), /browser-bound confirmation/);
-  assert.throws(() => checkBrowserLink(issuer.replace("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
+  assert.throws(() => checkBrowserLink(issuer.replaceAll("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
   const skill = readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md", import.meta.url), "utf8");
   const index = readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md", import.meta.url), "utf8");
   assert.throws(() => checkAuthVerification(skill.replace("features/auth.md", "features/foundation.md"), index), /Route OAuth/);
@@ -146,14 +146,14 @@ test("P05 guards reject residual alias, result and dead-condition bypasses", asy
   ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
   assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", "principal = forged; const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer);", "principal = forged; const invoke = authenticatedDispatch(store, principal, auth.issuer);")), /verified issuer/);
   const parser = 'const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));';
   const named = replace(issuer, parser, 'const decisionSchema = z.enum(["allow", "deny"]); const decision = decisionSchema.safeParse(submitted.get("decision"));');
   assert.doesNotThrow(() => checkConsentDecision(named));
   const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
   assert.doesNotThrow(() => checkConsentDecision(renamed));
   assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
-  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", assignment + "const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer);", assignment + "const invoke = authenticatedDispatch(store, principal, auth.issuer);")), /verified issuer/);
   const rejection = issuer.slice(issuer.indexOf("        if (\n          req.method"), issuer.indexOf('        if (decision.data === "deny")'));
   assert.ok(rejection.includes("!decision.success"));
   assert.throws(() => checkConsentDecision(replace(issuer, rejection, "if (false) {" + rejection + "}")), /explicit allow or deny/);
@@ -175,4 +175,19 @@ test("P05 disables unsupported DPoP and preserves candidate linking refusals", a
     for (const condition of ["false", `false && ${name}.rowCount`]) assert.throws(() => checkLinkRetirement(link.replace(`if (${name}.rowCount)`, `if (${condition})`)), /Refuse candidate accounts/);
   }
   assert.doesNotThrow(() => checkLinkRetirement(link));
+});
+
+test("P06 ownership and enrollment guards reject the original unsafe shapes", async () => {
+ const {checkErasureCoordinator,checkExplicitEnrollment,checkMemoryVerification}=await import("../scripts/check-structure.mjs");
+ const coordinator=readFileSync(new URL("../src/accounts/erasure.ts",import.meta.url),"utf8");
+ for (const port of ["deleteAuthentication","deleteMemory","deleteHunts"]) {
+  assert.ok(coordinator.includes("await "+port+"(client,scope"));
+  assert.throws(()=>checkErasureCoordinator(coordinator.replace("await "+port+"(client,scope","void "+port+"(client,scope")),/fixed owner deletion/);
+ }
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("NOT erased FOR UPDATE","NOT erased FOR SHARE")),/exclusive active account fence/);
+ const original='async function resolveIdentity() { await client.query("INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)",[]); }';
+ assert.throws(()=>checkExplicitEnrollment(original),/explicit browser enrollment/);
+ assert.doesNotThrow(()=>checkExplicitEnrollment(readFileSync(new URL("../src/auth/identity.ts",import.meta.url),"utf8")));
+ assert.doesNotThrow(()=>checkErasureCoordinator(coordinator));
+ assert.throws(()=>checkMemoryVerification("---\ndescription: P05\n---",""),/features\/memory.md/);
 });

@@ -40,5 +40,14 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Database outage invalidates valid credentials | Return 503 for infrastructure errors and 401 only for typed credential failures | checkRemoteBoundary; removed error-class branch fixture; actual PostgreSQL outage probe |
 | Linking requires a synthetic cookie or reuses confirmation | Begin with a browser GET, reauthenticate both identities and consume a browser-bound confirmation once | checkBrowserLink; removed browser entry and replayable-query fixtures; HTTPS forged/replayed confirmation probes |
 | OAuth edits miss verification routing | Route auth changes from the skill description, branch selector and feature index | checkAuthVerification; original excluded-OAuth header and absent-route fixtures |
+| Erasure skips a private owner or uses a shared account fence | Accounts awaits fixed feature deletion ports under the exclusive active account fence | checkErasureCoordinator; missing-await and shared-fence mutations; populated owner inventory and real 55P03 races |
+| Unknown subject silently recreates an erased account | Resolution is read-only; explicit fresh browser enrollment owns provisioning | checkExplicitEnrollment; original INSERT fixture; old bearer/subject rejection and fresh enrollment regression |
+| OAuth Interaction ownership hides in nested objects or parents | Normalize every nested/multiple accountId and inherited Grant/Session owner before writes | actual top-level-only DELETE leaves nested fixture; normalized deletion removes it; parent-derived and late-owner regressions |
+| Cursor leaks caller metadata or cannot read the next page | Encode only account/incarnation/collection and scoped position | original extra-kind cursor failed the 100-item probe; compiled recent page-two and 100-saved-item pagination regression |
+| Migration drifts from startup schema or revokes on every boot | Keep SQL equal to exported installation schema and use a one-time version marker | real PostgreSQL migration equality, legacy revocation and second-application preservation; malformed ALTER negative probe |
+| Memory edits miss verification routing | Route P06 from the skill header, selector and feature index | checkMemoryVerification; missing-P06 route fixture |
+
+
+| Enrollment crosses an erase commit after an earlier suppression read | Lock sorted subject identities before the account fence and recheck inventory | lifecycle enrollmentSubjectConflict; original missing advisory lock returns true from the competing PostgreSQL try-lock |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

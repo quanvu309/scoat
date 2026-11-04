@@ -6,6 +6,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
 import { createIssuer, InvalidCredential } from "./auth/issuer.js";
+import { lifecycleSchema } from "./accounts/schema.js";
+import { maintainAccounts } from "./accounts/maintenance.js";
+import { memorySchema } from "./memory/schema.js";
 import { authSchema } from "./auth/schema.js";
 import { PostgresHuntStore } from "./hunt/postgres.js";
 
@@ -18,7 +21,14 @@ export async function createHttpServer() {
   let auth: Awaited<ReturnType<typeof createIssuer>> | null = null;
   try {
     if (store && configPath) {
-      await store.pool.query(authSchema);
+      const installation = await store.pool.connect();
+      try {
+        await installation.query("BEGIN");
+        await installation.query("SELECT pg_advisory_xact_lock(80106)");
+        await installation.query(authSchema + memorySchema + lifecycleSchema);
+        await installation.query("COMMIT");
+      } catch(error) { await installation.query("ROLLBACK"); throw error; } finally { installation.release(); }
+      await maintainAccounts(store.pool);
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
@@ -62,7 +72,7 @@ export async function createHttpServer() {
       res.end(
         JSON.stringify({
           ready: !!auth,
-          phase: "P05",
+          phase: "P06",
           auth: auth ? "configured" : "unavailable",
         }),
       );
@@ -111,7 +121,7 @@ export async function createHttpServer() {
       return;
     }
     const validationMs = performance.now() - authStart;
-    const invoke = authenticatedDispatch(store, principal);
+    const invoke = authenticatedDispatch(store, principal, auth.issuer);
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {

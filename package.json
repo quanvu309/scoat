@@ -17,7 +17,8 @@
     "lint": "npm run lint:comments && node scripts/check-structure.mjs",
     "db:migrate": "node scripts/database.mjs migrate",
     "db:seed": "node scripts/database.mjs seed",
-    "start:worker": "node scripts/worker.mjs"
+    "start:worker": "node scripts/worker.mjs",
+    "accounts:maintain": "node scripts/maintain-accounts.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",

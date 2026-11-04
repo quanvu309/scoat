@@ -136,6 +136,9 @@ export function checkDriver(source) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
+  checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
+  checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
+  checkMemoryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
   checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
@@ -384,7 +387,7 @@ export function checkLinkRetirement(source) {
   const nodes = parsedNodes(source);
   const queries = nodes.filter(node => node.type === "CallExpression" && member(node.callee,"client","query"));
   const lock = queries.find(node => node.arguments[0]?.value?.includes("ORDER BY account,incarnation FOR UPDATE"));
-  const retired = queries.find(node => node.arguments[0]?.value === "UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2");
+  const retired = queries.find(node => node.arguments[0]?.value === "UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2");
   const move = queries.find(node => node.arguments[0]?.value?.startsWith("INSERT INTO oauth_identities"));
   if (!lock || !retired || !move || !(lock.start < retired.start && retired.start < move.start)) throw new Error("Retire the old account under its exclusive fence before moving its last identity");
   const migration = nodes.find(node => node.type === "BlockStatement" && node.body.some(statement => astNodes(statement).includes(retired) && statement.type === "ExpressionStatement"));
@@ -400,4 +403,22 @@ export function checkAuthVerification(skill, index) {
   const header = skill.split("---")[1] ?? "";
   const routing = skill.split("## Completion")[0];
   if (!/OAuth/.test(header) || /excludes[^.]*OAuth/i.test(header) || !routing.includes("features/auth.md") || !index.includes("[authentication](auth.md)")) throw new Error("Route OAuth changes from the verification skill header and feature index to features/auth.md");
+}
+
+export function checkErasureCoordinator(source) {
+ const nodes = parsedNodes(source);
+ const queries = nodes.filter(node => node.type === "CallExpression" && member(node.callee,"client","query"));
+ const lock = queries.find(node => node.arguments[0]?.value === "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR UPDATE");
+ const refusal = nodes.find(node => node.type === "IfStatement" && node.test.type === "UnaryExpression" && node.test.operator === "!" && member(node.test.argument,"active","rowCount") && node.consequent.type === "ThrowStatement");
+ for (const owner of ["deleteAuthentication","deleteMemory","deleteHunts"]) {
+  const call = nodes.find(node => node.type === "AwaitExpression" && node.argument.type === "CallExpression" && node.argument.callee.name === owner && node.argument.arguments[0]?.name === "client" && node.argument.arguments[1]?.name === "scope");
+  if (!lock || !refusal || !call || !(lock.start<refusal.start && refusal.start<call.start)) throw new Error("Accounts erasure must await every fixed owner deletion port after its exclusive active account fence");
+ }
+}
+export function checkExplicitEnrollment(source) {
+ const queries = parsedNodes(source).filter(node => node.type === "CallExpression" && member(node.callee,"client","query"));
+ if (queries.some(node => /^INSERT INTO (hunt_accounts|oauth_identities)/i.test(node.arguments[0]?.value ?? ""))) throw new Error("Unknown identity resolution cannot provision; use explicit browser enrollment");
+}
+export function checkMemoryVerification(skill,index) {
+ if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory and erasure changes to features/memory.md");
 }

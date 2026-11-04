@@ -1,6 +1,6 @@
 import { createServer } from "node:https";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
-import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
+import { readFile, writeFile, rm, mkdir, cp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -132,6 +132,8 @@ export async function authFixture(databaseUrl) {
     upstreamIssuer,
     upstreamClientId: "scoat-upstream",
     upstreamClientSecret: "test-upstream-secret",
+    lifecycleKey: randomBytes(32).toString("hex"),
+    lifecycleKeyVersion: "disposable-fixture",
     cookieKeys: [randomBytes(32).toString("hex")],
     jwks,
     clients: ["host-one", "host-two"].map((client_id) => ({
@@ -139,13 +141,15 @@ export async function authFixture(databaseUrl) {
       redirect_uris: ["https://client.example/cb"],
     })),
   };
+  await cp(new URL("../knowledge/releases",import.meta.url),root+"/releases",{recursive:true});
   await writeFile(root + "/auth.json", JSON.stringify(config), { mode: 0o600 });
   const port = server.address().port;
   await close(server);
   let child;
   const logs = path.join(os.homedir(), "tmp/scoat-delivery/p05/logs");
   await mkdir(logs, { recursive: true });
-  const log = createWriteStream(path.join(logs, path.basename(root) + ".log"), {
+  const logPath=path.join(logs,path.basename(root)+".log");
+  const log = createWriteStream(logPath, {
     flags: "a",
   });
   async function startService() {
@@ -156,6 +160,7 @@ export async function authFixture(databaseUrl) {
         ...process.env,
         PORT: String(port),
         SCOAT_AUTH_CONFIG: root + "/auth.json",
+        SCOAT_KNOWLEDGE_DIRECTORY: root+"/releases",
         DATABASE_URL: databaseUrl,
         SCOAT_TLS_KEY: root + "/key.pem",
         SCOAT_TLS_CERT: root + "/cert.pem",
@@ -253,6 +258,13 @@ export async function authFixture(databaseUrl) {
     for (let n = 0; n < 30 && !url.startsWith("https://client.example/"); n++) {
       let response = await browser(url);
       steps.push({ path: new URL(url).pathname, status: response.status });
+      if (response.status === 200 && new URL(url).pathname === "/upstream/callback") {
+        const html = await response.text();
+        const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
+        assert.ok(confirmation,html);
+        response = await browser(issuer+"/account/enroll",{method:"POST",headers:{origin:issuer,"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({confirmation,decision:"enroll"})});
+        steps.push({path:"/account/enroll",status:response.status});
+      }
       if (
         response.status === 200 &&
         new URL(url).pathname.startsWith("/interaction/")
@@ -401,6 +413,8 @@ export async function authFixture(databaseUrl) {
   const boundary = await createIssuer(config, store.pool);
   return {
     issuer,
+    knowledgeDirectory: root+"/releases",
+    logPath,
     store,
     authenticate: (token) => boundary.authenticate({ headers: { authorization: "Bearer " + token } }),
     login,

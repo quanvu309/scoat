@@ -1,3 +1,5 @@
+import { readDeclaredProfile } from "../memory/storage.js";
+import { releaseSchema } from "../knowledge/index.js";
 import pg from "pg";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
@@ -20,6 +22,7 @@ export class Tx {
   readonly prefix: string[];
   replay: unknown = null;
   constructor(readonly client: pg.PoolClient, readonly scope: Scope) { this.prefix = [scope.account, scope.incarnation]; }
+  async declaredProfile() { return readDeclaredProfile(this.client,this.scope); }
   async snapshot(id: HuntId): Promise<Snapshot | null> {
     const result = await this.client.query("SELECT jsonb_build_object('hunt',h.data,'release',h.release,'final',h.snapshot, 'rows',COALESCE((SELECT jsonb_agg(r.data ORDER BY r.id) FROM hunt_rows r WHERE (r.account,r.incarnation,r.hunt)=(h.account,h.incarnation,h.id)),'[]'), 'offers',COALESCE((SELECT jsonb_agg(o.data ORDER BY o.id) FROM hunt_offers o WHERE (o.account,o.incarnation,o.hunt)=(h.account,h.incarnation,h.id)),'[]'), 'compatibility',COALESCE((SELECT jsonb_agg(c.data ORDER BY c.id) FROM hunt_compatibility c WHERE (c.account,c.incarnation,c.hunt)=(h.account,h.incarnation,h.id)),'[]')) AS value FROM durable_hunts h WHERE account=$1 AND incarnation=$2 AND id=$3", [...this.prefix,id]);
     return result.rows[0]?.value ?? null;
@@ -49,11 +52,7 @@ export class Tx {
     if (this.scope.request) await this.client.query("UPDATE hunt_receipts SET reply=$4 WHERE account=$1 AND incarnation=$2 AND key=$3", [...this.prefix,this.scope.request.key,JSON.stringify(reply)]);
   }
   async ids(after = "", limit = 20): Promise<HuntId[]> { return (await this.client.query("SELECT id FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id>$3 ORDER BY id LIMIT $4", [...this.prefix,after,limit])).rows.map(r => r.id); }
-  async erase() {
-    await this.client.query("UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2", this.prefix);
-    await this.client.query("DELETE FROM durable_hunts WHERE account=$1 AND incarnation=$2", this.prefix);
-    await this.client.query("DELETE FROM hunt_receipts WHERE account=$1 AND incarnation=$2", this.prefix);
-  }
+
 }
 export type Hooks = { beforeAccountFence?: (scope: Scope, client: pg.PoolClient) => Promise<void>; afterAccountFence?: (scope: Scope, client: pg.PoolClient) => Promise<void>; afterRowFence?: (scope: Scope, client: pg.PoolClient) => Promise<void>; beforeCommit?: (scope: Scope, client: pg.PoolClient) => Promise<void> };
 export class PostgresHuntStore {
@@ -101,4 +100,31 @@ export class PostgresHuntStore {
       } finally { client.release(); }
     }
   }
+}
+
+export async function readFinishedResult(client: pg.PoolClient, scope: AccountScope, hunt: string) {
+ const row = (await client.query("SELECT snapshot,release FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3 FOR SHARE",[scope.account,scope.incarnation,hunt])).rows[0];
+ if (!row || row.snapshot === null) return null;
+ const snapshot = z.json().parse(row.snapshot);
+ const envelope = z.object({ hunt: z.string(), release: z.string(), text: z.string(), profile: z.object({ student: z.enum(["yes","no","unknown"]), cards: z.array(z.string()), memberships: z.array(z.string()) }), final: z.object({ kind: z.literal("finished") }) }).parse(snapshot);
+ const release = releaseSchema.parse(row.release);
+ if (envelope.hunt !== hunt || envelope.release !== release.id) throw new Error("Invalid finished result persistence");
+ return { snapshot,release };
+}
+export async function deleteHunts(client: pg.PoolClient, scope: AccountScope) {
+ const counts: Record<string,number> = {};
+ for (const table of ["hunt_compatibility_members","hunt_compatibility","hunt_offers","hunt_rows","durable_hunts","hunt_receipts"]) {
+  const result = await client.query(`DELETE FROM ${table} WHERE account=$1 AND incarnation=$2`,[scope.account,scope.incarnation]);
+  counts[table] = result.rowCount ?? 0;
+  if ((await client.query(`SELECT 1 FROM ${table} WHERE account=$1 AND incarnation=$2 LIMIT 1`,[scope.account,scope.incarnation])).rowCount) throw new Error("Hunts erasure survivor");
+ }
+ return counts;
+}
+
+export async function countRecentHunts(client: pg.PoolClient, scope: AccountScope) {
+ return (await client.query<{count:number}>("SELECT count(*)::integer AS count FROM durable_hunts WHERE account=$1 AND incarnation=$2",[scope.account,scope.incarnation])).rows[0]?.count ?? 0;
+}
+export async function readRecentHunts(client: pg.PoolClient, scope: AccountScope, after: string, limit: number) {
+ const cursor = after ? z.strictObject({started_at:z.iso.datetime(),id:z.string().max(128)}).parse(JSON.parse(after)) : null;
+ return (await client.query("SELECT id,data->>'startedAt' AS started_at,data->'final'->>'kind' AS state FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND ($3::text IS NULL OR (data->>'startedAt',id)<($3,$4)) ORDER BY data->>'startedAt' DESC,id DESC LIMIT $5",[scope.account,scope.incarnation,cursor?.started_at ?? null,cursor?.id ?? null,limit])).rows;
 }

@@ -33,3 +33,7 @@ The P07 card lane checks the unconfigured explanation and the MCP `service-uncon
 ## Limits
 
 The capture process models the Resend contract over local TLS. A live Resend account, live seller checkout, real hosts, model agents and fixed two-CPU runners stay UNTESTED unless run separately. Only The Pi Hut Raspberry Pi 5 exact variants in UK Royal Mail 1st Class context are supported; everything else is unknown.
+
+Verify absent-mail browser/MCP refusal and preserved cancellation in watch-corrections. The native confirmation lane must reject zero, oversized and malformed targets with an actionable no-store refusal, then activate using the same unconsumed confirmation after correction.
+
+Queue namespaces follow the database application schema. The default public schema retains `pgboss`; isolated schemas receive a deterministic private namespace. Run the two-fixture teardown regression and shared-database parallel tests after queue or fixture changes.

@@ -3,6 +3,8 @@
 Keep intent in docs and names. Executable source/config has no comments. `arch/` and `design/` are non-runtime design references, excluded from comment enforcement and never imported into production.
 
 | Risk | Required fix | Enforcement and negative proof |
+| Parallel fixtures delete each other’s live queue tables | Derive a queue namespace from the isolated application schema for setup, erasure and teardown | checkWatchQueueIsolation; original shared-schema fixtures; two live fixtures preserve queued jobs after one closes |
+| Watch activation succeeds without mail or invalid browser targets escape to a generic error | Gate starts and links on a worker mail key and catch typed target refusals before consuming confirmation | checkWatchActivation; original availability and parse-placement mutations; native target correction and unconfigured HTTPS/MCP refusal with cancellation preserved |
 | --- | --- | --- |
 | Watch responses accept undeclared mail fields or permit activation caching | Strictly parse provider acceptance and serve activation with no-store | checkWatchResponses; original loose-schema and missing-header fixtures; real HTTP mail-response regression |
 | Lost renewal response leaves a live card permanently revoked | Discard the prior capability before awaiting renewal and reopen through authenticated MCP after transient failure | checkCardRenewal; missing/dead disposal fixtures; lost-committed-response controller and native Chromium lanes |

@@ -12,7 +12,7 @@ import { authFixture } from "./auth-fixture.mjs";
 import { scratchDirectory } from "./scratch.mjs";
 import { fixtureDelivery } from "./watch-delivery.mjs";
 import { Watches, watchConfigSchema } from "../dist/memory/watches.js";
-import { WatchQueue } from "../dist/queue/index.js";
+import { WatchQueue, queueSchemaFor } from "../dist/queue/index.js";
 import { basisDigest } from "../dist/delivery/index.js";
 import { resolveWatchTarget } from "../dist/memory/watches.js";
 
@@ -41,7 +41,7 @@ async function child(file, env, ready) {
  return { process, message, output };
 }
 
-export async function watchFixture(databaseUrl) {
+export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) {
  const root = await scratchDirectory("watch-");
  await promisify(execFile)("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", root + "/seller-key.pem", "-out", root + "/seller-cert.pem", "-days", "1", "-subj", "/CN=thepihut.com", "-addext", "subjectAltName=DNS:thepihut.com,DNS:localhost,IP:127.0.0.1"], { timeout: 15000 });
  const sellerKey = await readFile(root + "/seller-key.pem"), sellerCert = await readFile(root + "/seller-cert.pem", "utf8");
@@ -69,7 +69,7 @@ export async function watchFixture(databaseUrl) {
   entry: new URL("./watch-server.mjs", import.meta.url),
   beforeStart: async ({ issuer, root: authRoot, databaseUrl: url }) => {
    isolatedUrl = url;
-   config = watchConfigSchema.parse({ issuer, from: "Scoat alerts <alerts@scoat.invalid>", unsubscribe: { version: "fixture-v1", keys: { "fixture-v1": randomBytes(32).toString("hex") } }, resendApiKey: null });
+   config = watchConfigSchema.parse({ issuer, from: "Scoat alerts <alerts@scoat.invalid>", unsubscribe: { version: "fixture-v1", keys: { "fixture-v1": randomBytes(32).toString("hex") } }, resendApiKey: mailConfigured ? mailKey : null });
    await writeFile(root + "/watch.json", JSON.stringify(config), { mode: 0o600 });
    bundle = root + "/ca-bundle.pem";
    await writeFile(bundle, (await readFile(authRoot + "/cert.pem", "utf8")) + sellerCert);
@@ -82,10 +82,12 @@ export async function watchFixture(databaseUrl) {
  const defaults = getCACertificates("default");
  setDefaultCACertificates([...defaults, sellerCert]);
  const delivery = fixtureDelivery(env);
+ const queueSchema = await queueSchemaFor(f.store.pool);
+ if (!/^scoat_jobs_[0-9a-f]{32}$/.test(queueSchema)) throw new Error("Watch fixtures require an isolated queue schema");
  const producer = await WatchQueue.open(isolatedUrl, "producer");
  let worker = null;
  const fixture = {
-  f, root, state, config, env, delivery, producer, sellerPort, mailOrigin, accepted,
+  f, root, state, config, env, delivery, producer, queueSchema, sellerPort, mailOrigin, accepted,
   pool: f.store.pool,
   watches: pause => new Watches({ pool: f.store.pool, delivery, config, enqueue: producer, ...(pause ? { pause } : {}) }),
   waitAccepted: key => new Promise(resolve => { const found = accepted.find(item => item.accepted === key); if (found) resolve(found); else waiters.push({ key, resolve }); }),
@@ -115,7 +117,7 @@ export async function watchFixture(databaseUrl) {
    await step("capture", () => new Promise(resolve => { capture.process.once("exit", resolve); capture.process.kill("SIGKILL"); }));
    await step("seller", () => new Promise(resolve => { seller.close(resolve); seller.closeAllConnections(); }));
    setDefaultCACertificates(defaults);
-   await step("queue-schema", async () => { const admin = new pg.Pool({ connectionString: databaseUrl }); try { await admin.query("SET lock_timeout='5s'"); await admin.query("DROP SCHEMA IF EXISTS pgboss CASCADE"); } finally { await admin.end(); } });
+   await step("queue-schema", async () => { const admin = new pg.Pool({ connectionString: databaseUrl }); try { await admin.query("SET lock_timeout='5s'"); await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`); } finally { await admin.end(); } });
    await step("auth", () => f.close());
    await rm(root, { recursive: true, force: true });
   },

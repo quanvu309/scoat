@@ -27,7 +27,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   await view.close();
  };
  const counts = async scope => Object.fromEntries(await Promise.all(["watches", "watch_alerts", "watch_observations", "watch_recipients"].map(async table => [table, (await pool.query(`SELECT count(*)::integer AS n FROM ${table} WHERE account=$1 AND incarnation=$2`, [scope.account, scope.incarnation])).rows[0].n])));
- const jobs = async filter => (await pool.query("SELECT name,state::text AS state FROM pgboss.job WHERE data @> $1::jsonb ORDER BY name,state", [JSON.stringify(filter)])).rows;
+ const jobs = async filter => (await pool.query(`SELECT name,state::text AS state FROM ${w.queueSchema}.job WHERE data @> $1::jsonb ORDER BY name,state`, [JSON.stringify(filter)])).rows;
  const alerts = async watch => (await pool.query("SELECT id,state,amount_pence,provider_key,attempts,last_error,day::text AS day FROM watch_alerts WHERE watch=$1 ORDER BY created_at", [watch])).rows;
  const jobFor = (scope, watch, n) => ({ account: scope.account, incarnation: scope.incarnation, watch, day: day(n) });
  const sendFor = (scope, watch, alert) => ({ account: scope.account, incarnation: scope.incarnation, watch, alert });
@@ -78,7 +78,33 @@ export async function watchLanes(databaseUrl, evidence, head) {
   assert.ok(!confirmText.includes("63.00"));
   assert.equal(await page.getByLabel("Your target delivered price (GBP)").inputValue(), "60.00");
   await page.screenshot({ path: path.join(evidence, "p08-review-1-confirm.png"), fullPage: true });
-  await page.getByRole("button", { name: "Start watching" }).click();
+  const confirmation = await page.locator('input[name="confirmation"]').inputValue();
+  const postTarget = async target => {
+   const response = page.waitForResponse(response => response.url() === f.issuer + "/account/watch" && response.request().method() === "POST");
+   const loaded = page.waitForEvent("domcontentloaded");
+   await page.evaluate(({ confirmation, target }) => {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = "/account/watch";
+    for (const [name, value] of Object.entries({ confirmation, decision: "watch", target })) {
+     const input = document.createElement("input");
+     input.type = "hidden"; input.name = name; input.value = value; form.append(input);
+    }
+    document.body.append(form);
+    form.submit();
+   }, { confirmation, target });
+   const result = await response;
+   await loaded;
+   return result;
+  };
+  for (const target of ["0.00", "999999.99", "not-a-price"]) {
+   const refusal = await postTarget(target);
+   assert.equal(refusal.status(), 409);
+   assert.equal(refusal.headers()["cache-control"], "no-store");
+   assert.match(await page.locator("body").innerText(), /Enter a target from GBP 0.01 to GBP 100000.00/);
+   assert.equal((await pool.query("SELECT count(*)::integer AS n FROM watches WHERE account=$1", [scope.account])).rows[0].n, 0);
+  }
+  assert.equal((await postTarget("60.00")).status(), 200);
   await page.getByText("Watch active").waitFor();
   await page.screenshot({ path: path.join(evidence, "p08-review-2-active.png"), fullPage: true });
   const replayed = await memory({ op: "read", collection: "watches" });

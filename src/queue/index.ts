@@ -1,10 +1,15 @@
 import { PgBoss } from "pg-boss";
 import type { Job } from "pg-boss";
-import type pg from "pg";
+import pg from "pg";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 export const queueNames = { daily: "watch-daily", check: "watch-check", send: "watch-send" } as const;
-export const queueSchema = "pgboss";
+export async function queueSchemaFor(client: Pick<pg.PoolClient, "query">): Promise<string> {
+ const result = await client.query("SELECT current_schema() AS schema");
+ const { schema } = z.strictObject({ schema: z.string().min(1) }).parse(result.rows[0]);
+ return schema === "public" ? "pgboss" : "scoat_jobs_" + createHash("sha256").update(schema).digest("hex").slice(0, 32);
+}
 const scope = { account: z.uuid(), incarnation: z.uuid(), watch: z.uuid() };
 export const checkJobSchema = z.strictObject({ ...scope, day: z.iso.date() });
 export const sendJobSchema = z.strictObject({ ...scope, alert: z.uuid() });
@@ -16,6 +21,7 @@ export type Handlers = Readonly<{ plan(): Promise<void>; check(job: CheckJob): P
 const caller = (client: pg.PoolClient) => ({ executeSql: async (text: string, values?: unknown[]) => ({ rows: (await client.query(text, values)).rows }) });
 
 export async function deleteScopedJobs(client: pg.PoolClient, target: Readonly<{ account: string; incarnation: string; watch?: string }>): Promise<number> {
+ const queueSchema = await queueSchemaFor(client);
  const installed = await client.query("SELECT to_regclass($1) AS job", [queueSchema + ".job"]);
  if (installed.rows[0]?.job === null) return 0;
  const filter = JSON.stringify(target.watch === undefined ? { account: target.account, incarnation: target.incarnation } : { account: target.account, incarnation: target.incarnation, watch: target.watch });
@@ -35,6 +41,9 @@ export class WatchQueue implements Enqueue {
  private constructor(private readonly boss: PgBoss) {}
 
  static async open(connectionString: string, role: "worker" | "producer"): Promise<WatchQueue> {
+  const pool = new pg.Pool({ connectionString, max: 1 });
+  let queueSchema: string;
+  try { queueSchema = await queueSchemaFor(pool); } finally { await pool.end(); }
   const boss = new PgBoss({ connectionString, schema: queueSchema, schedule: role === "worker", supervise: role === "worker", migrate: true, persistWarnings: false, max: 4 });
   boss.on("error", () => process.stderr.write(JSON.stringify({ event: "queue_error" }) + "\n"));
   await boss.start();

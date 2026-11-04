@@ -22,7 +22,7 @@ export type WatchConfig = z.infer<typeof watchConfigSchema>;
 export type Comparable = Extract<Observation, { kind: "comparable" }>;
 export type WatchPause = (point: "observed" | "outbox" | "marked" | "fenced" | "submitted") => Promise<void>;
 export type WatchProposal = { kind: "target"; target: PublicWatchTarget } | { kind: "unavailable"; reason: "no-exact-supported-variant" | "ambiguous-variant" };
-export const watchRefusalReasons = ["service-unconfigured", "unfinished", "no-exact-supported-variant", "ambiguous-variant", "already-watching", "watch-limit", "stale", "expired", "recipient-changed"] as const;
+export const watchRefusalReasons = ["service-unconfigured", "unfinished", "no-exact-supported-variant", "ambiguous-variant", "already-watching", "watch-limit", "invalid-target", "stale", "expired", "recipient-changed"] as const;
 export type WatchRefusalReason = typeof watchRefusalReasons[number];
 export type PreparedWatch = { kind: "ready"; hunt: string; target: PublicWatchTarget; suggestedPence: number | null; recipient: { revision: string; address: string } | null; otherActive: number } | { kind: "unavailable"; reason: Exclude<WatchRefusalReason, "stale" | "expired" | "recipient-changed"> };
 export type WatchEntry = { available: true; url: string } | { available: false; reason: string };
@@ -33,6 +33,7 @@ export const watchRefusalText: Readonly<Record<WatchRefusalReason, string>> = {
  "ambiguous-variant": "The finished result links more than one Pi Hut variant, so the exact item to watch is unclear.",
  "already-watching": "This finished hunt already has an active price watch.",
  "watch-limit": "This account already has the maximum number of active price watches.",
+ "invalid-target": "Enter a target from GBP 0.01 to GBP 100000.00. Nothing was activated; correct the amount and submit the confirmation again.",
  stale: "The public price shown is more than two minutes old or the item changed. Nothing was activated.",
  expired: "This confirmation expired or was already used. Nothing new was activated.",
  "recipient-changed": "The alert address changed since this page was shown, or moving alerts to the new address was not confirmed. Nothing was activated.",
@@ -203,11 +204,16 @@ export async function deleteWatches(client: pg.PoolClient, scope: AccountScope) 
 export class Watches {
  constructor(private readonly deps: Readonly<{ pool: pg.Pool; delivery: Delivery; config: WatchConfig; enqueue: Enqueue | null; pause?: WatchPause }>) {}
 
+ get available(): boolean {
+  return this.deps.config.resendApiKey !== null;
+ }
+
  get issuer(): string {
   return this.deps.config.issuer;
  }
 
  async prepare(scope: AccountScope, hunt: string): Promise<PreparedWatch> {
+  if (!this.available) return { kind: "unavailable", reason: "service-unconfigured" };
   return retryTransaction(this.deps.pool, async client => {
    if (!await activeAccount(client, scope, "SHARE")) throw new Error("Inactive account incarnation");
    return prepareWatch(client, scope, hunt);
@@ -223,6 +229,7 @@ export class Watches {
  }
 
  async activate(client: pg.PoolClient, input: Readonly<{ scope: AccountScope; hunt: string; target: PublicWatchTarget; targetPence: number; observation: Comparable; observedAt: number; address: string; expectedRecipient: string | null; moveRecipient: boolean }>) {
+  if (!this.available) throw new WatchRefusal("service-unconfigured");
   const { scope } = input;
   const prefix = [scope.account, scope.incarnation];
   if (!await activeAccount(client, scope, "SHARE")) throw new Error("Inactive account incarnation");

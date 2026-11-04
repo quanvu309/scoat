@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkWatchSender, checkWatchErasure, checkPublicFetch, checkWatchVerification, checkWatchResponses, checkWatchLockOrder, checkWatchRecipient, checkWatchEntry, checkWatchBoundary, checkWatchWorker } from "../scripts/check-structure.mjs";
+import { checkWatchSender, checkWatchErasure, checkPublicFetch, checkWatchVerification, checkWatchResponses, checkWatchLockOrder, checkWatchRecipient, checkWatchEntry, checkWatchBoundary, checkWatchWorker, checkWatchActivation, checkWatchQueueIsolation } from "../scripts/check-structure.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const watches = read("src/memory/watches.ts"), queue = read("src/queue/index.ts"), erasure = read("src/accounts/erasure.ts"), fetch = read("src/delivery/fetch.ts");
@@ -136,4 +136,32 @@ test("the worker refuses absent mail before queue work and never reports false a
  assert.throws(() => checkWatchWorker(worker.replace(" if (!options.delivery.canSubmit) throw new Error(\"Watch worker requires a mail transport; refusing before queue work or submission markers\");\n", ""), delivery), /before queue work/);
  assert.throws(() => checkWatchWorker(worker.replace(" if (config.resendApiKey === null) throw new Error(\"Watch worker requires resendApiKey; refusing before queue work or submission markers\");\n", ""), delivery), /without a mail key/);
  assert.throws(() => checkWatchWorker(worker, delivery.replace("if (!mail) throw new Error(\"Mail transport unavailable\");", "if (!mail) return { kind: \"ambiguous\", reason: \"mail-unconfigured\" };")), /ambiguous provider acceptance/);
+});
+
+test("watch activation requires configured mail and catches invalid browser targets", () => {
+ const issuer = read("src/auth/issuer.ts"), server = read("src/server.ts");
+ const check = (w = watches, i = issuer, s = server) => checkWatchActivation(w, i, s);
+ assert.doesNotThrow(() => check());
+ assert.throws(() => check(watches.replace("return this.deps.config.resendApiKey !== null;", "return true;")), /configured worker mail key/);
+ for (const guard of ['  if (!this.available) return { kind: "unavailable", reason: "service-unconfigured" };', '  if (!this.available) throw new WatchRefusal("service-unconfigured");']) {
+  assert.ok(watches.includes(guard));
+  assert.throws(() => check(watches.replace(guard, "")), /before state access/);
+ }
+ assert.throws(() => check(watches, issuer.replace("if (!watches?.available)", "if (!watches)")), /through watch availability/);
+ assert.throws(() => check(watches, issuer, server.replace("watches?.available === true", "watches !== undefined")), /through watch availability/);
+ assert.throws(() => check(watches, issuer.replace("watches?.available && issued.finished", "watches && issued.finished")), /through watch availability/);
+ for (const name of ["amount", "pence"]) assert.throws(() => check(watches, issuer.replace('if (!' + name + '.success) throw new WatchRefusal("invalid-target");', "")), /invalid-target/);
+ const outside = issuer.replace("      try {\n        const pence = targetPence(fields.target);", "      const pence = targetPence(fields.target);\n      try {");
+ assert.notEqual(outside, issuer);
+ assert.throws(() => check(watches, outside), /inside the typed watch-refusal boundary/);
+});
+
+test("queue setup, erasure and fixture teardown share an isolated application namespace", () => {
+ const fixture = read("scripts/watch-fixture.mjs");
+ const drivers = [read("scripts/watch-lanes.mjs"), read("scripts/perf-watch.mjs")];
+ assert.doesNotThrow(() => checkWatchQueueIsolation(queue, fixture, drivers));
+ assert.throws(() => checkWatchQueueIsolation(queue, fixture, drivers.map(driver => driver.replaceAll("${w.queueSchema}.job", "pgboss.job"))), /fixture namespace/);
+ assert.throws(() => checkWatchQueueIsolation(queue.replace('SELECT current_schema() AS schema', 'SELECT \'public\' AS schema'), fixture), /queue namespace/);
+ assert.throws(() => checkWatchQueueIsolation(queue.replaceAll('await queueSchemaFor(client)', '\"pgboss\"'), fixture), /same queue namespace/);
+ assert.throws(() => checkWatchQueueIsolation(queue, fixture.replace('DROP SCHEMA IF EXISTS ${queueSchema} CASCADE', 'DROP SCHEMA IF EXISTS pgboss CASCADE')), /only their own/);
 });

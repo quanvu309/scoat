@@ -28,7 +28,7 @@ test("compiled watches dedupe concurrent days and stop new sends at unwatch and 
    open();
    assert.equal(await sending, "refused");
    assert.equal(receipt.retention.watchMail.mayStillArrive, 1);
-   assert.equal((await w.pool.query("SELECT count(*)::integer AS n FROM pgboss.job WHERE data @> $1::jsonb", [JSON.stringify({ account: seeded.account })])).rows[0].n, 0);
+   assert.equal((await w.pool.query(`SELECT count(*)::integer AS n FROM ${w.queueSchema}.job WHERE data @> $1::jsonb`, [JSON.stringify({ account: seeded.account })])).rows[0].n, 0);
    assert.equal((await w.deliveries()).length, 0);
   } finally { await w.close(); }
  });

@@ -62,8 +62,12 @@ function watchRefusalPage(reason: WatchRefusalReason, retry: string | null) {
   return `<title>Price watch not started</title><h1>Price watch not started</h1><p>${escapeHtml(watchRefusalText[reason])}</p>${recovery ? `<p>${escapeHtml(recovery)}</p>` : ""}${again}`;
 }
 function targetPence(value: string) {
-  const [whole = "", fraction = ""] = z.string().regex(/^[0-9]{1,6}(\.[0-9]{1,2})?$/).parse(value).split(".");
-  return watchTargetPence.parse(Number(whole) * 100 + Number(fraction.padEnd(2, "0")));
+ const amount = z.string().regex(/^[0-9]{1,6}(\.[0-9]{1,2})?$/).safeParse(value);
+ if (!amount.success) throw new WatchRefusal("invalid-target");
+ const [whole = "", fraction = ""] = amount.data.split(".");
+ const pence = watchTargetPence.safeParse(Number(whole) * 100 + Number(fraction.padEnd(2, "0")));
+ if (!pence.success) throw new WatchRefusal("invalid-target");
+ return pence.data;
 }
 async function oneClick(req: IncomingMessage) {
   const type = req.headers["content-type"] ?? "";
@@ -319,7 +323,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     }
 
     if (url.pathname === "/account/watch") {
-      if (!watches) {
+      if (!watches?.available) {
         res.writeHead(503, watchHeaders);
         res.end(watchRefusalPage("service-unconfigured", null));
         return;
@@ -332,9 +336,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       const submitted = await form(req);
       const fields = z.strictObject({ confirmation: z.string().min(1).max(128), decision: z.literal("watch"), target: z.string().max(16), recipient: z.literal("move").optional() }).parse(Object.fromEntries(submitted));
       if ([...submitted.keys()].length !== Object.keys(fields).length) throw new Error("Duplicate form fields");
-      const pence = targetPence(fields.target);
       let retry: string | null = null;
       try {
+        const pence = targetPence(fields.target);
         const activated = await retryTransaction(pool, async client => {
           const pending = (await client.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() FOR UPDATE", [digest(fields.confirmation)])).rows[0];
           if (!pending) throw new WatchRefusal("expired");
@@ -542,7 +546,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         });
         const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
         res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
-        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent.</p>${watches && issued.finished ? `<p><a href="${escape(watchUrl(issuer,actual.account,intent.hunt))}">Watch this finished hunt's price</a></p>` : ""}`+issued.forms.map(form=>{
+        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent.</p>${watches?.available && issued.finished ? `<p><a href="${escape(watchUrl(issuer,actual.account,intent.hunt))}">Watch this finished hunt's price</a></p>` : ""}`+issued.forms.map(form=>{
           const label=form.action.kind === "stop" ? "Stop accepting new discoveries" : "Skip row "+form.action.row;
           return `<form method="post" action="/account/control"><input type="hidden" name="confirmation" value="${form.token}"><input type="hidden" name="csrf" value="${form.nonce}"><input type="hidden" name="action" value="${escape(JSON.stringify(form.action))}"><button>${escape(label)}</button></form>`;
         }).join(""));

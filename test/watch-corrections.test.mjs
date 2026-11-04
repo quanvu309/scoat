@@ -5,13 +5,14 @@ import { rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { PgBoss } from "pg-boss";
 import { withDatabase } from "../scripts/durable-database.mjs";
 import { watchFixture } from "../scripts/watch-fixture.mjs";
 import { fixtureDelivery } from "../scripts/watch-delivery.mjs";
 import { scratchDirectory } from "../scripts/scratch.mjs";
 import { retryTransaction } from "../dist/db/transaction.js";
-import { deleteScopedJobs, queueNames } from "../dist/queue/index.js";
+import { deleteScopedJobs, queueNames, queueSchemaFor } from "../dist/queue/index.js";
 import { Watches, deleteWatches, signUnsubscribe } from "../dist/memory/watches.js";
 import { startWorker } from "../dist/worker.js";
 
@@ -66,7 +67,7 @@ test("PostgreSQL watch corrections: lock order, all-state queue erasure, absent 
     await planning?.catch(() => undefined);
    }
 
-   const boss = new PgBoss({ connectionString: w.env.DATABASE_URL, schema: "pgboss", schedule: false, supervise: false, migrate: false });
+   const boss = new PgBoss({ connectionString: w.env.DATABASE_URL, schema: w.queueSchema, schedule: false, supervise: false, migrate: false });
    await boss.start();
    try {
     await boss.createQueue("watch-send-dead");
@@ -74,11 +75,11 @@ test("PostgreSQL watch corrections: lock order, all-state queue erasure, absent 
     const a = make(), b = make();
     for (const scope of [a, b]) for (const [index, state] of ["created", "retry", "active", "completed", "failed", "cancelled"].entries()) {
      const id = await boss.send(queueNames.send, { ...scope, alert: randomUUID() }, { singletonKey: randomUUID() });
-     if (state !== "created") await w.pool.query("UPDATE pgboss.job SET state=$1::pgboss.job_state WHERE id=$2", [state, id]);
+     if (state !== "created") await w.pool.query(`UPDATE ${w.queueSchema}.job SET state=$1::${w.queueSchema}.job_state WHERE id=$2`, [state, id]);
      await boss.send(queueNames.check, { ...scope, day: "2027-04-0" + (index + 1) }, { singletonKey: randomUUID() });
      await boss.send("watch-send-dead", { ...scope, alert: randomUUID() });
     }
-    const count = scope => w.pool.query("SELECT count(*)::integer AS n FROM pgboss.job WHERE data->>'account'=$1", [scope.account]).then(result => result.rows[0].n);
+    const count = scope => w.pool.query(`SELECT count(*)::integer AS n FROM ${w.queueSchema}.job WHERE data->>'account'=$1`, [scope.account]).then(result => result.rows[0].n);
     assert.equal(await count(a), 18);
     assert.equal(await retryTransaction(w.pool, client => deleteScopedJobs(client, a)), 18);
     assert.equal(await count(a), 0);
@@ -176,4 +177,61 @@ test("production worker refuses a missing mail key before database access", asyn
   await new Promise(resolve => database.close(resolve));
   await rm(root, { recursive: true, force: true });
  }
+});
+
+test("unconfigured mail refuses browser and MCP activation while existing watches can still stop", async () => {
+ await withDatabase(async url => {
+  const w = await watchFixture(url, { mailConfigured: false });
+  try {
+   const login = await w.f.login();
+   const principal = await w.f.authenticate(login.token);
+   const scope = { account: principal.agent.account, incarnation: principal.agent.incarnation };
+   const watches = w.watches();
+   const response = await fetch(w.f.issuer + "/account/watch?account=" + scope.account + "&hunt=unconfigured", { redirect: "manual" });
+   assert.equal(response.status, 503);
+   assert.equal(response.headers.get("cache-control"), "no-store");
+   assert.match(await response.text(), /Price watches are not configured/);
+   const proposed = await w.f.tool(login.token, "scoat_memory", { op: "watch", requestKey: randomUUID(), hunt: "unconfigured", target: { currency: "GBP", pence: 6000 } });
+   assert.equal(proposed.structuredContent.reason, "service-unconfigured");
+   assert.equal((await w.pool.query("SELECT count(*)::integer AS n FROM watches")).rows[0].n, 0);
+   assert.equal(watches.available, false);
+   assert.deepEqual(await watches.prepare(scope, "unconfigured"), { kind: "unavailable", reason: "service-unconfigured" });
+   await assert.rejects(retryTransaction(w.pool, client => watches.activate(client, { scope })), error => error.reason === "service-unconfigured");
+   const seeded = await w.seedWatch(scope);
+   const stopped = await w.f.tool(login.token, "scoat_memory", { op: "unwatch", requestKey: randomUUID(), watch: seeded.watch });
+   assert.equal(stopped.structuredContent.kind, "unwatched");
+   assert.equal((await w.pool.query("SELECT status FROM watches WHERE id=$1", [seeded.watch])).rows[0].status, "cancelled");
+  } finally { await w.close(); }
+ });
+});
+
+test("closing one watch fixture preserves another fixture's queued jobs in the same database", async () => {
+ const certificates = getCACertificates("default");
+ try {
+  await withDatabase(async url => {
+   const first = await watchFixture(url);
+   let second;
+   let firstClosed = false;
+   try {
+    second = await watchFixture(url);
+    const seeded = await second.seedWatch();
+    await retryTransaction(second.pool, client => second.producer.check(client, job(seeded, "2027-04-01")));
+    await first.close();
+    firstClosed = true;
+    await retryTransaction(second.pool, client => second.producer.check(client, job(seeded, "2027-04-02")));
+    const queued = await second.pool.query(`SELECT count(*)::integer AS n FROM ${second.queueSchema}.job WHERE data->>'watch'=$1`, [seeded.watch]);
+    assert.equal(queued.rows[0].n, 2);
+    assert.notEqual(first.queueSchema, second.queueSchema);
+    assert.notEqual(second.queueSchema, "pgboss");
+    assert.equal(await retryTransaction(second.pool, async client => {
+     await client.query("SET LOCAL search_path=public");
+     return queueSchemaFor(client);
+    }), "pgboss");
+    assert.equal(await retryTransaction(second.pool, client => deleteScopedJobs(client, seeded)), 2);
+   } finally {
+    if (!firstClosed) await first.close();
+    await second?.close();
+   }
+  });
+ } finally { setDefaultCACertificates(certificates); }
 });

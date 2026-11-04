@@ -32,7 +32,7 @@ const result = await withDatabase(async url => {
    const keys = (await w.pool.query("SELECT provider_key FROM watch_alerts WHERE day=$1::date", [date(batch + 1)])).rows.map(row => row.provider_key);
    await Promise.all(keys.map(key => w.waitAccepted(key)));
    const settledSeconds = (performance.now() - started) / 1000;
-   const queue = (await w.pool.query("SELECT extract(epoch FROM started_on-created_on)*1000 AS delay FROM pgboss.job WHERE name='watch-send' AND data->>'alert' IN (SELECT id::text FROM watch_alerts WHERE day=$1::date)", [date(batch + 1)])).rows.map(row => Number(row.delay));
+   const queue = (await w.pool.query(`SELECT extract(epoch FROM started_on-created_on)*1000 AS delay FROM ${w.queueSchema}.job WHERE name='watch-send' AND data->>'alert' IN (SELECT id::text FROM watch_alerts WHERE day=$1::date)`, [date(batch + 1)])).rows.map(row => Number(row.delay));
    samples.push({ batch, warmup: batch === 0, fixturePages: w.state.hits - hitsBefore, checks: outcomes.length, alerts: outcomes.filter(item => item.alert).length, unknown: outcomes.filter(item => item.observation?.kind === "unknown").length, checkSeconds, settledSeconds, eligibleToOutboxMilliseconds: outcomes.map(item => item.outboxMilliseconds), queueSchedulingDelayMilliseconds: queue });
   }
   const deliveries = await w.deliveries();

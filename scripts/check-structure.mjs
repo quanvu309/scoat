@@ -656,6 +656,22 @@ export function checkWatchBoundary(issuer, watches, memory) {
  const text = sqlOf(one).map(item => item.text).join("\n");
  if (!one || !text.includes("multipart/form-data") || !text.includes("application/x-www-form-urlencoded") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === ">" && node.left?.name === "size") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === "!==" && fieldOf(node.left, "entries", "length") && node.right?.value === 1) || !/await oneClick\(req\);/.test(issuer)) throw new Error("Accept bounded RFC 8058 one-click in multipart and urlencoded forms with exactly one field");
 }
+export function checkWatchActivation(watches, issuer, server) {
+ const nodes = parsedNodes(watches);
+ const available = method(nodes, "available");
+ if (!available || !/return this\.deps\.config\.resendApiKey !== null;/.test(watches.slice(available.start, available.end))) throw new Error("Watch availability requires a configured worker mail key");
+ for (const name of ["prepare", "activate"]) {
+  const owner = method(nodes, name);
+  const first = owner?.body?.body?.[0];
+  if (!first || !/^if \(!this\.available\)/.test(watches.slice(first.start, first.end))) throw new Error("Refuse unconfigured watch preparation and activation before state access");
+ }
+ if (!/if \(!watches\?\.available\) \{\s*res\.writeHead\(503, watchHeaders\)/.test(issuer) || !/watches\?\.available === true/.test(server) || !/watches\?\.available && issued\.finished/.test(issuer)) throw new Error("Route browser, MCP and control links through watch availability");
+ const target = method(parsedNodes(issuer), "targetPence");
+ const body = target ? issuer.slice(target.start, target.end) : "";
+ if (!/watchTargetPence\.safeParse/.test(body) || !/if \(!amount\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body) || !/if \(!pence\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body)) throw new Error("Return typed invalid-target refusals for malformed and out-of-range prices");
+ const caught = parsedNodes(issuer).some(node => node.type === "TryStatement" && node.handler && issuer.slice(node.handler.start, node.handler.end).includes("error instanceof WatchRefusal") && node.block.body.some(statement => statement.type === "VariableDeclaration" && statement.declarations.some(declaration => declaration.init?.type === "CallExpression" && declaration.init.callee?.name === "targetPence")));
+ if (!caught) throw new Error("Parse browser target prices inside the typed watch-refusal boundary");
+}
 export function checkWatchWorker(worker, delivery) {
  const start = method(parsedNodes(worker), "startWorker");
  const first = start?.body.body[0];
@@ -663,6 +679,13 @@ export function checkWatchWorker(worker, delivery) {
  if (!/if \(config\.resendApiKey === null\) throw/.test(worker)) throw new Error("Refuse production worker startup without a mail key");
  if (/mail-unconfigured/.test(delivery)) throw new Error("An absent mail transport must never become ambiguous provider acceptance");
 }
+export function checkWatchQueueIsolation(queue, fixture, drivers = []) {
+ if (drivers.some(source => /\b(?:FROM|UPDATE|INTO|JOIN) pgboss\./.test(source))) throw new Error("Queue verification and performance drivers must use the fixture namespace");
+ if (!/SELECT current_schema\(\) AS schema/.test(queue) || !/createHash\("sha256"\)\.update\(schema\)/.test(queue) || !/schema === "public" \? "pgboss"/.test(queue)) throw new Error("Derive each queue namespace from its application schema, preserving public production queues");
+ if ((queue.match(/await queueSchemaFor\(/g) ?? []).length !== 2) throw new Error("Resolve the same queue namespace for enqueue and scoped erasure");
+ if (!fixture.includes("const queueSchema = await queueSchemaFor(f.store.pool);") || !fixture.includes("DROP SCHEMA IF EXISTS ${queueSchema} CASCADE") || fixture.includes("DROP SCHEMA IF EXISTS pgboss")) throw new Error("Fixtures must drop only their own derived queue schema");
+}
+
 export function checkWatchErasure(watches, queue, erasure) {
  const nodes = parsedNodes(watches);
  const remove = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "deleteWatches");
@@ -705,10 +728,12 @@ export function checkWatchVerification(skill, index, runner) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
+ checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
  checkWatchLockOrder(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchRecipient(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchEntry(fs.readFileSync("src/controls/codec.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/renderer.tsx", "utf8"));
+ checkWatchActivation(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
  checkWatchBoundary(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/memory/index.ts", "utf8"));
  checkWatchWorker(fs.readFileSync("src/worker.ts", "utf8"), fs.readFileSync("src/delivery/index.ts", "utf8"));
  checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));

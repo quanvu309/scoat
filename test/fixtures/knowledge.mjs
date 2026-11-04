@@ -6,8 +6,8 @@ export function synthetic() {
   raw.id = "synthetic-test-release";
   raw.shops = [{ id: "synthetic", label: "Synthetic test seller", status: "supported", facts: ["synthetic-student", "synthetic-code"] }];
   raw.facts = [
-    { id: "synthetic-student", shop: "synthetic", claim: "SYNTHETIC test eligibility, no real offer", place: "student", source: "https://primary.example.invalid/student", observedAt: "2026-11-03T00:00:00Z", validUntil: "2026-12-01T00:00:00Z", applies: "online", refreshOwner: "Synthetic fixture owner", authority: "primary", status: "needs-step", kind: "student", domain: null, requires: ["verify-student"], references: [] },
-    { id: "synthetic-code", shop: "synthetic", claim: "SYNTHETIC untested code; not a usable code", place: "codes", source: "https://third-party.example.invalid/code", observedAt: "2026-11-03T00:00:00Z", validUntil: "2026-12-01T00:00:00Z", applies: "online", refreshOwner: "Synthetic fixture owner", authority: "third-party", status: "untested", kind: "code", domain: null, requires: [], references: [] }
+    { id: "synthetic-student", shop: "synthetic", claim: "SYNTHETIC test eligibility, no real offer", place: "student", source: "https://primary.example.com/student", observedAt: "2026-11-03T00:00:00Z", validUntil: "2026-12-01T00:00:00Z", applies: "online", refreshOwner: "Synthetic fixture owner", authority: "primary", status: "needs-step", kind: "student", domain: null, requires: ["verify-student"], references: [] },
+    { id: "synthetic-code", shop: "synthetic", claim: "SYNTHETIC untested code; not a usable code", place: "codes", source: "https://third-party.example.com/code", observedAt: "2026-11-03T00:00:00Z", validUntil: "2026-12-01T00:00:00Z", applies: "online", refreshOwner: "Synthetic fixture owner", authority: "third-party", status: "untested", kind: "code", domain: null, requires: [], references: [] }
   ];
   raw.rows.find(row => row.place === "student").facts = ["synthetic-student"];
   raw.rows.find(row => row.place === "codes").facts = ["synthetic-code"];

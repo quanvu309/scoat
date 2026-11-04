@@ -35,6 +35,24 @@ test("student declaration never verifies; third-party code never becomes confirm
   raw.facts[1].status = "confirmed";
   assert.throws(() => validateRelease(raw, at), /untested/);
 });
+test("confirmed source publication rejects IP literals and local or reserved DNS names", async () => {
+  const directory = await mkdtemp(path.join(os.homedir(), "tmp/scoat-source-boundary-"));
+  const knowledge = new Knowledge(directory);
+  const sources = ["https://127.0.0.1/code", "https://localhost/code", "https://10.0.0.1/code", "https://[::1]/code", "https://[::ffff:127.0.0.1]/code", "https://2130706433/code", "https://shop.localhost./code", "https://shop.internal/code", "https://shop.local/code", "https://shop.home.arpa/code", "https://shop.example.invalid/code", "https://user:pass@www.nike.com/code"];
+  try {
+    for (const source of sources) {
+      const raw = synthetic();
+      raw.facts[1] = { ...raw.facts[1], authority: "primary", status: "confirmed", source };
+      assert.throws(() => validateRelease(raw, at), /public HTTPS DNS/);
+      await assert.rejects(knowledge.publish(raw, at), /public HTTPS DNS/);
+    }
+    assert.deepEqual(await knowledge.list(), []);
+    const raw = synthetic();
+    raw.facts[1] = { ...raw.facts[1], authority: "primary", status: "confirmed", source: "https://www.nike.com/gb/" };
+    await knowledge.publish(raw, at);
+    assert.equal((await new Knowledge(directory).read({ release: raw.id })).facts[1].source, raw.facts[1].source);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 test("all rows survive unknown eligibility and unknown shop; formats have one source", () => {
   const release = validateRelease(seed(), at);
   assert.equal(checklist({ release, profile: { student: "unknown", cards: [], memberships: [] } }).length, 8);
@@ -82,12 +100,12 @@ test("concurrent publication converges and conflicting content never overwrites"
 });
 test("official-domain assertions require primary proof and current validity", () => {
   const raw = synthetic();
-  raw.facts[1] = { ...raw.facts[1], id: "synthetic-domain", kind: "official-domain", authority: "primary", status: "confirmed", domain: "seller.example.invalid", source: "https://seller.example.invalid/about" };
+  raw.facts[1] = { ...raw.facts[1], id: "synthetic-domain", kind: "official-domain", authority: "primary", status: "confirmed", domain: "seller.example.com", source: "https://seller.example.com/about" };
   raw.shops[0].facts[1] = "synthetic-domain";
   raw.rows.find(row => row.place === "codes").facts = ["synthetic-domain"];
   const release = validateRelease(raw, at);
   assert.equal(isOfficialSource({ release, seller: "synthetic", source: raw.facts[1].source, now: at }), true);
   assert.equal(isOfficialSource({ release, seller: "synthetic", source: raw.facts[1].source, now: "2027-01-01T00:00:00Z" }), false);
-  raw.facts[1].domain = "other.example.invalid";
+  raw.facts[1].domain = "other.example.com";
   assert.throws(() => validateRelease(raw, at), /matching primary/);
 });

@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
-import { schemas, toolCatalog } from "../dist/mcp/index.js";
+import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
+import { publicSourceUrl } from "../dist/knowledge/index.js";
+import { z } from "zod";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -71,9 +73,14 @@ export function checkRegistryAdapter(source) {
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && (node.callee?.name === "registerAppTool" || node.callee?.property?.name === "registerTool")) throw new Error("Use registry-derived ListToolsRequestSchema handler; SDK 1.x normalizes root unions to empty objects");
+    if (node.type === "CallExpression" && node.callee?.property?.name === "registerPrompt") throw new Error("Use strict raw GetPromptRequestSchema parsing; SDK registerPrompt strips unknown argument keys");
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
   }
   visit(ast.program);
+}
+
+export function checkReleaseSources(release) {
+  for (const fact of release.facts) publicSourceUrl.parse(fact.source);
 }
 
 export function checkTypeConfig(config) {
@@ -101,6 +108,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   walk("src");
   checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
+  checkWire(z.toJSONSchema(promptInput, { target: "draft-7" }));
+  for (const file of fs.readdirSync("knowledge/releases")) if (file.endsWith(".json")) checkReleaseSources(JSON.parse(fs.readFileSync(`knowledge/releases/${file}`, "utf8")));
   checkTools(Object.keys(toolCatalog));
   checkWorkflow(fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
   checkDependencyPair(JSON.parse(fs.readFileSync("package.json", "utf8")));

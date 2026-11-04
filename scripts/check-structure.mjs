@@ -475,7 +475,10 @@ export function checkEraseRecovery(source) {
  const headers = body.find(node => node.type === "ExpressionStatement" && member(node.expression.callee,"res","writeHead"))?.expression.arguments[1]?.properties ?? [];
  const header = name => headers.find(node => node.key.value === name)?.value.value;
  const linked = nodes.some(node => node.type === "TemplateElement" && node.value.cooked.includes('href="/account/erase-status"'));
- if (!page.includes('<form method="post" action="/account/erase-status">') || !page.includes('name="status"') || !header("content-security-policy")?.includes("form-action 'self'") || header("cache-control") !== "no-store" || !linked || body.at(-1)?.type !== "ReturnStatement") throw new Error("Expose a credential-free GET recovery form linked before erasure; submit status secrets by same-origin POST");
+ if (!page.includes('<form method="post" action="/account/erase-status">') || !page.includes('name="status"') || !header("content-security-policy")?.includes("form-action 'self'") || header("cache-control") !== "no-store" || header("referrer-policy") !== "same-origin" || !linked || body.at(-1)?.type !== "ReturnStatement") throw new Error("Expose a credential-free GET recovery form linked before erasure; submit status secrets by same-origin POST with same-origin Referrer-Policy");
+ const confirmation = nodes.find(node => node.type === "IfStatement" && node.test.right?.value === "erase" && node.test.left?.property?.name === "stage");
+ const confirmationHeaders = astNodes(confirmation).find(node => node.type === "CallExpression" && member(node.callee,"res","writeHead"))?.arguments[1]?.properties ?? [];
+ if (!["cache-control","referrer-policy"].every((name,index) => confirmationHeaders.some(node => node.key.value === name && node.value.value === ["no-store","same-origin"][index]))) throw new Error("Serve the erase confirmation status secret with no-store and same-origin Referrer-Policy");
 }
 export function checkExplicitEnrollment(source) {
  const nodes = parsedNodes(source);

@@ -226,7 +226,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       res.writeHead(303,{location:interaction.returnTo}); res.end(); return;
     }
     if (url.pathname === "/account/erase-status" && req.method === "GET") {
-      res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"no-referrer"});
+      res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
       res.end(`<title>Check account erasure</title><p>Enter the status secret saved before erasure. Completed results remain available for 24 hours.</p><form method="post" action="/account/erase-status"><label>Status secret <input type="password" name="status" maxlength="128" required autocomplete="off"></label><button>Check erasure result</button></form>`);
       return;
     }
@@ -413,7 +413,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
           await client.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[digest(status),randomUUID()]);
           await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"erase-confirm",target,status:digest(status)}});
           await client.query("COMMIT");
-          res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
+          res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
           res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Upstream identities and delivered mail are outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }

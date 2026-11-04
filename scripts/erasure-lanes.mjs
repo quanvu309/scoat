@@ -74,6 +74,7 @@ export async function erasureLanes(databaseUrl) {
   const recoveryPage=await fetch(recoveryUrl);
   assert.equal(recoveryPage.status,200);
   assert.equal(recoveryPage.headers.get("cache-control"),"no-store");
+  assert.equal(recoveryPage.headers.get("referrer-policy"),"same-origin");
   assert.match(recoveryPage.headers.get("content-security-policy"),/form-action 'self'/);
   const recoveryHtml=await recoveryPage.text();
   assert.match(recoveryHtml,/<input type="password" name="status"/);
@@ -114,6 +115,20 @@ export async function erasureLanes(databaseUrl) {
   assert.equal((await fetch(duringErase.callback,{redirect:"manual",headers:{cookie:duringErase.cookie}})).status,400);
   assert.equal((await f.link("other-erasure-subject","upstream-subject-A")).status,200);
   assert.equal((await resolveIdentity(f.store.pool,f.config.upstreamIssuer,"upstream-subject-A")).account,otherPrincipal.agent.account);
-  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,recoveryFormReachableWithoutCredentials:true,foreignRecoveryOriginDenied:true,staleVerifiedCallbackDenied:true,staleLinkCallbackDenied:true,transactionStartDoesNotWeakenSuppression:true,freshPostErasureLinkAllowed:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
+  const confirmationCandidate=await f.login("host-one","erasure-confirm-subject");
+  const confirmationPrincipal=await f.authenticate(confirmationCandidate.token);
+  const acrossConfirmation=await f.link("other-erasure-subject","erasure-confirm-subject",false,async()=>{
+   const client=await f.store.pool.connect();
+   try {
+    await client.query("BEGIN");
+    const statusDigest=createHash("sha256").update(randomUUID()).digest("hex");
+    await client.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[statusDigest,randomUUID()]);
+    await eraseAccount(client,confirmationPrincipal.agent,f.config.lifecycleKey,f.config.lifecycleKeyVersion,statusDigest);
+    await client.query("COMMIT");
+   } catch(error) { await client.query("ROLLBACK"); throw error; }
+   finally { client.release(); }
+  });
+  assert.equal(acrossConfirmation.status,400);
+  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,recoveryFormReachableWithoutCredentials:true,foreignRecoveryOriginDenied:true,staleVerifiedCallbackDenied:true,staleLinkCallbackDenied:true,linkConfirmationSpansErasure:true,transactionStartDoesNotWeakenSuppression:true,freshPostErasureLinkAllowed:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
  } finally { await f.close(); }
 }

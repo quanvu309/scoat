@@ -235,6 +235,11 @@ test("P06 exposes browser recovery and rejects links started before erasure", as
  assert.throws(()=>checkLinkSuppression(issuer.replace("startedAt: flow.initiatedAt","startedAt: Date.now()"),link),/pre-erasure link flows/);
  assert.throws(()=>checkLinkSuppression(issuer.replace("flow.context.startedAt,","flow.initiatedAt,"),link),/pre-erasure link flows/);
  assert.throws(()=>checkLinkSuppression(issuer,link.replace("pg_advisory_xact_lock(hashtextextended($1,0))","pg_advisory_xact_lock(hashtextextended($1,1))")),/pre-erasure link flows/);
+ assert.throws(()=>checkEraseRecovery(issuer.replace('"referrer-policy":"same-origin"','"referrer-policy":"no-referrer"')),/same-origin Referrer-Policy/);
+ const confirmationStart=issuer.indexOf('if (flow.context.stage === "erase")');
+ const confirmation=issuer.slice(confirmationStart);
+ assert.ok(confirmation.includes('"cache-control":"no-store"'));
+ assert.throws(()=>checkEraseRecovery(issuer.slice(0,confirmationStart)+confirmation.replace(',"cache-control":"no-store"',"")),/confirmation status secret with no-store/);
  assert.doesNotThrow(()=>checkEraseRecovery(issuer));
  assert.doesNotThrow(()=>checkLinkSuppression(issuer,link));
 });

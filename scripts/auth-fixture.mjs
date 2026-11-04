@@ -329,7 +329,7 @@ export async function authFixture(databaseUrl) {
     assert.equal(response.status, 200, JSON.stringify(tokens));
     return { token: tokens.access_token, steps, client };
   }
-  async function link(current, candidate, pauseAtCandidate = false) {
+  async function link(current, candidate, pauseAtCandidate = false, beforeCandidate) {
     identity = current;
     jar.delete(upstreamIssuer);
     let response = await browser(issuer + "/account/link");
@@ -355,6 +355,7 @@ export async function authFixture(databaseUrl) {
             body: new URLSearchParams({ confirmation: "forged" }),
           });
           assert.equal(denied.status, 400);
+          await beforeCandidate?.();
           response = await browser(issuer + "/account/link", {
             method: "POST", headers: { origin: issuer },
             body: new URLSearchParams({ confirmation }),

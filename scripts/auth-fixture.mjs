@@ -22,7 +22,7 @@ const close = (server) =>
     server.closeAllConnections();
     server.close(resolve);
   });
-export async function authFixture(databaseUrl) {
+export async function authFixture(databaseUrl, options = {}) {
   const root = await scratchDirectory("auth-");
   await promisify(execFile)(
     "openssl",
@@ -59,6 +59,7 @@ export async function authFixture(databaseUrl) {
   await store.pool.query(await durableSchema());
   await store.pool.query(authSchema);
   let identity = "upstream-subject-A",
+    emailClaims = { email: "same@example.invalid" },
     provider;
   const upstreamServer = createServer({ key, cert }, async (req, res) => {
     try {
@@ -76,7 +77,7 @@ export async function authFixture(databaseUrl) {
             clientId: details.params.client_id,
             accountId: details.session.accountId,
           });
-          grant.addOIDCScope("openid");
+          grant.addOIDCScope(String(details.params.scope ?? "openid"));
           await provider.interactionFinished(
             req,
             res,
@@ -112,6 +113,8 @@ export async function authFixture(databaseUrl) {
     jwks,
     cookies: { keys: [randomBytes(32).toString("hex")] },
     features: { devInteractions: { enabled: false } },
+    claims: { openid: ["sub"], email: ["email", "email_verified"] },
+    conformIdTokenClaims: false,
     clients: [
       {
         client_id: "scoat-upstream",
@@ -124,7 +127,7 @@ export async function authFixture(databaseUrl) {
     ],
     findAccount: (_ctx, id) => ({
       accountId: id,
-      claims: () => ({ sub: id, email: "same@example.invalid" }),
+      claims: () => ({ sub: id, ...emailClaims }),
     }),
   });
   const config = {
@@ -155,7 +158,7 @@ export async function authFixture(databaseUrl) {
     flags: "a",
   });
   async function startService() {
-    child = fork(new URL("../dist/server.js", import.meta.url), [], {
+    child = fork(options.entry ?? new URL("../dist/server.js", import.meta.url), [], {
       execArgv: [],
       silent: true,
       env: {
@@ -168,6 +171,7 @@ export async function authFixture(databaseUrl) {
         SCOAT_TLS_KEY: root + "/key.pem",
         SCOAT_TLS_CERT: root + "/cert.pem",
         NODE_EXTRA_CA_CERTS: root + "/cert.pem",
+        ...options.env,
       },
     });
     child.stdout.pipe(log, { end: false });
@@ -206,6 +210,7 @@ export async function authFixture(databaseUrl) {
     });
   }
   try {
+    await options.beforeStart?.({ issuer, root, databaseUrl });
     await startService();
   } catch (error) {
     await close(upstreamServer);
@@ -432,6 +437,13 @@ export async function authFixture(databaseUrl) {
     controlConfig,
     browser,
     interactions,
+    root,
+    cert,
+    databaseUrl,
+    setEmail(value) {
+      jar.delete(upstreamIssuer);
+      emailClaims = value;
+    },
     setIdentity(value) {
       jar.delete(upstreamIssuer);
       identity = value;

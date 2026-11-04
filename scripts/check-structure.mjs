@@ -446,6 +446,7 @@ export function checkErasureCoordinator(source) {
   await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')",[...prefix,pseudonym,keyVersion]);
  }
  const authentication = await deleteAuthentication(client,scope,identities.rows);
+ const watches = await deleteWatches(client,scope);
  const memory = await deleteMemory(client,scope);
  const hunts = await deleteHunts(client,scope);
  await client.query("UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2",prefix);
@@ -570,4 +571,63 @@ export function checkControlImports(file,source) {
  for(const node of nodes.filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
   if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
  }
+}
+
+export function checkWatchSender(source) {
+ const nodes = parsedNodes(source);
+ const send = nodes.find(node => node.type === "ClassMethod" && node.key.name === "send");
+ const inner = astNodes(send);
+ const submit = inner.find(node => node.type === "CallExpression" && member(node.callee?.object, "this", "deps") && node.callee.property?.name === "submit") ?? inner.find(node => node.type === "CallExpression" && node.callee?.property?.name === "submit");
+ if (!send || !submit) throw new Error("Watches.send must submit through the delivery boundary");
+ const markers = inner.filter(node => (node.type === "StringLiteral" || node.type === "TemplateLiteral") && /SET state='submitting',marked_at=/.test(node.value ?? node.quasis?.map(part => part.value.raw).join("")));
+ const marker = markers[0];
+ const markerTransaction = inner.find(node => node.type === "CallExpression" && node.callee?.name === "retryTransaction" && node.start < (marker?.start ?? 0) && node.end > (marker?.end ?? 0));
+ const fencedMarker = markerTransaction && astNodes(markerTransaction).some(node => node.type === "CallExpression" && node.callee?.name === "activeAccount" && node.start < marker.start);
+ if (markers.length !== 1 || !markerTransaction || !fencedMarker || markerTransaction.end > submit.start) throw new Error("Commit one fenced durable submission marker before provider network IO");
+ const before = inner.filter(node => node.start > markerTransaction.end && node.end < submit.start);
+ if (!before.some(node => node.type === "CallExpression" && node.callee?.name === "activeAccount")) throw new Error("Recheck the active account incarnation inside the send fence before submission");
+ if (!before.some(node => node.type === "BinaryExpression" && node.operator === "!==" && member(node.left, "recipient", "revision") && member(node.right, "alert", "recipient_revision"))) throw new Error("Refuse a changed recipient revision inside the send fence");
+ const [message, , key, signal] = submit.arguments;
+ if (!astNodes(message).some(node => member(node, "alert", "message")) || !astNodes(key).some(node => member(node, "alert", "provider_key"))) throw new Error("Submit the immutable stored payload and provider key on every retry");
+ if (signal?.type !== "CallExpression" || !member(signal.callee, "AbortSignal", "timeout") || !member(signal.arguments[0], "watchLimits", "submitMilliseconds")) throw new Error("Bound provider submission with the watch submit deadline");
+ if (!inner.some(node => node.type === "CallExpression" && member(node.callee, "client", "on") && node.arguments[0]?.value === "error")) throw new Error("Handle sender connection loss without crashing the worker");
+ const guarded = inner.find(node => node.type === "TryStatement" && node.block.start < submit.start && node.block.end > submit.end);
+ if (!astNodes(guarded?.finalizer).some(node => node.type === "CallExpression" && member(node.callee, "client", "release"))) throw new Error("Release the fenced sender connection on every return path");
+}
+
+export function checkWatchErasure(watches, queue, erasure) {
+ const nodes = parsedNodes(watches);
+ const remove = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "deleteWatches");
+ const cancel = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "cancelWatch");
+ for (const owner of [remove, cancel]) if (!astNodes(owner).some(node => node.type === "AwaitExpression" && node.argument?.callee?.name === "deleteScopedJobs")) throw new Error("Delete scoped queue jobs in every watch cancellation and erasure");
+ const queueNodes = parsedNodes(queue);
+ const scoped = queueNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "deleteScopedJobs");
+ const names = astNodes(scoped).find(node => node.type === "ArrayExpression" && node.elements.length && node.elements.every(element => element?.object?.name === "queueNames"));
+ if (!names || !["check", "send"].every(name => names.elements.some(element => member(element, "queueNames", name)))) throw new Error("Queue erasure must cover every account-scoped queue");
+ if (!astNodes(scoped).some(node => node.type === "ThrowStatement")) throw new Error("Queue erasure must prove zero survivors across all job states");
+ if (/deadLetter/.test(queue)) throw new Error("Keep dead-letter routing disabled for account-scoped watch jobs");
+ if (!erasure.includes("watchMail: { mayStillArrive: watches.mayStillArrive")) throw new Error("Report unresolved watch submission markers in the erasure receipt");
+}
+
+export function checkPublicFetch(source) {
+ if (/addSubnet\("::ffff:/.test(source)) throw new Error("Do not block IPv4-mapped IPv6 with a BlockList subnet; check the embedded IPv4 explicitly");
+ const nodes = parsedNodes(source);
+ const fetch = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "fetchPublic");
+ const hostCheck = astNodes(fetch).find(node => node.type === "CallExpression" && member(node.callee, "hosts", "has"));
+ const loop = astNodes(fetch).find(node => node.type === "ForStatement");
+ if (!hostCheck || !loop || hostCheck.start < loop.start || hostCheck.end > loop.end) throw new Error("Check the public host allowlist on every redirect hop");
+ const get = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "get");
+ if (!astNodes(get).some(node => node.type === "ObjectProperty" && node.key?.name === "lookup" && node.value?.name === "pin")) throw new Error("Connect only to the validated pinned address");
+ if (!astNodes(get).some(node => node.type === "ObjectProperty" && node.key?.name === "rejectUnauthorized" && node.value?.value === true)) throw new Error("Verify seller TLS hostnames");
+}
+
+export function checkWatchVerification(skill, index, runner) {
+ if (!skill.split("---")[1]?.includes("P08") || !skill.split("## Completion")[0].includes("features/watches.md") || !index.includes("[price watches](watches.md)") || !runner.includes('process.argv[2] === "p08"')) throw new Error("Route P08 watch changes to features/watches.md and the runnable p08 branch");
+}
+
+if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
+ checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
+ checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));
+ checkWatchVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
 }

@@ -193,7 +193,7 @@ test("P05 disables unsupported DPoP and preserves candidate linking refusals", a
 test("P06 ownership and enrollment guards reject the original unsafe shapes", async () => {
  const {checkErasureCoordinator,checkExplicitEnrollment,checkMemoryVerification}=await import("../scripts/check-structure.mjs");
  const coordinator=readFileSync(new URL("../src/accounts/erasure.ts",import.meta.url),"utf8");
- for (const port of ["deleteAuthentication","deleteMemory","deleteHunts"]) {
+ for (const port of ["deleteAuthentication","deleteWatches","deleteMemory","deleteHunts"]) {
   assert.ok(coordinator.includes("await "+port+"(client,scope"));
   assert.throws(()=>checkErasureCoordinator(coordinator.replace("await "+port+"(client,scope","void "+port+"(client,scope")),/fixed owner deletion/);
  }

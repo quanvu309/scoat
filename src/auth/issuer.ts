@@ -14,6 +14,10 @@ import { authConfigSchema } from "./config.js";
 import { linkIdentity } from "./link.js";
 import type { Agent, Id } from "../domain.js";
 import { UnknownIdentity, resolveIdentity } from "./identity.js";
+import { maskAddress, resolveWatchTarget, watchLimits } from "../memory/watches.js";
+import type { Watches } from "../memory/watches.js";
+import { readFinishedResult } from "../hunt/postgres.js";
+import { cleanShopUrl, observationSchema, watchTargetSchema } from "../delivery/index.js";
 
 const accountScope = z.strictObject({
   account: z.uuid().brand<"AccountId">(),
@@ -27,6 +31,8 @@ const contextSchema = z.discriminatedUnion("stage", [
   z.strictObject({ stage: z.literal("memory"), account: z.uuid(), key: z.string().min(1).max(128) }),
   z.strictObject({ stage: z.literal("memory-confirm"), target: accountScope, key: z.string().min(1).max(128) }),
   z.strictObject({ stage: z.literal("login"), uid: z.string() }),
+  z.strictObject({ stage: z.literal("watch"), account: z.uuid(), key: z.string().min(1).max(128) }),
+  z.strictObject({ stage: z.literal("watch-confirm"), target: accountScope, key: z.string().min(1).max(128), address: z.email().max(254), targetPence: z.number().int().positive(), watchTarget: watchTargetSchema, observation: observationSchema, observedAt: z.number().int() }),
   z.strictObject({ stage: z.literal("link-current") }),
   z.strictObject({ stage: z.literal("link-confirm"), target: accountScope }),
   z.strictObject({ stage: z.literal("link-candidate"), target: accountScope, startedAt: z.number().int() }),
@@ -42,6 +48,7 @@ export type Principal = Readonly<{
   [verified]: true;
 }>;
 export class InvalidCredential extends Error {}
+const escapeHtml = (value: string) => value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 function browserCookie(req: IncomingMessage) {
@@ -55,7 +62,7 @@ async function form(req: IncomingMessage) {
   }
   return new URLSearchParams(body);
 }
-export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {codec:ControlCodec; hunts:Hunts}) {
+export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {codec:ControlCodec; hunts:Hunts}, watches?: Watches) {
   const config = authConfigSchema.parse(raw);
   const issuer = new URL(config.issuer).origin;
   const resource = issuer + "/mcp";
@@ -180,7 +187,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     await persistBrowserFlow(pool,digest(state),{ verifier, nonce, browser: digest(browser), context });
     const destination = oidc.buildAuthorizationUrl(upstream, {
       redirect_uri: issuer + "/upstream/callback",
-      scope: "openid",
+      scope: context.stage === "watch" ? "openid email" : "openid",
       state,
       nonce,
       code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
@@ -280,6 +287,45 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       res.writeHead(200,{"content-type":"application/json"}); res.end(JSON.stringify(receipt)); return;
     }
 
+    if (url.pathname === "/account/watch") {
+      if (!watches) throw new Error("Watches unavailable");
+      if (req.method === "GET") {
+        await upstreamRedirect(res, { stage: "watch", account: z.uuid().parse(url.searchParams.get("account")), key: z.string().min(1).max(128).parse(url.searchParams.get("key")) });
+        return;
+      }
+      if (req.method !== "POST" || req.headers.origin !== issuer || req.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Explicit same-origin confirmation required");
+      const submitted = await form(req);
+      const fields = z.strictObject({ confirmation: z.string().min(1).max(128), decision: z.literal("watch") }).parse(Object.fromEntries(submitted));
+      if ([...submitted.keys()].length !== 2) throw new Error("Duplicate form fields");
+      const activated = await retryTransaction(pool, async client => {
+        const pending = (await client.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() FOR UPDATE", [digest(fields.confirmation)])).rows[0];
+        const flow = flowSchema.parse(pending?.data), browser = browserCookie(req);
+        if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "watch-confirm" || flow.context.observation.kind !== "comparable") throw new Error("Invalid watch confirmation");
+        const consumed = await client.query("DELETE FROM oauth_browser_flows WHERE state=$1 RETURNING state", [digest(fields.confirmation)]);
+        if (!consumed.rowCount) throw new Error("Confirmation already used");
+        return watches.activate(client, { scope: flow.context.target, key: flow.context.key, target: flow.context.watchTarget, targetPence: flow.context.targetPence, observation: flow.context.observation, observedAt: flow.context.observedAt, address: flow.context.address });
+      });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin" });
+      res.end(`<title>Watch active</title><h1>Watch active</h1><p>Watch ${escapeHtml(activated.watch)} checks the public delivered price daily. An alert needs a price at or below GBP ${(activated.targetPence / 100).toFixed(2)} and strictly below the GBP ${(activated.baselinePence / 100).toFixed(2)} baseline.</p><p>Every alert email has a one-step unsubscribe link.</p>`);
+      return;
+    }
+    if (url.pathname === "/watch/unsubscribe") {
+      if (!watches) throw new Error("Watches unavailable");
+      const token = z.string().min(1).max(512).regex(/^[A-Za-z0-9_.-]+$/).parse(url.searchParams.get("token"));
+      const headers = { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin", "cache-control": "no-store" };
+      if (req.method === "GET") {
+        res.writeHead(200, headers);
+        res.end(`<title>Stop Scoat watch</title><h1>Stop this price watch?</h1><p>Stopping cancels future checks and any alert not yet submitted. An alert already handed to the mail provider may still arrive.</p><form method="post" action="/watch/unsubscribe?token=${escapeHtml(token)}"><input type="hidden" name="List-Unsubscribe" value="One-Click"><button>Stop watching</button></form>`);
+        return;
+      }
+      if (req.method !== "POST" || req.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Unsubscribe requires a form POST");
+      const submitted = await form(req);
+      if ([...submitted.keys()].length !== 1 || submitted.get("List-Unsubscribe") !== "One-Click") throw new Error("Invalid unsubscribe body");
+      const result = await watches.unsubscribe(token);
+      res.writeHead(200, headers);
+      res.end(result.kind === "unsubscribed" ? `<title>Watch stopped</title><h1>Watch stopped</h1><p>No new checks or alerts will start.${result.mayStillArrive ? " One alert was already handed to the mail provider and may still arrive." : ""}</p>` : `<title>Watch not active</title><h1>This watch is not active</h1><p>No further alerts will start from this link.</p>`);
+      return;
+    }
     if (url.pathname === "/account/memory") {
       if (req.method === "GET") {
         await upstreamRedirect(res, { stage: "memory", account: z.uuid().parse(url.searchParams.get("account")), key: z.string().min(1).max(128).parse(url.searchParams.get("key")) });
@@ -450,7 +496,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         });
         const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
         res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
-        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent. Watch is unavailable until P08 verifies email and a confirmed target.</p>`+issued.forms.map(form=>{
+        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent. To watch a finished hunt, ask your agent for scoat_memory watch; it returns a browser confirmation link.</p>`+issued.forms.map(form=>{
           const label=form.action.kind === "stop" ? "Stop accepting new discoveries" : "Skip row "+form.action.row;
           return `<form method="post" action="/account/control"><input type="hidden" name="confirmation" value="${form.token}"><input type="hidden" name="csrf" value="${form.nonce}"><input type="hidden" name="action" value="${escape(JSON.stringify(form.action))}"><button>${escape(label)}</button></form>`;
         }).join(""));
@@ -470,6 +516,44 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
           res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Upstream identities and delivered mail are outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+      }
+      if (flow.context.stage === "watch") {
+        if (!watches) throw new Error("Watches unavailable");
+        const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        if (target.account !== flow.context.account) throw new Error("Same account required");
+        const headers = { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin", "cache-control": "no-store" };
+        const address = claims.email_verified === true ? z.email().max(254).safeParse(claims.email) : null;
+        if (!address?.success) {
+          res.writeHead(403, headers);
+          res.end(`<title>Verified email required</title><h1>Verified email required</h1><p>Your sign-in provider did not confirm a verified email address for this account. No watch was activated and no email will be sent.</p>`);
+          return;
+        }
+        const key = flow.context.key;
+        const proposal = await retryTransaction(pool, async client => {
+          if (!(await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",[target.account,target.incarnation])).rowCount) throw new Error("Inactive account incarnation");
+          const command = (await client.query("SELECT command FROM memory_commands WHERE account=$1 AND incarnation=$2 AND key=$3 AND expires_at>now() AND command IS NOT NULL AND outcome IS NULL", [target.account,target.incarnation,key])).rows[0];
+          const parsed = z.object({ op: z.literal("watch"), hunt: z.string(), target: z.strictObject({ currency: z.literal("GBP"), pence: z.number().int().positive() }) }).parse(command?.command);
+          const finished = await readFinishedResult(client,target,parsed.hunt);
+          const resolved = finished ? resolveWatchTarget(finished.snapshot) : null;
+          if (resolved?.kind !== "target") throw new Error("Watch target unavailable");
+          return { hunt: parsed.hunt, targetPence: parsed.target.pence, watchTarget: resolved.target };
+        });
+        const observation = await watches.observe(proposal.watchTarget);
+        if (observation.kind !== "comparable") {
+          res.writeHead(200, headers);
+          res.end(`<title>Watch unavailable</title><h1>Watch cannot start</h1><p>The public price for ${escapeHtml(cleanShopUrl(proposal.watchTarget))} is unknown (${escapeHtml(observation.reason)}). No active price promise was created and no email will be sent.</p>`);
+          return;
+        }
+        const confirmation = randomBytes(32).toString("base64url");
+        const observedAt = await retryTransaction(pool, async client => {
+          const now = z.coerce.number().parse((await client.query("SELECT floor(extract(epoch FROM clock_timestamp())*1000) AS milliseconds")).rows[0]?.milliseconds);
+          await writeBrowserFlow(client,digest(confirmation),{ ...flow, context: { stage: "watch-confirm", target, key, address: address.data, targetPence: proposal.targetPence, watchTarget: proposal.watchTarget, observation, observedAt: now } });
+          return now;
+        });
+        const money = (pence: number) => "GBP " + (pence / 100).toFixed(2);
+        res.writeHead(200, headers);
+        res.end(`<title>Confirm Scoat price watch</title><h1>Confirm price watch</h1><dl><dt>Item</dt><dd>Raspberry Pi 5, SKU ${escapeHtml(proposal.watchTarget.sku)}, variant ${proposal.watchTarget.variant}, quantity one</dd><dt>Seller</dt><dd>${escapeHtml(proposal.watchTarget.seller)}: <a href="${escapeHtml(cleanShopUrl(proposal.watchTarget))}">${escapeHtml(cleanShopUrl(proposal.watchTarget))}</a></dd><dt>Observed</dt><dd>${new Date(observedAt).toISOString()} from the public product and delivery pages</dd><dt>Item price</dt><dd>${money(observation.itemPence)}</dd><dt>Delivery</dt><dd>${money(observation.deliveryPence)} UK Royal Mail 1st Class, non-member, non-lithium</dd><dt>Public delivered baseline</dt><dd>${money(observation.amountPence)}</dd><dt>Your target</dt><dd>${money(proposal.targetPence)}</dd><dt>Alerts go to</dt><dd>${escapeHtml(maskAddress(address.data))} (verified by your sign-in provider)</dd></dl><p>Scoat checks once a day for up to ${watchLimits.days} days and emails when the delivered public price is at or below your target and strictly below the baseline and any earlier alert. Student, coupon, cashback, rewards and member prices never count. At most ${watchLimits.active} active watches per account. Confirm within ${watchLimits.freshObservationSeconds / 60} minutes or reload.</p><form method="post" action="/account/watch"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="watch">Start watching</button></form>`);
+        return;
       }
       if (flow.context.stage === "memory") {
         const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);

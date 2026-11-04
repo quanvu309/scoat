@@ -14,8 +14,11 @@ import { maintainAccounts } from "./accounts/maintenance.js";
 import { memorySchema } from "./memory/schema.js";
 import { authSchema } from "./auth/schema.js";
 import { PostgresHuntStore } from "./hunt/postgres.js";
+import { watchSchema } from "./memory/watch-schema.js";
+import { Watches, watchConfigSchema } from "./memory/watches.js";
+import { Delivery } from "./delivery/index.js";
 
-export async function createHttpServer() {
+export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
   const configPath = process.env.SCOAT_AUTH_CONFIG;
   const store =
     configPath && process.env.DATABASE_URL
@@ -29,17 +32,18 @@ export async function createHttpServer() {
       try {
         await installation.query("BEGIN");
         await installation.query("SELECT pg_advisory_xact_lock(80106)");
-        await installation.query(authSchema + memorySchema + lifecycleSchema);
+        await installation.query(authSchema + memorySchema + lifecycleSchema + watchSchema);
         await installation.query("COMMIT");
       } catch(error) { await installation.query("ROLLBACK"); throw error; } finally { installation.release(); }
       await maintainAccounts(store.pool);
       const controlPath=process.env.SCOAT_CONTROL_CONFIG;
       if(controlPath) codec=new ControlCodec(JSON.parse(await readFile(controlPath,"utf8")));
-      const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),delivery:{readyLink:async()=>{throw new Error("Unavailable");},recheck:async()=>{throw new Error("Unavailable");},email:async()=>{throw new Error("Unavailable");}}});
+      const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY)});
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
         codec ? {codec,hunts} : undefined,
+        process.env.SCOAT_WATCH_CONFIG ? new Watches({ pool: store.pool, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined,
       );
     }
   } catch (error) {
@@ -80,7 +84,7 @@ export async function createHttpServer() {
       res.end(
         JSON.stringify({
           ready: !!auth,
-          phase: "P06",
+          phase: "P08",
           auth: auth ? "configured" : "unavailable",
         }),
       );

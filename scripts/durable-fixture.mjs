@@ -17,7 +17,7 @@ export async function fixture(databaseUrl) {
   const codec=new ControlCodec({version:1,keyId:"fixture",secret:randomBytes(32).toString("hex")});
   const confirmations=new Map();
   const controlKey=key=>confirmations.get(key)?.key ?? key;
-  const deps = { store, knowledge:{ read:async () => officialRelease() }, delivery:{} };
+  const deps = { store, knowledge:{ read:async () => officialRelease() } };
   const hunts = new Hunts(deps);
   const run = (request, actor=agent) => hunts.run({ agent:actor,request,now });
   const start = async () => { const result = await run({ op:"start",requestKey:randomUUID(),intent,profile:null }); if (!result.ok) throw new Error(JSON.stringify(result)); return result.value.view; };

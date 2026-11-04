@@ -15,24 +15,13 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
   const hunts = new Hunts({
     store,
     knowledge: new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),
-    delivery: {
-      readyLink: async () => {
-        throw new Error("Live delivery requires separate verification");
-      },
-      recheck: async () => {
-        throw new Error("Live delivery requires separate verification");
-      },
-      email: async () => {
-        throw new Error("Mail unavailable");
-      },
-    },
   });
   const grants = new ReadGrants(store.pool);
   const now = () =>
     z.string().brand<"UtcInstant">().parse(new Date().toISOString());
   return async (call: ToolCall): Promise<CallToolResult> => {
     if (call.name === "scoat_memory") {
-      if (["profile","save"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
+      if (["profile","save","watch","unwatch"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
       const result = await new Memory(store.pool,issuer).run({ ...principal.agent, session: principal.session },call.input);
       return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
     }

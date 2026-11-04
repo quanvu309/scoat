@@ -11,7 +11,6 @@ import { renderView } from "./view.js";
 import type { AccountScope } from "../domain.js";
 import type { Agent, Compatibility, Failure, HuntId, Instant, Intent, NonEmpty, Offer, OfferInput, Profile, Proof, Quote, ReadyLink, ReleaseId, RequestKey, Result, RowId, RowRevision, Selection, } from "../domain.js";
 import type { Knowledge, Release, Row } from "../knowledge/index.js";
-import type { Delivery } from "../delivery/index.js";
 import type { HuntStore } from "./store.js";
 export type CheckOutcome = {
     readonly kind: "checking";
@@ -129,7 +128,7 @@ function projection(state: Snapshot, now: string, selection: Selection | null = 
     return renderView({ evidenceGaps, hunt: state.hunt.id, release: state.release, intent: state.hunt.intent, profile: state.hunt.profile, rows, offers: state.offers, quotes, final: state.hunt.final, stopRequested: state.hunt.stopRequestedAt !== null, ready: null });
 }
 export class Hunts {
-    constructor(private readonly deps: { store: HuntStore; knowledge: Knowledge; delivery: Delivery }) {}
+    constructor(private readonly deps: { store: HuntStore; knowledge: Knowledge }) {}
     private async execute<T>(scope: Scope, run: (tx: Tx) => Promise<Result<T>>): Promise<Result<T>> {
         try { return await this.deps.store.transact(scope, async tx => {
             const reply = await run(tx);

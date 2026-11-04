@@ -1,7 +1,12 @@
-# P02 knowledge
+# P02 knowledge verification
 
-Run `npm run build`, then `npm run verify -- p02`. The driver starts a compiled HTTP server, retrieves the guide, prompt and both Markdown resources, and writes ten lane JSON receipts under `~/tmp/scoat-delivery/p02`. Lane 4 also publishes two temporary releases, restarts lookup and checks old file hashes. Lanes 5/7/8 exercise rejected configuration, expired synthetic eligibility and third-party code promotion. Lane 10 audits production provenance and unsupported entries.
+Run this branch after changing release schemas, publication/lookup, checklist construction, provenance or any generated guidance format. Build first using the parent skill's common steps.
 
-Run `npm run perf -- p02` for five warmed batches of guide generation and strict validation at 100 synthetic shops with eight rows. Inspect raw samples and runner metadata; do not claim a fixed two-vCPU pass on another runner shape.
+1. Run `npm run verify -- p02`. Read the printed evidence directory and its `summary.json`.
+2. Check all ten `lane-N.json` receipts: (1) compiled HTTP guide has eight rows/four seller slots; (2) compiled module renders the shop method and explicit source gap; (3) tool, prompt, resource and skill share content; (4) two publications and restarted lookup preserve first-file hashes; (5) incomplete/duplicate seller slots fail; (6) unknown shop retains every row; (7) expired synthetic eligibility fails; (8) third-party code stays untested and promotion fails; (9) skill requires evidence, complete slots, named gaps and server totals; (10) production audit records provenance/owners or unsupported status.
+3. Run `npm run perf -- p02`. Read `perf.json`: five batches must retain raw guide/validation samples, runner metadata and 100 synthetic shops using eight row recipes. Each local p95 must be at most 100 ms. Same-ID output must remain stable.
+4. Complete the parent skill's typecheck, lint and test commands. Knowledge tests must cover declaration versus verification, dangling facts, mutation, conflicting IDs, concurrent publication and old pins after restart.
 
-Only the method is production-ready at this phase. Nike has explicit unsupported shop facts; unknown shops retain every row. No real code, student offer, discount or official domain is asserted. P01 real-host lanes 6/7 remain UNTESTED and confirmation lane 8 PARTIAL. No UI, OAuth, hunt mutation, shopping, watch or host support is proven by these probes.
+PASS requires every assertion above to execute successfully. FAIL identifies the failing command/assertion and receipt. UNTESTED identifies an unavailable gate. The scripts are deterministic raw-client/module probes; they do not run the plan's model-agent sessions. That model gate remains UNTESTED. The fixed two-vCPU acceptance gate is UNTESTED on another runner shape. P01 host lanes 6/7 remain UNTESTED and confirmation lane 8 PARTIAL; running this branch does not change them. JSON receipts are service evidence, not UI screenshots.
+
+Production currently publishes a general method with explicit unsupported Nike facts. Synthetic offers stay under `test/fixtures`; neither a local fixture nor an unsupported entry proves a real discount, working code, student scheme or official domain. Hunt execution and totals remain unavailable.

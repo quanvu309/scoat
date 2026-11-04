@@ -43,6 +43,7 @@ export async function erasureLanes(databaseUrl) {
   await f.store.pool.query("INSERT INTO hunt_offers(account,incarnation,hunt,row_id,slot,id,data) VALUES($1,$2,$3,$4,1,'erasure-offer',$5)",[...scope,view.hunt,view.rows[0].row.id,{fixture:"SYNTHETIC private offer"}]);
   await f.store.pool.query("INSERT INTO hunt_compatibility VALUES($1,$2,$3,$4,$5)",[...scope,view.hunt,compatibility,{fixture:"SYNTHETIC private compatibility"}]);
   await f.store.pool.query("INSERT INTO hunt_compatibility_members VALUES($1,$2,$3,$4,'erasure-offer')",[...scope,view.hunt,compatibility]);
+  const staleLogin=await f.login("host-one","upstream-subject-A","scoat:read scoat:write",true);
   const erased=await confirm(f,f.issuer+"/account/erase","/account/erase","erase");
   assert.equal(erased.result.status,200,await erased.result.clone().text());
   const receipt=await erased.result.json();
@@ -74,8 +75,11 @@ export async function erasureLanes(databaseUrl) {
   await f.restart();
   const logs=await readFile(f.logPath,"utf8");
   for (const secret of [one.token,status,"SYNTHETIC private","upstream-subject-A"]) assert.ok(!logs.includes(secret),"Ordinary log leaked private data");
+  const staleCallback=await fetch(staleLogin.callback,{redirect:"manual",headers:{cookie:staleLogin.cookie}});
+  assert.equal(staleCallback.status,400);
+  assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.upstreamIssuer,"upstream-subject-A"])).rows[0].count,"0");
   const fresh=await f.login();
   assert.notEqual((await f.authenticate(fresh.token)).agent.account,scope[0]);
-  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
+  return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,staleVerifiedCallbackDenied:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
  } finally { await f.close(); }
 }

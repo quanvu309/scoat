@@ -238,6 +238,7 @@ export async function authFixture(databaseUrl) {
     client = "host-one",
     subject = "upstream-subject-A",
     scope = "scoat:read scoat:write",
+    pauseAtCallback = false,
   ) {
     identity = subject;
     jar.clear();
@@ -256,6 +257,7 @@ export async function authFixture(databaseUrl) {
     let url = issuer + "/auth?" + params;
     const steps = [];
     for (let n = 0; n < 30 && !url.startsWith("https://client.example/"); n++) {
+      if (pauseAtCallback && new URL(url).pathname === "/upstream/callback") return {callback:url,cookie:[...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ")};
       let response = await browser(url);
       steps.push({ path: new URL(url).pathname, status: response.status });
       if (response.status === 200 && new URL(url).pathname === "/upstream/callback") {

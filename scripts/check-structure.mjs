@@ -483,13 +483,24 @@ export function checkExplicitEnrollment(source) {
  if (sql.some(value => /\bINSERT\s+INTO\s+(?:[\w"]+\.)?"?(?:hunt_accounts|oauth_identities)"?\b/i.test(value))) throw new Error("Unknown identity resolution cannot provision; use explicit browser enrollment");
 }
 export function checkBrowserFlowClock(issuer,flows) {
- const redirect = parsedNodes(issuer).find(node => node.type === "FunctionDeclaration" && node.id?.name === "upstreamRedirect");
+ const issuerNodes = parsedNodes(issuer);
+ const redirect = issuerNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "upstreamRedirect");
  const initial = astNodes(redirect).find(node => node.type === "CallExpression" && node.callee.name === "persistBrowserFlow");
- const payload = initial?.arguments[2];
+ const writes = issuerNodes.filter(node => node.type === "CallExpression" && ["writeBrowserFlow","persistBrowserFlow"].includes(node.callee.name));
+ const invalidPayload = writes.some(write => {
+  const payload = write.arguments[2];
+  if (payload?.type !== "ObjectExpression") return true;
+  const properties = payload.properties;
+  const preserved = properties[0]?.type === "SpreadElement" && properties[0].argument.name === "flow";
+  const fields = write === initial ? properties : properties.slice(1);
+  return (write !== initial && !preserved) || fields.some(node => node.type !== "ObjectProperty" || node.computed || (node.key.name ?? node.key.value) === "initiatedAt") || astNodes(payload).some(node => node.type === "CallExpression" && node.callee.object?.name === "Date");
+ });
  const flowNodes = parsedNodes(flows);
- const databaseClock = flowNodes.some(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "SELECT floor(extract(epoch FROM clock_timestamp())*1000)::text AS initiated_at");
- if (payload?.type !== "ObjectExpression" || payload.properties.some(node => node.type !== "ObjectProperty" || node.key.name === "initiatedAt") || !databaseClock || flowNodes.some(node => node.type === "CallExpression" && member(node.callee,"Date","now"))) throw new Error("Stamp new browser flows with the database clock; preserve that start through confirmations");
+ const timestamp = flowNodes.find(node => node.type === "VariableDeclarator" && node.id.name === "initiatedAt")?.init;
+ const preservedTimestamp = timestamp?.type === "LogicalExpression" && timestamp.operator === "??" && member(timestamp.left,"value","initiatedAt");
+ const databaseClock = astNodes(timestamp?.right).some(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "SELECT floor(extract(epoch FROM clock_timestamp())*1000)::text AS initiated_at");
+ if (!initial || invalidPayload || !preservedTimestamp || !databaseClock || flowNodes.some(node => node.type === "CallExpression" && member(node.callee,"Date","now"))) throw new Error("Stamp new browser flows with the database clock; preserve that start through confirmations");
 }
 export function checkMemoryVerification(skill,index) {
- if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory and erasure changes to features/memory.md");
+ if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !skill.includes("For identity linking, also load [memory and erasure](features/memory.md)") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory, linking and erasure changes to features/memory.md");
 }

@@ -10,7 +10,7 @@ description: Verify Scoat after changes to P01 HTTP/MCP transport, registry sche
 3. For release validation, publication, lookup, checklist or renderer changes, load [knowledge](features/knowledge.md). It defines P02 scenarios, immutable-pin checks and source auditing.
 4. For evidence, compatibility, pricing or HuntView changes, load [hunt](features/hunt.md). For shared adapter or driver changes, run all affected branches. Read the [feature index](features/README.md) only when ownership is unclear.
 5. For durable store, account incarnation, receipts or lifecycle fences, load [durable hunts](features/durable.md).
-6. For OAuth, issuer configuration, identity linking, read grants or authenticated MCP changes, load [authentication](features/auth.md).
+6. For OAuth, issuer configuration, identity linking, read grants or authenticated MCP changes, load [authentication](features/auth.md). For identity linking, also load [memory and erasure](features/memory.md) to verify stale callbacks across erasure.
 7. For Memory, profile snapshots, exact browser approval, enrollment, OAuth ownership, erasure, migration or retention changes, load [memory and erasure](features/memory.md). Run P04 and P05 for account/authentication changes.
 8. Run the branch commands, `npm run typecheck`, `npm run lint` and `npm test`. Use pstack-run for noisy finite checks. Retain its result JSON and logs under `~/tmp`.
 

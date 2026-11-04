@@ -17,6 +17,11 @@ test("browser flow starts cannot mix the application and database clocks",async(
  assert.doesNotThrow(()=>checkBrowserFlowClock(issuer,flows));
  assert.throws(()=>checkBrowserFlowClock(issuer.replace("{ verifier, nonce, browser: digest(browser), context }","{ initiatedAt: Date.now(), verifier, nonce, browser: digest(browser), context }"),flows),/database clock/);
  assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("clock_timestamp()","now()")),/database clock/);
+ for (const confirmation of issuer.matchAll(/\{\s*\.\.\.flow,\s*context:/g)) {
+  const original=confirmation[0];
+  for (const replacement of [original.replace("...flow,","...flow, initiatedAt: Date.now(),"),original.replace("...flow,","")]) assert.throws(()=>checkBrowserFlowClock(issuer.slice(0,confirmation.index)+replacement+issuer.slice(confirmation.index+original.length),flows),/preserve that start/);
+ }
+ assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("value.initiatedAt ?? ","")),/preserve that start/);
 });
 test("structural rules reject each offending fixture with supported fix", () => {
   assert.throws(() => checkSdkImports("src/domain.ts", 'import { Client } from "@modelcontextprotocol/sdk/client/index.js";'), /SDK-free/);
@@ -208,11 +213,14 @@ test("P06 ownership and enrollment guards reject the original unsafe shapes", as
  }
  assert.throws(()=>checkErasureCoordinator(coordinator.replace("const prefix = [scope.account,scope.incarnation]","const prefix = [other.account,scope.incarnation]")),/exclusive active account fence/);
  assert.throws(()=>checkErasureCoordinator(coordinator.replaceAll("clock_timestamp()","now()")),/suppression tombstones/);
- assert.throws(()=>checkErasureCoordinator(coordinator.replace(" const authentication = await deleteAuthentication", " if (false) return;\n const authentication = await deleteAuthentication").replace("export async function eraseAccount", "async function unusedErasure")),/fixed owner deletion/);
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("export async function eraseAccount", "async function unusedErasure")),/fixed owner deletion/);
  for (const sql of ["INSERT INTO hunt_accounts(account) VALUES($1)"," INSERT INTO oauth_identities VALUES($1)","INSERT INTO public.hunt_accounts VALUES($1)","WITH x AS (INSERT INTO oauth_identities VALUES($1) RETURNING *) SELECT * FROM x"]) {
   for (const delimiter of ['"','`']) assert.throws(()=>checkExplicitEnrollment("async function resolveIdentity(){await pool.query("+delimiter+sql+delimiter+");}"),/explicit browser enrollment/);
  }
  assert.throws(()=>checkMemoryVerification("---\ndescription: P05\n---",""),/features\/memory.md/);
+ const skill=readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md",import.meta.url),"utf8"),index=readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md",import.meta.url),"utf8");
+ assert.throws(()=>checkMemoryVerification(skill.replace("For identity linking, also load [memory and erasure](features/memory.md)",""),index),/linking/);
+ assert.doesNotThrow(()=>checkMemoryVerification(skill,index));
 });
 
 test("P06 exposes browser recovery and rejects links started before erasure", async () => {

@@ -33,7 +33,7 @@ export type HuntRequest = { readonly op: "compatibility"; readonly requestKey: R
     readonly op: "read";
     readonly hunt: HuntId;
 } | {
-    readonly op: "list";
+    readonly op: "list"; readonly after?: string; readonly limit?: number;
 } | {
     readonly op: "record";
     readonly requestKey: RequestKey;
@@ -136,7 +136,7 @@ export class Hunts {
             throw error;
         }
     }
-    async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[] }>> {
+    async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: string | null }>> {
         let start: { release: Release; profile: Profile } | null = null;
         if (request.op === "start") {
             try {
@@ -149,11 +149,12 @@ export class Hunts {
             start = { release: await this.deps.knowledge.read({ release: "latest" }), profile: request.profile ?? await this.deps.profileOf(agent) };
         }
         const scope: Scope = { ...agent, hunt: "hunt" in request ? request.hunt : null, accountFence: "shared", huntFence: request.op === "finish" || request.op === "compatibility" ? "exclusive" : "shared", rows: request.op === "record" ? [request.row] : [], ...("requestKey" in request ? { request: { key: request.requestKey, digest: digest(request) } } : {}) };
-        return this.execute<HuntReply | { readonly hunts: readonly HuntView[] }>(scope, async tx => {
+        return this.execute<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: string | null }>(scope, async tx => {
             if (request.op === "list") {
                 const hunts = [];
-                for (const id of await tx.ids()) { const state = await tx.snapshot(id); if (state) hunts.push(projection(state,now)); }
-                return { ok: true, value: { hunts } };
+                const ids = await tx.ids(request.after, (request.limit ?? 20) + 1);
+                for (const id of ids.slice(0,request.limit ?? 20)) { const state = await tx.snapshot(id); if (state) hunts.push(projection(state,now)); }
+                return { ok: true, value: { hunts, next: ids.length > (request.limit ?? 20) ? hunts.at(-1)?.hunt ?? null : null } };
             }
             if (request.op === "start") {
                 if (!start) throw new Error("Missing start inputs");

@@ -68,3 +68,12 @@ test("scratch lint rejects the original GitHub runner failure", () => {
   assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
   assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
 });
+
+test("P05 rejects the original unauthenticated server and public authority constructors", async()=>{
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision}=await import("../scripts/check-structure.mjs");
+  assert.throws(()=>checkConsentDecision('if (req.method !== "POST" || req.headers.origin !== issuer || submitted.get("csrf") !== csrf) { throw new Error("refused"); }'),/explicit allow or deny/);
+  assert.throws(()=>checkRemoteBoundary('const server=createMcpServer();'),/verified issuer/);
+  assert.throws(()=>checkPublicAuthority('export { authenticate, person, mount } from "./mcp/index.js";'),/public barrel/);
+  assert.throws(()=>checkGrantRenewal('class Grants { async use() { if(op==="renew") return this.open(principal,hunt); } }'),/atomically/);
+  assert.throws(()=>checkGrantRenewal('class ReadGrants { async open() { const result = await this.pool.query("INSERT INTO oauth_read_grants SELECT account FROM hunt_accounts WHERE NOT erased"); return result; } }'),/Fence capability/);
+});

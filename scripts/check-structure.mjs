@@ -45,11 +45,12 @@ export function checkDependencyPair(pkg) {
 export function checkPersonBoundary(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
   const fn = ast.program.body.find(item => item.type === "ExportNamedDeclaration" && item.declaration?.type === "FunctionDeclaration" && item.declaration.id?.name === "person")?.declaration;
-  if (!fn || fn.body.body.length !== 1 || fn.body.body[0].type !== "ThrowStatement") throw new Error("P01 person must always throw; add real same-account authentication before enabling controls");
+  if (!fn || fn.body.body.length !== 1 || fn.body.body[0].type !== "ThrowStatement") throw new Error("Person must always throw until separately verified same-account browser confirmation enables controls");
 }
 export function checkHostConfig(source) {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
   const found = new Set();
+  const arrays = new Map(astNodes(ast).filter(node=>node.type==="VariableDeclarator" && ["allowedHosts","allowedOrigins"].includes(node.id?.name)).map(node=>[node.id.name,node.init]));
   function exactSocketTemplate(element, prefix) {
     if (element?.type !== "TemplateLiteral" || element.quasis.length !== 2 || element.expressions.length !== 1) return false;
     const expression = element.expressions[0];
@@ -64,7 +65,7 @@ export function checkHostConfig(source) {
       const name = node.key.name;
       const prefixes = name === "allowedHosts" ? ["localhost:", "127.0.0.1:"] : ["http://localhost:", "http://127.0.0.1:"];
       found.add(name);
-      const elements = node.value.type === "ArrayExpression" ? node.value.elements : [];
+      const elements = (node.value.type === "Identifier" ? arrays.get(node.value.name) : node.value)?.elements ?? [];
       if (elements.length !== 2 || elements.some((element, index) => !exactSocketTemplate(element, prefixes[index]))) throw new Error(`Use exact loopback socket localPort in ${name}`);
     }
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
@@ -109,6 +110,10 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+  checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
+  checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
+  checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
+  checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkDurableFences(fs.readFileSync("src/hunt/postgres.ts", "utf8"));
   checkStartReplay(fs.readFileSync("src/hunt/index.ts", "utf8"));
   checkDurableCommands(fs.readFileSync("src/hunt/index.ts", "utf8"));
@@ -245,4 +250,25 @@ export function checkRaceBarriers(source) {
 
 export function checkTransactionGuidance(source) {
   if (/Finish and stop take every row lock/i.test(source)) throw new Error("Document finish and stop with an exclusive hunt fence inside the shared account fence");
+}
+
+export function checkRemoteBoundary(source) {
+  const nodes=astNodes(parse(source,{sourceType:"module",plugins:["typescript"]}));
+  const authentication=nodes.find(node=>node.type==="AwaitExpression"&&node.argument?.callee?.object?.name==="auth"&&node.argument.callee.property?.name==="authenticate");
+  const server=nodes.find(node=>node.type==="CallExpression"&&node.callee?.name==="createMcpServer");
+  if(!authentication||!server||authentication.start>server.start)throw new Error("Await the verified issuer principal before constructing a production MCP dispatcher");
+  if(!nodes.some(node=>node.type==="StringLiteral"&&node.value==="Authentication is not configured"))throw new Error("Fail closed without issuer configuration");
+}
+export function checkPublicAuthority(source) {
+  const nodes=astNodes(parse(source,{sourceType:"module",plugins:["typescript"]}));
+  for(const node of nodes)if(node.type==="ExportSpecifier"&&["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name))throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel");
+}
+export function checkGrantRenewal(source) {
+  const nodes=astNodes(parse(source,{sourceType:"module",plugins:["typescript"]}));
+  for(const node of nodes)if(node.type==="ClassMethod"&&node.key.name==="use"&&astNodes(node).some(call=>call.type==="CallExpression"&&call.callee?.object?.type==="ThisExpression"&&call.callee.property?.name==="open"))throw new Error("Renew the bound grant atomically; do not revoke then call open in a second transaction");
+  if(source.includes("this.pool.query(")||!source.includes("NOT erased FOR SHARE"))throw new Error("Fence capability operations with the active account before accessing grants");
+}
+export function checkConsentDecision(source) {
+  const nodes=astNodes(parse(source,{sourceType:"module",plugins:["typescript"]}));
+  if(!nodes.some(node=>node.type==="CallExpression"&&node.callee?.property?.name==="includes"&&JSON.stringify(node.callee.object?.elements?.map(item=>item.value))==='["allow","deny"]'&&node.arguments[0]?.left?.arguments?.[0]?.value==="decision"))throw new Error("Require an explicit allow or deny decision before completing consent");
 }

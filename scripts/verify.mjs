@@ -1,3 +1,4 @@
+if (process.argv[2] === "p05") { await import("./verify-auth.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p04") { await import("./verify-durable.mjs"); process.exit(process.exitCode ?? 0); }
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -55,7 +56,8 @@ try {
       }
     } else if (lane === 4) {
       const result = await call("scoat_card", { op: "act", hunt: "fixture-hunt", grant: "synthetic-untrusted", requestKey: "fixture-click", action: { kind: "stop" } });
-      assert.equal(result.structuredContent.error.code, "forbidden");
+      assert.equal(result.isError,true);
+      assert.equal(result.structuredContent,undefined);
     } else if (lane === 5) {
       const resource = await client.readResource({ uri: appUri });
       assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");

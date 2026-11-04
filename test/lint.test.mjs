@@ -120,3 +120,37 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
   assert.throws(() => checkAuthVerification(skill.replace("features/auth.md", "features/foundation.md"), index), /Route OAuth/);
   assert.throws(() => checkAuthVerification("---\ndescription: excludes OAuth\n---\n## Completion", index), /Route OAuth/);
 });
+
+
+test("P05 guards reject residual alias, result and dead-condition bypasses", async () => {
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision} = await import("../scripts/check-structure.mjs");
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const grants = readFileSync(new URL("../src/auth/grants.ts", import.meta.url), "utf8");
+  const replace = (source, from, to) => {
+    assert.ok(source.includes(from), `Missing mutation target: ${from}`);
+    const changed = source.replace(from, to);
+    assert.notEqual(changed, source);
+    return changed;
+  };
+  const open = "async open(principal: Principal, hunt: HuntId) {";
+  for (const access of ['const { pool } = this; await pool.query("SELECT 1");', 'await this["pool"].query("SELECT 1");']) {
+    assert.throws(() => checkGrantRenewal(replace(grants, open, open + access)), /Fence capability/);
+  }
+  for (const value of [
+    'import { createIssuer } from "./auth/issuer.js"; export { createIssuer };',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export { issue as safe };',
+    'import * as a from "./auth/issuer.js"; export { a };',
+  ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
+  assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
+  assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", "principal = forged; const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  const parser = 'const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));';
+  const named = replace(issuer, parser, 'const decisionSchema = z.enum(["allow", "deny"]); const decision = decisionSchema.safeParse(submitted.get("decision"));');
+  assert.doesNotThrow(() => checkConsentDecision(named));
+  const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
+  assert.doesNotThrow(() => checkConsentDecision(renamed));
+  assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
+  assert.doesNotThrow(() => checkRemoteBoundary(server));
+  assert.doesNotThrow(() => checkGrantRenewal(grants));
+});

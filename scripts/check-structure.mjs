@@ -292,8 +292,14 @@ export function checkRemoteBoundary(source) {
   const authentication = body.find(node => node.type === "TryStatement" && node.block.body.some(statement => statement.type === "ExpressionStatement" && statement.expression.type === "AssignmentExpression" && statement.expression.left?.name === "principal" && statement.expression.right?.type === "AwaitExpression" && member(statement.expression.right.argument?.callee,"auth","authenticate")));
   const dispatch = body.flatMap(node => node.declarations ?? []).find(node => node.id?.name === "invoke" && node.init?.callee?.name === "authenticatedDispatch" && node.init.arguments[0]?.name === "store" && node.init.arguments[1]?.name === "principal");
   const server = body.flatMap(node => node.declarations ?? []).find(node => node.init?.callee?.name === "createMcpServer");
-  const invokes = astNodes(server?.init?.arguments?.[0]).some(node => node.type === "CallExpression" && node.callee?.name === "invoke");
-  if (!authentication || !dispatch || !server || authentication.start > dispatch.start || dispatch.start > server.start || !invokes || authentication.handler?.body.body.at(-1)?.type !== "ReturnStatement") throw new Error("Await the verified issuer principal and pass it to the production MCP dispatcher; return on authentication failure");
+  const callback = server?.init?.arguments?.[0];
+  const returns = astNodes(callback).filter(node => node.type === "ReturnStatement");
+  const result = returns[0]?.argument;
+  const invokes = returns.length === 1 && result?.type === "AwaitExpression" && result.argument?.type === "CallExpression" && result.argument.callee?.name === "invoke" && result.argument.arguments[0]?.name === callback.params?.[0]?.name;
+  const assignments = nodes.filter(node => node.type === "AssignmentExpression" && node.left?.name === "principal");
+  const authenticatedAssignment = authentication?.block.body.find(statement => statement.expression?.left?.name === "principal")?.expression;
+  const stablePrincipal = assignments.length === 1 && assignments[0] === authenticatedAssignment && !nodes.some(node => node.type === "UpdateExpression" && node.argument?.name === "principal");
+  if (!authentication || !dispatch || !server || authentication.start > dispatch.start || dispatch.start > server.start || !invokes || !stablePrincipal || authentication.handler?.body.body.at(-1)?.type !== "ReturnStatement") throw new Error("Await the verified issuer principal and pass it to the production MCP dispatcher; return on authentication failure");
   const closed = body.find(node => node.type === "IfStatement" && node.test.type === "LogicalExpression" && node.test.operator === "||" && node.test.left.operator === "!" && node.test.left.argument?.name === "auth" && node.test.right.operator === "!" && node.test.right.argument?.name === "store");
   if (!closed || closed.start > authentication.start || closed.consequent.body?.at(-1)?.type !== "ReturnStatement" || !astNodes(closed.consequent).some(node => node.type === "CallExpression" && member(node.callee,"res","writeHead") && node.arguments[0]?.value === 503)) throw new Error("Fail closed without issuer configuration before authentication or MCP construction");
   const unavailable = authentication.handler.body.body.find(node => node.type === "IfStatement" && node.test.type === "UnaryExpression" && node.test.operator === "!" && node.test.argument?.type === "BinaryExpression" && node.test.argument.operator === "instanceof" && node.test.argument.right?.name === "InvalidCredential");
@@ -301,9 +307,10 @@ export function checkRemoteBoundary(source) {
 }
 export function checkPublicAuthority(source) {
   const nodes = parsedNodes(source);
+  const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/auth(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
   for (const node of nodes) {
     if (node.exportKind === "type") continue;
-    if (node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth\//.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
+    if (node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
   }
 }
 export function checkGrantRenewal(source) {
@@ -314,18 +321,36 @@ export function checkGrantRenewal(source) {
   const fence = calls.find(node => node.arguments[0]?.type === "StringLiteral" && /SELECT 1 FROM hunt_accounts.*NOT erased FOR SHARE/.test(node.arguments[0].value));
   const guarded = astNodes(query).find(node => node.type === "IfStatement" && node.test.operator === "!" && member(node.test.argument,"active","rowCount") && node.consequent.type === "ThrowStatement");
   const reads = calls.find(node => node.arguments[0]?.name === "sql");
-  const poolReferences = nodes.filter(node => node.type === "MemberExpression" && node.object?.type === "ThisExpression" && node.property?.name === "pool");
-  const validPool = poolReferences.length === 1 && poolReferences[0].start >= (query?.start ?? Infinity) && poolReferences[0].end <= query.end && astNodes(query).some(node => node.type === "CallExpression" && node.callee?.property?.name === "connect" && node.callee.object === poolReferences[0]);
+  const poolReferences = nodes.filter(node => node.type === "MemberExpression" && node.object?.type === "ThisExpression" && (node.property?.name === "pool" || node.property?.value === "pool"));
+  const permittedThis = new Set(nodes.filter(node => node.type === "MemberExpression" && node.object?.type === "ThisExpression" && !node.computed && node.property?.name === "query").map(node => node.object));
+  if (poolReferences.length === 1) permittedThis.add(poolReferences[0].object);
+  const exposedThis = nodes.some(node => node.type === "ThisExpression" && !permittedThis.has(node));
+  const validPool = !exposedThis && poolReferences.length === 1 && poolReferences[0].start >= (query?.start ?? Infinity) && poolReferences[0].end <= query.end && astNodes(query).some(node => node.type === "CallExpression" && node.callee?.property?.name === "connect" && node.callee.object === poolReferences[0]);
   if (!validPool || !fence || !guarded || !reads || !(fence.start < guarded.start && guarded.start < reads.start)) throw new Error("Fence capability operations with the active account before accessing grants; keep pool access in private query");
 }
 export function checkConsentDecision(source) {
   const nodes = parsedNodes(source);
-  const rejecting = nodes.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "UnaryExpression" && test.operator === "!" && test.argument?.type === "CallExpression" && test.argument.callee?.property?.name === "includes" && JSON.stringify(test.argument.callee.object?.elements?.map(item=>item.value)) === '["allow","deny"]' && test.argument.arguments[0]?.left?.arguments?.[0]?.value === "decision") && node.consequent.body?.at(-1)?.type === "ReturnStatement");
-  const parsed = nodes.find(node => node.type === "VariableDeclarator" && node.id?.name === "decision" && node.init?.callee?.property?.name === "safeParse" && member(node.init.callee.object?.callee,"z","enum") && JSON.stringify(node.init.callee.object.arguments[0]?.elements?.map(item => item.value)) === '["allow","deny"]' && member(node.init.arguments[0]?.callee,"submitted","get") && node.init.arguments[0]?.arguments[0]?.value === "decision");
-  const inlineRejecting = nodes.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "UnaryExpression" && test.operator === "!" && test.argument?.property?.name === "success" && test.argument.object?.callee?.property?.name === "safeParse" && member(test.argument.object.callee.object?.callee,"z","enum") && JSON.stringify(test.argument.object.callee.object.arguments[0]?.elements?.map(item => item.value)) === '["allow","deny"]' && member(test.argument.object.arguments[0]?.callee,"submitted","get") && test.argument.object.arguments[0]?.arguments[0]?.value === "decision") && node.consequent.body?.at(-1)?.type === "ReturnStatement");
-  const schemaRejecting = parsed && nodes.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "UnaryExpression" && test.operator === "!" && member(test.argument,"decision","success")) && node.consequent.body?.at(-1)?.type === "ReturnStatement" && node.start > parsed.start);
+  const declarations = nodes.filter(node => node.type === "VariableDeclarator" && node.id?.type === "Identifier");
+  const enumSchema = node => node?.type === "CallExpression" && member(node.callee,"z","enum") && JSON.stringify(node.arguments[0]?.elements?.map(item => item.value)) === '["allow","deny"]';
+  const parseDecision = node => {
+    if (node?.type !== "CallExpression" || node.callee?.property?.name !== "safeParse" || !member(node.arguments[0]?.callee,"submitted","get") || node.arguments[0]?.arguments[0]?.value !== "decision") return false;
+    const schema = node.callee.object;
+    return enumSchema(schema) || (schema?.type === "Identifier" && declarations.some(binding => binding.id.name === schema.name && binding.start < node.start && enumSchema(binding.init)));
+  };
+  const rejectsDecision = node => {
+    if (node?.type === "LogicalExpression" && node.operator === "||") return rejectsDecision(node.left) || rejectsDecision(node.right);
+    if (node?.type !== "UnaryExpression" || node.operator !== "!") return false;
+    const value = node.argument;
+    if (value.type === "CallExpression" && value.callee?.property?.name === "includes" && JSON.stringify(value.callee.object?.elements?.map(item => item.value)) === '["allow","deny"]') {
+      const input = value.arguments[0]?.type === "LogicalExpression" && value.arguments[0].operator === "??" ? value.arguments[0].left : value.arguments[0];
+      return member(input?.callee,"submitted","get") && input.arguments[0]?.value === "decision";
+    }
+    if (value.type !== "MemberExpression" || value.computed || value.property?.name !== "success") return false;
+    return parseDecision(value.object) || (value.object.type === "Identifier" && declarations.some(binding => binding.id.name === value.object.name && binding.start < node.start && parseDecision(binding.init)));
+  };
   const consent = nodes.find(node => node.type === "CallExpression" && member(node.callee,"provider","interactionFinished") && astNodes(node.arguments[2]).some(part => part.type === "ObjectProperty" && part.key?.name === "consent"));
-  if (!(rejecting || schemaRejecting || inlineRejecting) || !consent || (rejecting ?? schemaRejecting ?? inlineRejecting).start > consent.start) throw new Error("Require an explicit allow or deny decision with a terminating rejection before completing consent");
+  const rejecting = nodes.find(node => node.type === "IfStatement" && rejectsDecision(node.test) && node.consequent.body?.at(-1)?.type === "ReturnStatement" && node.start < (consent?.start ?? 0));
+  if (!rejecting || !consent) throw new Error("Require an explicit allow or deny decision with a terminating rejection before completing consent");
 }
 export function checkAuthorizationPolicy(source) {
   const nodes = parsedNodes(source);

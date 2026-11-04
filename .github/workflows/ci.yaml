@@ -1,4 +1,4 @@
-name: P01 foundation
+name: Foundation and knowledge
 on: [push, pull_request]
 permissions:
   contents: read
@@ -33,3 +33,5 @@ jobs:
       - run: npm run db:seed -- --fixture ci-p01
       - run: npm run verify -- p01
       - run: npm run perf -- p01
+      - run: npm run verify -- p02
+      - run: npm run perf -- p02

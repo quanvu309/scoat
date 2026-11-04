@@ -99,6 +99,7 @@ export function checkDriver(source) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   walk("src");
+  checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
   checkTools(Object.keys(toolCatalog));
   checkWorkflow(fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
@@ -109,4 +110,14 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
   checkDriver(fs.readFileSync("scripts/driver.mjs", "utf8"));
+}
+
+export function checkKnowledgeTypes(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (["TSParameterProperty", "TSEnumDeclaration", "TSModuleDeclaration"].includes(node.type)) throw new Error("Knowledge must use erasable TypeScript for Node strip-only tests; declare fields explicitly");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
 }

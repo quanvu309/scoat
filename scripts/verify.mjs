@@ -10,6 +10,7 @@ import { confirmationFixture } from "../fixtures/confirmation.mjs";
 
 const args = process.argv.slice(2);
 if (args[0] === "doctor") { process.stdout.write(JSON.stringify(await doctor()) + "\n"); process.exit(0); }
+if (args[0] === "p02") { await import("./verify-knowledge.mjs"); process.exit(0); }
 if (args[0] !== "p01") throw new Error("Supported executable scope: verify -- p01 [--lane 1..10]");
 const laneArg = args.includes("--lane") ? Number(args[args.indexOf("--lane") + 1]) : null;
 if (laneArg !== null && (!Number.isInteger(laneArg) || laneArg < 1 || laneArg > 10)) throw new Error("--lane must be 1..10");
@@ -36,8 +37,9 @@ try {
       assert.equal(health.ready, true);
       transcript.push({ health });
       const result = await call("scoat_guide", { job: "best-benefit", shop: null });
-      assert.equal(result.structuredContent.error.code, "unavailable");
-      note = "Trunk has no build/start/HTTP endpoint. Head returns honest unavailable fixture result; no shopping success claimed.";
+      assert.equal(result.structuredContent.ok, true);
+      assert.equal(result.structuredContent.rows.length, 8);
+      note = "Trunk has no build/start/HTTP endpoint. Head returns P02 guidance; hunt execution remains unavailable.";
     } else if (lane === 2) {
       const listed = await client.listTools();
       assert.deepEqual(listed.tools.map(t => t.name).sort(), Object.keys(toolCatalog).sort());

@@ -1,0 +1,7 @@
+# Production source register
+
+Release `gb-method-2026-11-04` publishes a general method and no retailer benefit claims. Nike is the sole shop named in `arch/grounding.md` and `docs/brainstorm.md`. Its entry is explicitly unsupported: this release has no fresh primary-source verification of student eligibility, codes, membership, price matching or official domains. Refresh owner: Scoat knowledge maintainers. Narrative examples in the design are not observations and are not promoted to facts.
+
+There are no invented source URLs, observation times, discount values or working codes in production. Synthetic student and code claims use reserved `.invalid` domains, live under `test/fixtures/knowledge.mjs`, and are imported only by tests and probes.
+
+Future supported claims must include a primary HTTPS source, observed UTC timestamp, validity, online/in-store applicability and named refresh owner in the immutable release. Third-party code leads are allowed only as untested, never confirmed. Run `auditSources(release, now)` for every refresh; it reports provenance, owner, expiry and unsupported shop gaps. A refresh creates a new ID; it never edits an old release.

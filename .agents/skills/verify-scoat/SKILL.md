@@ -1,6 +1,6 @@
 ---
 name: verify-scoat
-description: Verify Scoat's current P01 compiled HTTP/MCP foundation, schemas, denied controls and fixture resource. Use after foundation changes; does not verify shopping, OAuth, watches or real hosts.
+description: Verify Scoat's P01 compiled HTTP/MCP foundation and P02 immutable knowledge, schemas, denied controls and resources. Use after foundation or knowledge changes; does not verify shopping, OAuth, watches or real hosts.
 ---
 
 ## Launch
@@ -26,3 +26,7 @@ The driver closes clients and terminates only its own child server, including th
 ## Helpers
 
 `node scripts/verify.mjs p01 --lane 2` is the direct equivalent of the npm drive command. Later phase owners must extend the map only after their public interfaces work.
+
+## P02 extension
+
+Read [knowledge feature map](features/knowledge.md) for immutable releases, compiled guidance and the ten P02 driver scenarios. Run `npm run verify -- p02` and `npm run perf -- p02` after knowledge changes. These are deterministic service/module probes, not real-host or model-agent verification.

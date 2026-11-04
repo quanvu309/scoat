@@ -51,7 +51,8 @@ test("ordinary HTTP client sees app-only tool but cannot authorize it", async ()
     assert.equal(invalid.isError, true);
     assert.equal(invalid.structuredContent, undefined);
     const guide = await client.callTool({ name: "scoat_guide", arguments: { job: "best-benefit", shop: null } });
-    assert.equal(guide.structuredContent.error.code, "unavailable");
+    assert.equal(guide.structuredContent.ok, true);
+    assert.equal(guide.structuredContent.rows.length, 8);
   } finally { if (client) await client.close(); await server.close(); }
   assert.deepEqual(server.logs, []);
   await assert.rejects(person({ grant: "arbitrary", hunt: "h" }), /authorization unavailable/);

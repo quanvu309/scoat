@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkComments } from "../scripts/check-no-comments.mjs";
-import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver } from "../scripts/check-structure.mjs";
+import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes } from "../scripts/check-structure.mjs";
 
 test("comment parser rejects comments outside src and accepts URL/regex literals", () => {
   for (const file of ["scripts/past.mjs", "test/past.ts", "vite.config.ts"]) assert.throws(() => checkComments(file, "const x = 1; /" + "/ forbidden"), /comments forbidden/);
@@ -27,4 +27,9 @@ test("structural rules reject each offending fixture with supported fix", () => 
   assert.throws(() => checkPersonBoundary('export async function person(args) { return {kind:"person", grant:args.grant}; }'), /always throw/);
   assert.throws(() => checkDriver('fork("server", [], {});'), /execArgv/);
   assert.throws(() => checkDriver('export async function connect() { await client.connect(transport); }'), /Close the Client/);
+});
+
+test("knowledge stays compatible with strip-only Node tests", () => {
+  assert.throws(() => checkKnowledgeTypes('export class Knowledge { constructor(readonly directory = "seed") {} }'), /erasable TypeScript/);
+  assert.doesNotThrow(() => checkKnowledgeTypes('export class Knowledge { readonly directory: string; constructor(directory: string) { this.directory = directory; } }'));
 });

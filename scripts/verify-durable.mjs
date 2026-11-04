@@ -157,6 +157,18 @@ await withDatabase(async databaseUrl => {
    assert.equal((await run(record(view,0,{outcome:found()}))).error.code,"forbidden");
    assert((await run(record(view,0,{outcome:{kind:"gap",reason:"Repair after Stop"}}))).ok);
    passed("Stop rejects found and correction but permits named gap");
+   const stoppedBefore=(await store.pool.query("SELECT data FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3",[f.scope.account,f.scope.incarnation,view.hunt])).rows[0].data.stopRequestedAt;
+   const repeatedStop=await f.hunts.control({person:f.person,hunt:view.hunt,control:{kind:"stop"},requestKey:randomUUID(),now:"2026-11-04T13:00:00Z"});
+   assert(repeatedStop.ok);
+   const stoppedAfter=(await store.pool.query("SELECT data FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3",[f.scope.account,f.scope.incarnation,view.hunt])).rows[0].data.stopRequestedAt;
+   assert.equal(stoppedAfter,stoppedBefore);
+   transcript.push({repeatedStop:repeatedStop.ok,stoppedBefore,stoppedAfter});
+   passed("independent repeated Stop preserves the original timestamp");
+   const reserved="person:"+randomUUID();
+   const rejected=await run({op:"start",requestKey:reserved,intent,profile:null});
+   assert.equal(rejected.error.code,"invalid");
+   assert.equal((await store.pool.query("SELECT key FROM hunt_receipts WHERE account=$1 AND incarnation=$2 AND key=$3",[f.scope.account,f.scope.incarnation,reserved])).rowCount,0);
+   passed("agent cannot poison the person receipt namespace");
    const foreign=await store.createAccount("foreign-"+randomUUID());
    assert.equal((await run({op:"read",hunt:view.hunt},{...f.agent,...foreign})).error.code,"missing");
    assert.equal((await run(record(view),{...f.agent,...foreign})).error.code,"missing");

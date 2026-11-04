@@ -1,3 +1,4 @@
+import { agentRequestKey } from "../hunt/request-key.js";
 import { memoryInput } from "../memory/contracts.js";
 import { pinnedResources } from "./resources.js";
 import { moneySchema, proofSchema, offerInputSchema, compatibilitySchema, selectionSchema } from "../hunt/evidence.js";
@@ -17,12 +18,12 @@ const proof = proofSchema;
 const offer = offerInputSchema;
 const outcome = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("checking") }), z.strictObject({ kind: z.literal("found"), offers: z.array(offer).min(1).max(50) }), z.strictObject({ kind: z.literal("none"), checked: text, seller: text.optional(), proof: z.array(proof).min(1).max(20) }), z.strictObject({ kind: z.literal("gap"), reason: text })]);
 export const huntInput = z.discriminatedUnion("op", [
-  z.strictObject({ op: z.literal("start"), requestKey: id, profile: profile.nullable(), intent: z.strictObject({ product: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("url"), url: z.url({ protocol: /^https$/ }) }), z.strictObject({ kind: z.literal("description"), text })]), variant: text.nullable(), shop: text.nullable(), budget: money.nullable() }) }),
+  z.strictObject({ op: z.literal("start"), requestKey: agentRequestKey, profile: profile.nullable(), intent: z.strictObject({ product: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("url"), url: z.url({ protocol: /^https$/ }) }), z.strictObject({ kind: z.literal("description"), text })]), variant: text.nullable(), shop: text.nullable(), budget: money.nullable() }) }),
   z.strictObject({ op: z.literal("list"), after: id.brand<"HuntId">().optional(), limit: z.number().int().min(1).max(20).optional() }),
   z.strictObject({ op: z.literal("read"), hunt: id }),
-  z.strictObject({ op: z.literal("record"), requestKey: id, hunt: id, row: id, slot: z.number().int().nonnegative(), expected: z.number().int().nonnegative(), outcome }),
-  z.strictObject({ op: z.literal("compatibility"), requestKey: id, hunt: id, evidence: compatibilitySchema }),
-  z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: selectionSchema.nullable() })
+  z.strictObject({ op: z.literal("record"), requestKey: agentRequestKey, hunt: id, row: id, slot: z.number().int().nonnegative(), expected: z.number().int().nonnegative(), outcome }),
+  z.strictObject({ op: z.literal("compatibility"), requestKey: agentRequestKey, hunt: id, evidence: compatibilitySchema }),
+  z.strictObject({ op: z.literal("finish"), requestKey: agentRequestKey, hunt: id, selection: selectionSchema.nullable() })
 ]);
 
 const cardInput = z.discriminatedUnion("op", [z.strictObject({ op:z.literal("open"),hunt:id.brand<"HuntId">() }), ...(["read","renew","revoke"] as const).map(op=>z.strictObject({op:z.literal(op),hunt:id.brand<"HuntId">(),grant:id.brand<"ReadGrantId">()}))]);

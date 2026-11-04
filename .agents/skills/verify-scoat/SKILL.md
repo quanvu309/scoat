@@ -1,6 +1,6 @@
 ---
 name: verify-scoat
-description: Verify Scoat after changes to P01 HTTP/MCP transport, registry schemas, denied controls or fixture resources, P02 release validation, publication, checklist construction or generated guidance, or P03 evidence, compatibility, pricing or HuntView projection. Also verifies P04 durable hunts and account fences and P05 OAuth, HTTPS identity, linking and read grants, plus P06 durable Memory, browser-approved commands, enrollment, erasure and retention. Covers compiled local service behavior; excludes real-host acceptance, live shopping, watches and interactive Person controls.
+description: Verify Scoat after changes to P01 HTTP/MCP transport, registry schemas, denied controls or fixture resources, P02 release validation, publication, checklist construction or generated guidance, or P03 evidence, compatibility, pricing or HuntView projection. Also verifies P04 durable hunts and account fences and P05 OAuth, HTTPS identity, linking and read grants, plus P06 durable Memory, browser-approved commands, enrollment, erasure and retention. Also covers P07 receipt namespace and stable Stop prerequisites. Covers compiled local service behavior; excludes real-host acceptance, live shopping, watches and interactive Person controls.
 ---
 
 ## Choose the verification branch
@@ -12,7 +12,8 @@ description: Verify Scoat after changes to P01 HTTP/MCP transport, registry sche
 5. For durable store, account incarnation, receipts or lifecycle fences, load [durable hunts](features/durable.md).
 6. For OAuth, issuer configuration, identity linking, read grants or authenticated MCP changes, load [authentication](features/auth.md). For identity linking, also load [memory and erasure](features/memory.md) to verify stale callbacks across erasure.
 7. For Memory, profile snapshots, exact browser approval, enrollment, OAuth ownership, erasure, migration or retention changes, load [memory and erasure](features/memory.md). Run P04 and P05 for account/authentication changes.
-8. Run the branch commands, `npm run typecheck`, `npm run lint` and `npm test`. Use pstack-run for noisy finite checks. Retain its result JSON and logs under `~/tmp`.
+8. For P07 receipt namespace or repeated Stop changes, load [durable hunts](features/durable.md) and run `node --test test/control-prerequisites.test.mjs` after building. Browser-authorized controls and the live card remain unimplemented.
+9. Run the branch commands, `npm run typecheck`, `npm run lint` and `npm test`. Use pstack-run for noisy finite checks. Retain its result JSON and logs under `~/tmp`.
 
 ## Completion and evidence
 

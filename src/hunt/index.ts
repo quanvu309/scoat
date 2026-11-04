@@ -1,3 +1,4 @@
+import { agentRequestKey } from "./request-key.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { digest, StoreFailure } from "./postgres.js";
@@ -137,6 +138,7 @@ export class Hunts {
         }
     }
     async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>> {
+        if ("requestKey" in request && !agentRequestKey.safeParse(request.requestKey).success) return failure("invalid", "Agent request key is invalid or reserved");
         let start: { release: Release } | null = null;
         if (request.op === "start") {
             try {
@@ -226,7 +228,9 @@ export class Hunts {
             const state = await tx.snapshot(hunt);
             if (!state) return failure("missing","Hunt unavailable");
             if (state.final) return failure("conflict","Hunt is finished");
-            if (control.kind === "stop") await tx.putHunt({ ...state.hunt, stopRequestedAt: now });
+            if (control.kind === "stop") {
+                if (state.hunt.stopRequestedAt === null) await tx.putHunt({ ...state.hunt, stopRequestedAt: now });
+            }
             else {
                 const row = state.rows.find(row => row.row === control.row);
                 if (!row) return failure("invalid","Unknown row");

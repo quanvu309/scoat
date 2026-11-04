@@ -141,6 +141,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));
+  checkControlPrerequisites(fs.readFileSync("src/hunt/index.ts", "utf8"),fs.readFileSync("src/mcp/index.ts", "utf8"));
   checkMemoryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
   checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
@@ -506,4 +507,26 @@ export function checkBrowserFlowClock(issuer,flows) {
 }
 export function checkMemoryVerification(skill,index) {
  if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !skill.includes("For identity linking, also load [memory and erasure](features/memory.md)") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory, linking and erasure changes to features/memory.md");
+}
+
+export function checkControlPrerequisites(hunt,wire) {
+ const nodes=parsedNodes(hunt);
+ const run=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="run");
+ const guard=run?.body.body[0];
+ const test=guard?.test;
+ const parse=test?.right?.argument?.object;
+ const returned=guard?.consequent;
+ const valid=guard?.type==="IfStatement" && test?.type==="LogicalExpression" && test.operator==="&&"
+  && test.left.type==="BinaryExpression" && test.left.operator==="in" && test.left.left.value==="requestKey" && test.left.right.name==="request"
+  && test.right.type==="UnaryExpression" && test.right.operator==="!" && test.right.argument.property?.name==="success"
+  && parse?.type==="CallExpression" && member(parse.callee,"agentRequestKey","safeParse") && parse.arguments.length===1 && member(parse.arguments[0],"request","requestKey")
+  && returned?.type==="ReturnStatement" && returned.argument.callee?.name==="failure" && returned.argument.arguments[0]?.value==="invalid";
+ const wireNodes=parsedNodes(wire);
+ const input=wireNodes.find(node=>node.type==="VariableDeclarator" && node.id.name==="huntInput");
+ const keys=astNodes(input).filter(node=>node.type==="ObjectProperty" && node.key.name==="requestKey");
+ if (!valid || keys.length!==4 || keys.some(node=>node.value.name!=="agentRequestKey")) throw new Error("Reserve person receipt keys at the live wire and first agent domain boundary");
+ const control=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="control");
+ const stop=astNodes(control).find(node=>node.type==="IfStatement" && node.test.type==="BinaryExpression" && member(node.test.left,"control","kind") && node.test.right.value==="stop");
+ const preserved=stop?.consequent.body?.[0];
+ if (preserved?.type!=="IfStatement" || preserved.test.operator!=="===" || preserved.test.left?.property?.name!=="stopRequestedAt" || !member(preserved.test.left?.object,"state","hunt") || preserved.test.right?.type!=="NullLiteral" || preserved.consequent?.expression?.type!=="AwaitExpression" || !member(preserved.consequent.expression.argument?.callee,"tx","putHunt")) throw new Error("Preserve the first accepted Stop timestamp");
 }

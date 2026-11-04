@@ -4,6 +4,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Risk | Required fix | Enforcement and negative proof |
 | --- | --- | --- |
+| Agent receipt keys occupy browser namespace or repeat Stop changes its timestamp | Reject reserved agent keys before store access and preserve the first Stop | checkControlPrerequisites; missing/dead guard and timestamp-overwrite fixtures; PostgreSQL receipt absence and repeated Stop |
 | Comments outside src | Use parser-checked comment-free JS/TS, YAML, JSON and SQL | check-no-comments; test/lint.test.mjs |
 | SDK in domain | Keep SDK imports in boundary adapters | checkSdkImports; SDK-import fixture |
 | Permissive wire objects | Use strict schemas including union branches | checkWire; permissive-object fixture |

@@ -12,3 +12,5 @@ P04: [durable hunts](durable.md) owns PostgreSQL state, receipts, incarnation to
 P05: [authentication](auth.md) owns OAuth, browser linking, authenticated HTTPS MCP and read grants.
 
 P06: [memory and erasure](memory.md) owns durable profile/saved items, exact session-bound browser approval, explicit enrollment, OAuth ownership inventory, atomic deletion and bounded retention.
+
+P07 prerequisites: [durable hunts](durable.md) verifies reserved agent receipt keys and repeated Stop timestamp preservation. This does not verify browser authorization or a live card.

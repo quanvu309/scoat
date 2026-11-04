@@ -47,6 +47,11 @@ const result=await withDatabase(async databaseUrl=>{
   const text=await frame.locator("main").innerText();
   for(const required of ["£70.00","£63.00","£1.90","£55.00","Budget £60.00","Unknown:","Evidence gaps","Conditional:","Trading Trading"]) assert(text.includes(required),required);
   assert.equal(await frame.getByRole("link",{name:"Open clean shop link"}).getAttribute("href"),"https://www.nike.com/gb/t/synthetic");
+  const checked=f.initial.value.view.rows.flatMap(row=>row.slots).find(slot=>slot.completion.kind==="checked");
+  assert(checked);
+  assert.equal(await frame.getByRole("link",{name:"Checklist source",exact:true}).first().getAttribute("href"),checked.completion.proof[0].url);
+  assert(text.includes(checked.completion.proof[0].note));
+  assert(text.includes("Requires verify-student"));
   if(!perf) await page.screenshot({path:path.join(root,"wide.png")});
   lane("canonical amounts, conditional rewards, long seller, unknown delivery, gaps, sources, clean link; 320px, 200% text and CSS zoom");
   await page.setViewportSize({width:320,height:800});
@@ -131,6 +136,14 @@ const result=await withDatabase(async databaseUrl=>{
   const renew=operations.lastIndexOf("renew");
   assert(renew>0);assert.equal(operations[renew+1],"read");
   lane("outage remains retryable; actual expired grant renews serially before read");
+  const lostStart=await count();
+  await page.evaluate(()=>{window.harness.setMode("lose-renew");return window.harness.expire();});
+  await frame.getByText(/Offline or stale/).waitFor();
+  await frame.getByText("Current hunt",{exact:true}).waitFor({timeout:45000});
+  assert.equal(await page.evaluate(()=>window.harness.lostRenewals),1);
+  const recovery=await page.evaluate(start=>window.harness.calls.slice(start).map(call=>call.op),lostStart);
+  assert.deepEqual(recovery.slice(-3),["renew","open","read"]);
+  lane("lost committed renewal response discards old grant and reopens through authenticated MCP");
   const revoked=await context.newPage();await revoked.goto(f.url);await revoked.frameLocator("iframe").getByText("Current hunt",{exact:true}).waitFor();
   await revoked.evaluate(()=>window.harness.revoke());
   await revoked.frameLocator("iframe").getByText(/Read access ended/).waitFor();
@@ -159,8 +172,12 @@ const result=await withDatabase(async databaseUrl=>{
    const response=await f.tool({op:"record",requestKey:randomUUID(),hunt:view.hunt,row:row.row.id,slot:slot.slot,expected:row.revision,outcome:{kind:"gap",reason:"SYNTHETIC bounded browser verification gap"}});
    assert(response.structuredContent.ok);row.revision++;
   }
-  assert((await f.tool({op:"finish",requestKey:randomUUID(),hunt:view.hunt,selection:null})).structuredContent.ok);
+  const chosen=view.quotes.find(quote=>quote.guaranteed.kind==="known");assert(chosen);
+  assert((await f.tool({op:"finish",requestKey:randomUUID(),hunt:view.hunt,selection:chosen.selection})).structuredContent.ok);
   await frame.getByText("Finished",{exact:true}).waitFor();
+  const finalQuote=frame.getByRole("region",{name:"Finished quote",exact:true});
+  assert((await finalQuote.innerText()).includes(chosen.seller));
+  assert((await finalQuote.innerText()).includes(new Intl.NumberFormat("en-GB",{style:"currency",currency:chosen.guaranteed.amount.currency}).format(chosen.guaranteed.amount.pence/100)));
   const finishedCount=await count();await page.waitForTimeout(3300);assert.equal(await count(),finishedCount);
   lane("canonical finish stops all future polls");
   const samples=await page.evaluate(()=>window.harness.samples);
@@ -168,10 +185,11 @@ const result=await withDatabase(async databaseUrl=>{
   for(const secret of secrets){assert(!dom.includes(secret));assert(!consoleMessages.join("\n").includes(secret));}
   assert(secrets.size>=2);
   assert.equal(errors.length,0,errors.join("\n"));
+  const requestOperations=await page.evaluate(()=>window.harness.calls.map(call=>call.op));
   const video=page.video();
   await page.close();
   if(!perf){await video.saveAs(path.join(root,"review.webm"));assert(Date.now()-started>=30000);}
-  return {browser:browser.version(),backgroundPolls,samples,requestOperations:operations,secretLeaks:0,observedRotatingSecrets:secrets.size,errors,recordingMs:Date.now()-started};
+  return {browser:browser.version(),backgroundPolls,samples,requestOperations,secretLeaks:0,observedRotatingSecrets:secrets.size,errors,recordingMs:Date.now()-started};
  } finally {await context?.close();await browser.close();await f.close();}
 });
 const receipt={...identity,status:"PASS_LOCAL_ONLY",fixture:"real compiled card + actual ext-apps App/AppBridge; synthetic HTTPS OIDC; authenticated MCP; PostgreSQL",fixtureCounts:{hunts:1,rows:8,sellers:2},compressedJavaScriptBytes,...result,lanes,performance:{claim:"single-run local smoke samples only; no speedup or fixed-runner verdict",metric:"host tools/call response to React passive effect after committed snapshot; bridge duration recorded separately",limiter:"not profiled; timer/frame scheduling and local service work are included; no optimization claim",baseline:"UNAVAILABLE: trunk has no card",fixedTwoVcpu:"UNTESTED",externalProvider:"UNTESTED",realHosts:"UNTESTED",modelAgent:"UNTESTED"}};

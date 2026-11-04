@@ -32,10 +32,13 @@ test("control guards reject observed fractional deadline bug and old structural 
  assert.throws(()=>checkBrowserControls(codec,hunt.replace("verifiedControl(confirmed)","confirmed.confirmation")),/runtime authority/);
  assert.throws(()=>checkBrowserControls(codec,hunt.replace("await tx.databaseTime()","Date.now()")),/database time/);
  assert.throws(()=>checkBrowserControls(codec.replace("nonce(token:string)","unsafe() { return Reflect.construct(Authority, []); } nonce(token:string)"),hunt),/constructs authority/);
+ assert.throws(()=>checkBrowserControls(codec+"\nvalid.add({});",hunt),/Enroll only this authority/);
  assert.throws(()=>checkHuntAuthority('export type Person = {kind:"person";account:string;incarnation:string};'),/structural Person/);
  assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'import {ControlCodec} from "../controls/codec.js";'),/cannot import codec/);
  assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'import type {ControlCodec} from "../controls/codec.js";'),/cannot import codec/);
  assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'import("../controls/codec.js");'),/cannot import codec/);
+ assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'export {ControlCodec} from "../controls/codec.js";'),/cannot import codec/);
+ assert.throws(()=>checkControlImports("src/mcp/authenticated.ts",'export * from "../controls/codec.js";'),/cannot import codec/);
  assert.throws(()=>checkPublicAuthority('export { ControlCodec } from "./controls/codec.js";'),/public barrel/);
 });
 

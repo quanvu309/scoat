@@ -545,6 +545,10 @@ export function checkBrowserControls(codec,hunt) {
  const authorityUses=new Set(nodes.flatMap(node=>node.type==="ClassDeclaration" && node.id?.name==="Authority"?[node.id]:node.type==="TSTypeReference" && node.typeName.name==="Authority"?[node.typeName]:[]));
  authorityUses.add(constructions[0].callee);
  if(nodes.some(node=>node.type==="Identifier" && node.name==="Authority" && !authorityUses.has(node))) throw new Error("Only verified browser confirmation constructs authority; never alias or reflect its constructor");
+ const authority=nodes.find(node=>node.type==="ClassDeclaration" && node.id?.name==="Authority");
+ const constructor=authority?.body.body.find(node=>node.type==="ClassMethod" && node.kind==="constructor");
+ const enrollments=nodes.filter(node=>node.type==="CallExpression" && member(node.callee,"valid","add"));
+ if(enrollments.length!==1 || enrollments[0].start<constructor?.start || enrollments[0].end>constructor?.end || enrollments[0].arguments.length!==1 || enrollments[0].arguments[0].type!=="ThisExpression") throw new Error("Enroll only this authority inside its constructor");
  const guard=nodes.find(node=>node.type==="FunctionDeclaration" && node.id.name==="verifiedControl");
  const first=guard?.body.body[0];
  if(first?.type!=="IfStatement" || first.test.type!=="UnaryExpression" || !member(first.test.argument?.callee,"valid","has") || first.consequent.type!=="ThrowStatement") throw new Error("Check runtime authority identity before storage");
@@ -562,6 +566,7 @@ export function checkControlImports(file,source) {
  if(!file.startsWith("src/mcp/"))return;
  const nodes=parsedNodes(source);
  if(nodes.some(node=>node.type==="ImportExpression" || node.type==="CallExpression" && node.callee.type==="Import")) throw new Error("MCP cannot import codec authority dynamically; keep imports static and auditable");
+ if(nodes.some(node=>(node.type==="ExportNamedDeclaration" || node.type==="ExportAllDeclaration") && node.source?.value.includes("/controls/"))) throw new Error("MCP cannot import codec authority through re-exports");
  for(const node of nodes.filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
   if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
  }

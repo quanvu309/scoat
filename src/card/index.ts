@@ -28,7 +28,11 @@ export function createController(initial:Snapshot,bridge:CardBridge|undefined,no
   try {
    if(!capability) capability=await bridge.capability("open",initial.value.view.hunt);
    if(disposed) return;
-   if(Date.parse(capability.expiresAt)-clock.now()<15000) capability=await bridge.capability("renew",initial.value.view.hunt,capability.grant);
+   if(Date.parse(capability.expiresAt)-clock.now()<15000) {
+    const prior=capability;
+    capability=undefined;
+    capability=await bridge.capability("renew",initial.value.view.hunt,prior.grant);
+   }
    if(disposed) return;
    const reply=await bridge.read(initial.value.view.hunt,capability.grant);
    if(disposed || seq<applied) return;

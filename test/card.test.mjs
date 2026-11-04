@@ -1,4 +1,4 @@
-import { checkCardBuild, checkCardRouting } from "../scripts/check-card.mjs";
+import { checkCardBuild, checkCardRouting, checkCardRenewal, checkCardProjection } from "../scripts/check-card.mjs";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -41,6 +41,31 @@ test("one flight, hidden and disposed issue zero requests; disposed replies neve
 test("hidden resume renews expired grants before read and rotates the secret",async()=>{
  const s=setup();await flush();s.controller.setVisible(false);const before=s.calls.length;s.advance(301000);assert.equal(s.calls.length,before);s.controller.setVisible(true);await flush();
  assert.deepEqual(s.calls.map(c=>c.op),["open","read","renew","read"]);assert.equal(s.calls.at(-1).grant,"synthetic-new-secret");s.controller.dispose();
+});
+test("lost renewal response reopens through the authenticated session instead of reusing a superseded grant",async()=>{
+ const s=setup();await flush();
+ let rotated=false;
+ s.bridge.capability=async(op,hunt,grant)=>{
+  s.calls.push({op,hunt,grant});
+  if(op==="renew") {
+   if(rotated) throw new CardFailure("revoked");
+   rotated=true;throw new Error("Renewal committed but response lost");
+  }
+  return {grant:"synthetic-reopened-secret",expiresAt:new Date(601000).toISOString()};
+ };
+ s.advance(301000);await flush();
+ assert.equal(s.controller.getState().status,"stale");
+ s.advance(6000);await flush();
+ assert.equal(s.controller.getState().status,"live");
+ assert.deepEqual(s.calls.map(call=>call.op),["open","read","renew","open","read"]);
+ assert.equal(s.calls.at(-1).grant,"synthetic-reopened-secret");
+ s.controller.dispose();
+});
+test("renewal guard rejects reuse of a possibly superseded capability",()=>{
+ const source=readFileSync("src/card/index.ts","utf8");
+ checkCardRenewal(source);
+ assert.throws(()=>checkCardRenewal(source.replace("capability=undefined;\n    capability=await","capability=await")),/Discard the prior/);
+ assert.throws(()=>checkCardRenewal(source.replace("capability=undefined;\n    capability=await","if(false) capability=undefined;\n    capability=await")),/Discard the prior/);
 });
 test("outage remains recoverable after expiry; revoked access ends polling",async()=>{
  let failure=true;const s=setup(async()=>{if(failure) throw new Error("database offline");return cardSnapshot();});await flush();assert.equal(s.controller.getState().status,"stale");assert.equal(s.timers.size,1);
@@ -95,12 +120,18 @@ test("card verification routing rejects missing header selector index and driver
  const skill=readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),index=readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),driver=readFileSync("scripts/verify.mjs","utf8");
  const documentation={host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")};
  checkCardRouting(skill,index,driver,documentation);
- assert.throws(()=>checkCardRouting(skill.replace("P07 live card","card"),index,driver));
- assert.throws(()=>checkCardRouting(skill.replace("features/card.md","features/missing.md"),index,driver));
- assert.throws(()=>checkCardRouting(skill,index.replace("[live card](card.md)","card"),driver));
- assert.throws(()=>checkCardRouting(skill,index,driver.replace('process.argv[2] === "p07-card"','process.argv[2] === "missing"')));
+ assert.throws(()=>checkCardRouting(skill.replace("P07 live card","card"),index,driver,documentation),/Route P07 live card/);
+ assert.throws(()=>checkCardRouting(skill.replace("features/card.md","features/missing.md"),index,driver,documentation),/Route P07 live card/);
+ assert.throws(()=>checkCardRouting(skill,index.replace("[live card](card.md)","card"),driver,documentation),/Route P07 live card/);
+ assert.throws(()=>checkCardRouting(skill,index,driver.replace('process.argv[2] === "p07-card"','process.argv[2] === "missing"'),documentation),/Route P07 live card/);
  assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,host:documentation.host.replace("Fresh same-account browser Stop/Skip and atomic replay","Same-account browser Person confirmation and interactive controls")}),/Document the implemented/);
  assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,notes:documentation.notes.replace("**createController**","**mountCard**")}),/Document the implemented/);
  assert.throws(()=>checkCardRouting(skill,index+"Live shopping, watches and the live card remain outside the implemented surface.",driver,documentation),/Document the implemented/);
  assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,agents:documentation.agents.replace("\n| Card bundling","\n\n| Card bundling")}),/continuous Markdown table/);
+});
+
+test("card projection retains slot proofs, finished quote and status details",()=>{
+ const source=readFileSync("src/card/renderer.tsx","utf8");
+ checkCardProjection(source);
+ for(const path of ["slot.completion.proof","view.final.quote","value.steps","value.reason"]) assert.throws(()=>checkCardProjection(source.replaceAll(path,path+"Missing")),/Render slot proofs/);
 });

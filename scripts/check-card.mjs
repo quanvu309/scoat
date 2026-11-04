@@ -30,4 +30,26 @@ export function checkCardRouting(skill, index, driver, documentation) {
  const lines=documentation.agents.split("\n"),first=lines.findIndex(line=>line.startsWith("| Risk |")),last=lines.findLastIndex(line=>line.startsWith("|"));
  if(first<0 || lines.slice(first,last+1).some(line=>!line.startsWith("|"))) throw new Error("Keep every foundation enforcement row in one continuous Markdown table");
 }
-if(import.meta.url===pathToFileURL(process.argv[1]).href) { checkCardBuild(readFileSync("vite.config.ts","utf8"),readFileSync("src/card/adapter.ts","utf8"),JSON.parse(readFileSync("package.json","utf8"))); checkCardRouting(readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),readFileSync("scripts/verify.mjs","utf8"),{host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")}); }
+export function checkCardRenewal(source) {
+ let renewals=0;
+ walk(parse(source,{sourceType:"module",plugins:["typescript"]}),node=>{
+  if(node.type!=="BlockStatement") return;
+  node.body.forEach((statement,index)=>{
+   const assignment=statement.expression,call=assignment?.right?.argument;
+   if(assignment?.type!=="AssignmentExpression" || assignment.right.type!=="AwaitExpression" || call?.type!=="CallExpression" || call.callee.type!=="MemberExpression" || call.callee.property.name!=="capability" || call.arguments[0]?.value!=="renew") return;
+   renewals++;
+   const prior=node.body[index-1]?.expression;
+   if(assignment.left.name!=="capability" || prior?.type!=="AssignmentExpression" || prior.operator!=="=" || prior.left.name!=="capability" || prior.right.type!=="Identifier" || prior.right.name!=="undefined") throw new Error("Discard the prior read capability before awaiting renewal; a lost response must reopen through authenticated MCP");
+  });
+ });
+ if(renewals!==1) throw new Error("Keep one serialized renewal boundary with explicit prior-capability disposal");
+}
+export function checkCardProjection(source) {
+ const paths=new Set();
+ const memberPath=node=>node?.type==="Identifier"?node.name:node?.type==="MemberExpression" && !node.computed?memberPath(node.object)+"."+node.property.name:"";
+ walk(parse(source,{sourceType:"module",plugins:["typescript","jsx"]}),node=>{
+  if(node.type==="MemberExpression") paths.add(memberPath(node));
+ });
+ for(const path of ["slot.completion.proof","view.final.quote","value.steps","value.reason"]) if(!paths.has(path)) throw new Error("Render slot proofs, the finished quote, and status steps and reasons from the canonical view: "+path);
+}
+if(import.meta.url===pathToFileURL(process.argv[1]).href) { checkCardBuild(readFileSync("vite.config.ts","utf8"),readFileSync("src/card/adapter.ts","utf8"),JSON.parse(readFileSync("package.json","utf8"))); checkCardRenewal(readFileSync("src/card/index.ts","utf8")); checkCardProjection(readFileSync("src/card/renderer.tsx","utf8")); checkCardRouting(readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),readFileSync("scripts/verify.mjs","utf8"),{host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")}); }

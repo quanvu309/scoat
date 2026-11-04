@@ -61,7 +61,7 @@ Signed intent links describe an action without granting authority. A fresh same-
 - **run**: TODO   priceQuotes + pickBest (or the selection); mint the ready link via delivery; store final.
 - **run**: TODO Every reply is the fresh renderView, so the agent always sees the directive.
 - **control**: Accepts only verified browser authority. Nonce receipt acceptance and Stop/Skip writes share the account → hunt → receipt → sorted-row transaction. Skip is sticky; repeated Stop preserves its first timestamp.
-- **read**: Returns canonical HuntView after account/incarnation authorization. Card reads also require a bound, live read capability.
+- **view**: Returns canonical HuntView after account/incarnation authorization. Card reads also require a bound, live read capability.
 - **readFinishedResult**: Internal Hunts persistence port used by Memory to freeze a finished result.
 - **deleteHunts**: Internal deletion port called only by the Accounts coordinator under its exclusive account fence.
 

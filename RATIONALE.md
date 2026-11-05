@@ -43,7 +43,7 @@ await app.callServerTool({ name: "scoat_card", arguments: { op: "act", hunt, gra
 
 **Data.** `domain.ts` holds the values. Offers always carry seller, variant, status and proof, and always have a value; "no price" is a row outcome (`none` or `gap`), never an offer with a zero. `PayToday` is `known` or `unknown`, `Quote` keeps `guaranteed`, `conditional` and `backLater` as separate ledgers with no shared total, and `BudgetFit` reads pay-today only. `Person` can only be minted from a verified app grant, so an agent cannot skip a row on her behalf (per encode-lessons-in-structure).
 
-**State.** `hunt/store.ts` (internal) keeps one record per row with its own revision. Records on different rows never conflict; a same-row conflict returns the current state and a next step. Finish and stop take every row lock in one transaction. A person's skip is sticky and wins over agent writes on that row. Every mutation has an account-scoped request key with a payload digest, so retries replay and a reused key with a new payload is refused (per make-operations-idempotent).
+**State.** `hunt/store.ts` (internal) keeps one record per row with its own revision. Ordinary records share the account and hunt fences, then lock only their addressed rows; a same-row conflict returns the current state and a next step. Finish and stop take an exclusive hunt fence within the shared account fence. A person's skip is sticky and wins over agent writes on that row. Every mutation has an account-incarnation-scoped request key with a payload digest, so retries replay and a reused key with a new payload is refused (per make-operations-idempotent).
 
 **Knowledge.** A `Release` publishes playbooks and facts together and is validated on publish. A hunt pins one release id. `checklist()` is the only checklist constructor and `renderGuide()` the only renderer, used by the prompt, resources, guide tool and SKILL.md export (per single-source-of-truth).
 
@@ -84,3 +84,5 @@ Rejected: A's causal event-set fold and B's ticket and lease workflow engine. Bo
 ## Next implementation step
 
 Implement `checkEvidence`, `priceQuotes`, `pickBest`, `finishable` and `renderView` as pure functions with tests on the Nike example (£70 guaranteed, £63 conditional on verify, £1.90 back later, £3 over budget), then the row store and `Hunts.run`.
+
+P04 uses READ COMMITTED with account lifecycle, hunt lifecycle and sorted addressed row locks in that order. Shared hunt fences let different rows commit concurrently. Single-statement snapshots and atomic rendered receipts bind responses to mutations. Permanent incarnation tombstones reject erased actors and delayed retries. The transaction contract is in docs/implementation-notes.md.

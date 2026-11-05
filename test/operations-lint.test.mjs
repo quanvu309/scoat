@@ -99,4 +99,8 @@ test("P09 operations route from the skill header, selector, feature index, verif
  assert.throws(() => checkOperationsVerification(skill, replaced(index, "[operations](operations.md)", "operations"), runner, perf), /Route P09 operations/);
  assert.throws(() => checkOperationsVerification(skill, index, replaced(runner, "process.argv[2] === \"p09-operations\"", "process.argv[2] === \"p09-ops\""), perf), /Route P09 operations/);
  assert.throws(() => checkOperationsVerification(skill, index, runner, replaced(perf, "process.argv[2] === \"p09\"", "process.argv[2] === \"p9\"")), /Route P09 operations/);
+ assert.throws(() => checkOperationsVerification(original("51a9388", ".agents/skills/verify-scoat/SKILL.md"), index, runner, perf), /Route P09 story performance/);
+ assert.throws(() => checkOperationsVerification(replaced(skill, "end-to-end hunt and watch-notification performance", "lineage overhead"), index, runner, perf), /Route P09 story performance/);
+ assert.throws(() => checkOperationsVerification(replaced(skill, "features/story-performance.md", "features/operations.md"), index, runner, perf), /Route P09 story performance/);
+ assert.throws(() => checkOperationsVerification(skill, replaced(index, "[story performance](story-performance.md)", "story performance"), runner, perf), /Route P09 story performance/);
 });

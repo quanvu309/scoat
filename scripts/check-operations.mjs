@@ -169,4 +169,6 @@ export function checkDeployUnits({ migrate, server, worker, env }) {
 export function checkOperationsVerification(skill, index, runner, perf) {
  const selector = skill.split("## Completion")[0];
  if (!skill.split("---")[1]?.includes("P09 S3") || !selector.includes("features/operations.md") || !index.includes("[operations](operations.md)") || !runner.includes('process.argv[2] === "p09-operations"') || !perf.includes('process.argv[2] === "p09"')) throw new Error("Route P09 operations and performance changes to features/operations.md and the runnable p09-operations and perf p09 branches");
+ const description = skill.split("---")[1] ?? "";
+ if (!description.includes("end-to-end hunt and watch-notification performance") || description.includes("`perf -- p09` lineage overhead") || !selector.includes("features/story-performance.md") || !index.includes("[story performance](story-performance.md)")) throw new Error("Route P09 story performance through its current skill description, selector and feature index");
 }

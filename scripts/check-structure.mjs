@@ -112,6 +112,11 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   walk("src");
   walk("scripts");
   walk("test");
+  checkHuntAuthority(fs.readFileSync("src/domain.ts", "utf8"));
+  checkCandidateSearch(fs.readFileSync("src/hunt/pricing.ts", "utf8"));
+  checkViewCoverage(fs.readFileSync("src/hunt/view.ts", "utf8"));
+  checkCodeAuthority(fs.readFileSync("src/hunt/evidence.ts", "utf8"));
+  checkScenarioProjection(fs.readFileSync("src/domain.ts", "utf8"), fs.readFileSync("src/hunt/index.ts", "utf8"));
   checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
   checkWire(z.toJSONSchema(promptInput, { target: "draft-7" }));
@@ -137,6 +142,52 @@ export function checkKnowledgeTypes(source) {
   visit(ast.program);
 }
 
+export function checkHuntAuthority(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "TSPropertySignature" && node.key?.name === "stackProof") throw new Error("Replace unbound stackProof with exact-set compatibility authority");
+    if (node.type === "TSPropertySignature" && node.key?.name === "__brand") throw new Error("Derive identifier brands from validated schemas using z.$brand");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
+}
+
+export function checkCandidateSearch(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "CallExpression" && node.callee?.property?.name === "sort" && JSON.stringify(node.arguments).includes('"name":"key"')) throw new Error("Precompute candidate rank keys before sorting");
+    if (node.type === "BinaryExpression" && node.operator === "**" && node.right?.type === "MemberExpression" && node.right.object?.name === "benefits" && node.right.property?.name === "length") throw new Error("Enumerate authorized complete sets rather than generating unsupported benefit subsets");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
+}
+
+export function checkViewCoverage(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const finishable = ast.program.body.find(node => node.declaration?.id?.name === "finishable")?.declaration;
+  if (finishable && !finishable.params.some(parameter => parameter.name === "release")) throw new Error("Finishability requires pinned release recipes to detect missing whole rows");
+  if (finishable && !finishable.params.some(parameter => parameter.name === "originalSeller")) throw new Error("Finishability requires originalSeller to exclude the original shop from other-seller coverage");
+  const coverage = ast.program.body.find(node => node.id?.name === "rowGaps");
+  if (coverage && !astNodes(coverage).some(node => node.type === "CallExpression" && node.callee?.property?.name === "includes" && node.callee.object?.property?.name === "slots")) throw new Error("Validate recorded slot membership in pinned recipe slots before counting coverage");
+}
+
+function astNodes(root) {
+  const result = [];
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type) result.push(node);
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(root);
+  return result;
+}
+export function checkCodeAuthority(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const evidence = ast.program.body.find(node => node.declaration?.id?.name === "parseEvidence")?.declaration;
+  if (evidence && !astNodes(evidence).some(node => node.type === "CallExpression" && node.callee?.name === "isOfficialSource")) throw new Error("Validate retailer-tested code against isOfficialSource and the pinned release; origin labels are not authority");
+}
 export function checkScratchAllocation(file, source) {
   if (file === "scripts/scratch.mjs") return;
   const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
@@ -146,4 +197,14 @@ export function checkScratchAllocation(file, source) {
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
   }
   visit(ast.program);
+}
+export function checkScenarioProjection(domain, hunt) {
+  const domainNodes = astNodes(parse(domain, { sourceType: "module", plugins: ["typescript"] }));
+  for (const conditional of domainNodes.filter(node => node.type === "TSPropertySignature" && node.key?.name === "conditional")) {
+    const fields = new Set(astNodes(conditional.typeAnnotation).filter(node => node.type === "TSPropertySignature").map(node => node.key?.name));
+    if (["selection", "backLater", "perks"].some(field => !fields.has(field))) throw new Error("Each conditional scenario must retain selection, backLater and perks from its authorized offer set");
+  }
+  const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript"] }));
+  const view = huntNodes.find(node => node.type === "TSTypeAliasDeclaration" && node.id?.name === "HuntView");
+  if (view && !astNodes(view).some(node => node.type === "TSPropertySignature" && node.key?.name === "quotes")) throw new Error("Retain all quotes in HuntView so structured and text renderers share every scenario");
 }

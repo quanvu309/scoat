@@ -10,6 +10,7 @@ import { confirmationFixture } from "../fixtures/confirmation.mjs";
 
 const args = process.argv.slice(2);
 if (args[0] === "doctor") { process.stdout.write(JSON.stringify(await doctor()) + "\n"); process.exit(0); }
+if (process.argv[2] === "p03") { await import("./verify-hunt.mjs"); process.exit(process.exitCode ?? 0); }
 if (args[0] === "p02") { await import("./verify-knowledge.mjs"); process.exit(0); }
 if (args[0] !== "p01") throw new Error("Supported executable scope: verify -- p01 [--lane 1..10]");
 const laneArg = args.includes("--lane") ? Number(args[args.indexOf("--lane") + 1]) : null;

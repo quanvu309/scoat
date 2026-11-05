@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkComments } from "../scripts/check-no-comments.mjs";
-import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkScratchAllocation } from "../scripts/check-structure.mjs";
+import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkHuntAuthority, checkCandidateSearch, checkViewCoverage, checkCodeAuthority, checkScenarioProjection, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
 test("comment parser rejects comments outside src and accepts URL/regex literals", () => {
   for (const file of ["scripts/past.mjs", "test/past.ts", "vite.config.ts"]) assert.throws(() => checkComments(file, "const x = 1; /" + "/ forbidden"), /comments forbidden/);
@@ -39,6 +39,28 @@ test("prompt registration and public-source lint reject reproduced review failur
   assert.doesNotThrow(() => checkRegistryAdapter('server.server.setRequestHandler(GetPromptRequestSchema, handler);'));
   for (const source of ["https://127.0.0.1/code", "https://localhost/code", "https://10.0.0.1/code"]) assert.throws(() => checkReleaseSources({ facts: [{ source }] }), /public HTTPS DNS/);
   assert.doesNotThrow(() => checkReleaseSources({ facts: [{ source: "https://www.nike.com/gb/" }] }));
+});
+
+test("hunt authority rejects original unbound proof and incompatible legacy brand fixtures", () => {
+  assert.throws(() => checkHuntAuthority('export type Selection = Readonly<{ price: OfferId; delivery: OfferId | null; benefits: readonly OfferId[]; stackProof: readonly Proof[] }>;'), /exact-set/);
+  assert.throws(() => checkHuntAuthority('export type Id<Tag extends string> = string & { readonly __brand: Tag };'), /validated schemas/);
+});
+
+test("candidate search rejects the reproduced unsupported subset expansion", () => {
+  assert.throws(() => checkCandidateSearch('candidates.sort((a,b) => key(a.benefits).localeCompare(key(b.benefits)));'), /Precompute/);
+  assert.throws(() => checkCandidateSearch('const count = limitations.length ? 1 : 2 ** benefits.length;'), /authorized complete sets/);
+});
+
+test("finishability cannot lose the authoritative row universe", () => {
+  assert.throws(() => checkViewCoverage('export function finishable(rows: readonly RowView[]) { return { ok: true }; }'), /pinned release/);
+});
+
+test("review lint rejects the actual source-label, missing-scenario and coverage shapes", () => {
+  assert.throws(() => checkCodeAuthority('export function parseEvidence(raw: unknown, context: { intent: Intent; seller: string; now: string }) { const offer = offerInputSchema.parse(raw); if (offer.kind === "discount" && offer.code !== null && offer.codeOrigin === "lead" && offer.status.kind !== "untested") throw new Error("Third-party code leads must remain untested"); return offer; }'), /isOfficialSource/);
+  assert.throws(() => checkScenarioProjection('', 'export type HuntView = Readonly<{ offers: readonly Offer[]; best: Quote | null; text: string; }>;'), /all quotes/);
+  assert.throws(() => checkScenarioProjection('export type Quote = Readonly<{ conditional: readonly Readonly<{ payToday: PayToday; requires: NonEmpty<Step>; budget: BudgetFit; }>[]; }>;', ''), /selection, backLater and perks/);
+  assert.throws(() => checkViewCoverage('export function finishable(rows: readonly RowView[], release: Release) { return {ok:true}; }'), /originalSeller/);
+  assert.throws(() => checkViewCoverage('function rowGaps(row: RowView) { const gaps: string[] = []; for (const slot of row.row.slots) { const matches = row.slots.filter(value => value.slot === slot); } return gaps; }'), /slot membership/);
 });
 
 test("scratch lint rejects the original GitHub runner failure", () => {

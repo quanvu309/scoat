@@ -1,3 +1,4 @@
+import { moneySchema, proofSchema, offerInputSchema, selectionSchema } from "../hunt/evidence.js";
 import { Knowledge, renderGuide } from "../knowledge/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -7,27 +8,17 @@ import { z } from "zod";
 const text = z.string().min(1).max(2000);
 const id = z.string().min(1).max(128);
 export const promptInput = z.strictObject({ shop: z.string().optional() });
-const money = z.strictObject({ currency: z.literal("GBP"), pence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const money = moneySchema;
 const profile = z.strictObject({ student: z.enum(["yes", "no", "unknown"]), cards: z.array(text).max(30), memberships: z.array(text).max(30) });
-const proof = z.strictObject({ url: z.url({ protocol: /^https$/ }), observedAt: z.iso.datetime(), note: text });
-const status = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("confirmed") }), z.strictObject({ kind: z.literal("needs-step"), steps: z.array(z.enum(["verify-student", "join", "enrol", "activate", "apply-code", "request-price-match"])).min(1).max(20) }), z.strictObject({ kind: z.literal("untested") }), z.strictObject({ kind: z.literal("unknown"), reason: text })]);
-const attested = { seller: text, variant: text.nullable(), status, proof };
-const adjustment = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("fixed"), amount: money }), z.strictObject({ kind: z.literal("percent"), basisPoints: z.number().int().min(0).max(10000), basis: z.enum(["item", "remaining", "delivery"]) })]);
-const offer = z.discriminatedUnion("kind", [
-  z.strictObject({ ...attested, kind: z.literal("price"), amount: money }),
-  z.strictObject({ ...attested, kind: z.literal("delivery"), amount: money }),
-  z.strictObject({ ...attested, kind: z.literal("discount"), adjustment, code: text.nullable() }),
-  z.strictObject({ ...attested, kind: z.literal("cashback"), amount: money, programme: text }),
-  z.strictObject({ ...attested, kind: z.literal("points"), quantity: z.number().int().nonnegative(), programme: text }),
-  z.strictObject({ ...attested, kind: z.literal("perk"), description: text })
-]);
+const proof = proofSchema;
+const offer = offerInputSchema;
 const outcome = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("checking") }), z.strictObject({ kind: z.literal("found"), offers: z.array(offer).min(1).max(50) }), z.strictObject({ kind: z.literal("none"), checked: text, proof: z.array(proof).min(1).max(20) }), z.strictObject({ kind: z.literal("gap"), reason: text })]);
 const huntInput = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("start"), requestKey: id, profile: profile.nullable(), intent: z.strictObject({ product: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("url"), url: z.url({ protocol: /^https$/ }) }), z.strictObject({ kind: z.literal("description"), text })]), variant: text.nullable(), shop: text.nullable(), budget: money.nullable() }) }),
   z.strictObject({ op: z.literal("list") }),
   z.strictObject({ op: z.literal("read"), hunt: id }),
   z.strictObject({ op: z.literal("record"), requestKey: id, hunt: id, row: id, slot: z.number().int().nonnegative(), expected: z.number().int().nonnegative(), outcome }),
-  z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: z.strictObject({ price: id, delivery: id.nullable(), benefits: z.array(id).max(50), stackProof: z.array(proof).max(20) }).nullable() })
+  z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: selectionSchema.nullable() })
 ]);
 const memoryInput = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("read") }), z.strictObject({ op: z.literal("profile"), requestKey: id, profile }),

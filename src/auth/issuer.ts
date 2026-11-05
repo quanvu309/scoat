@@ -15,7 +15,7 @@ import { Delivery } from "../delivery/index.js";
 import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
-import { authConfigSchema } from "./config.js";
+import { connectionLifetimeSeconds, authConfigSchema } from "./config.js";
 import { publicClient, RegisteredClients, registerClient } from "./registration.js";
 import { linkIdentity } from "./link.js";
 import type { Agent, Id } from "../domain.js";
@@ -161,11 +161,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     ttl: {
       AccessToken: 900,
       AuthorizationCode: 60,
-      Grant: 2592000,
-      RefreshToken: 2592000,
+      Grant: connectionLifetimeSeconds,
+      RefreshToken: connectionLifetimeSeconds,
       IdToken: 900,
       Interaction: 1200,
-      Session: 2592000,
+      Session: connectionLifetimeSeconds,
+
     },
     interactions: {
       url: (_ctx, interaction) => `/interaction/${interaction.uid}`,
@@ -485,7 +486,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           });
           const origin = new URL(String(details.params.redirect_uri)).origin;
           const name = origin === "https://chatgpt.com" ? "ChatGPT" : origin === "https://claude.ai" ? "Claude" : "your chat app";
-          sendPage(res, pages.consent(details, csrf, {name, origin}));
+          const client = await provider.Client.find(String(details.params.client_id));
+          sendPage(res, pages.consent(details, csrf, {name, origin, refreshAllowed: client?.grantTypeAllowed("refresh_token") ?? false}));
           return;
         }
         const submitted =

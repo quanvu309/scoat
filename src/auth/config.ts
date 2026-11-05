@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const connectionLifetimeSeconds = 2592000;
+
 const https = z.url({ protocol: /^https$/ }).refine((value) => {
   const url = new URL(value);
   return !url.username && !url.password && !url.hash && !url.search;

@@ -51,7 +51,9 @@ try {
      const a = luminance(style.color), b = luminance(style.backgroundColor);
      return (Math.max(a, b) + .05) / (Math.min(a, b) + .05) < 4.5;
     });
+    const decisions = document.querySelector(".account-decisions")?.getBoundingClientRect();
     return { lowContrastActions,
+    decisions: decisions ? {top: decisions.top, bottom: decisions.bottom, viewport: innerHeight} : null,
     overflow: document.documentElement.scrollWidth > innerWidth,
     heading: document.querySelectorAll("h1").length,
     smallInputs: [...document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]), textarea')].some(input => parseFloat(getComputedStyle(input).fontSize) < 16),
@@ -59,6 +61,10 @@ try {
     shortTargets: [...document.querySelectorAll("button")].filter(button => button.checkVisibility()).some(button => button.getBoundingClientRect().height < 44),
    }; });
    if (!beforeRoot) {
+    if (entry.id.startsWith("consent")) {
+     assert.ok(measurement.decisions, entry.id + " decision group exists");
+     assert.ok(measurement.decisions.top >= 0 && measurement.decisions.bottom <= measurement.decisions.viewport, entry.id + " both consent decisions must fit the initial viewport: " + JSON.stringify(measurement.decisions));
+    }
     assert.equal(measurement.lowContrastActions, false, entry.id + " action text contrast must be 4.5:1");
     assert.equal(measurement.overflow, false, entry.id + " horizontal overflow");
     assert.equal(measurement.heading, 1, entry.id + " one page heading");

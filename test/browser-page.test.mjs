@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { parse } from "parse5";
 import { sendPage, pageHead, refusalPage, browserDocument } from "../dist/browser/page.js";
+import { connectionLifetimeSeconds } from "../dist/auth/config.js";
 import { consent, enroll, link, emailEntry, emailCode } from "../dist/browser/views.js";
 
 function elements(html) {
@@ -31,7 +32,7 @@ test("browser HTTP outcomes preserve refusal status, protected headers and a usa
  } finally { await new Promise(resolve => server.close(resolve)); }
 });
 test("consent describes only requested access and keeps both explicit decisions", () => {
- const html = consent({ params: { scope: "openid scoat:read" } }, 'csrf<"&', { name: '<script>bad</script>', origin: "https://chat.example" });
+ const html = consent({ params: { scope: "openid scoat:read" } }, 'csrf<"&', { name: '<script>bad</script>', origin: "https://chat.example", refreshAllowed: true });
  const nodes = elements(html);
  assert.equal(nodes.filter(node => node.tagName === "script").length, 0);
  assert.ok(html.includes("View your hunts and saved shopping results"));
@@ -94,4 +95,15 @@ test("browser documents preserve task headings independently of browser titles",
  const headings = elements(html).filter(node => node.tagName === "h1");
  assert.equal(headings.length, 1);
  assert.equal(headings[0].childNodes[0].value, "Confirm price watch");
+});
+
+test("refresh-grant consent discloses renewal even when offline_access is dropped", () => {
+ for (const scope of ["openid scoat:read scoat:write offline_access", "openid scoat:read scoat:write"]) {
+  const client = {name: "ChatGPT", origin: "https://chatgpt.com", refreshAllowed: true};
+  const html = consent({params: {scope}}, "bound-csrf", client);
+  assert.ok(html.includes(`Stay signed in for up to ${connectionLifetimeSeconds / 86400} days`));
+  assert.ok(html.includes("renew access while you’re away"));
+  assert.ok(html.includes("until you disconnect or delete your account"));
+  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("renew access"));
+ }
 });

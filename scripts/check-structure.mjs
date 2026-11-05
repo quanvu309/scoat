@@ -845,11 +845,12 @@ export function checkCardOutputContract(adapter, card, contract, server = fs.rea
  if (!contract.includes('huntSnapshot as snapshotSchema } from "../mcp/outputs.js"')) throw new Error("Share the snapshot output owner with the card");
  if (adapter.includes("JSON.stringify(")) throw new Error("Serialize public results only at conform");
 }
-export function checkConnectionPolicy(issuer, registration, adapter, server) {
+export function checkConnectionPolicy(issuer, registration, adapter, server, config = fs.readFileSync("src/auth/config.ts", "utf8")) {
+  if (!parsedNodes(config).some(node => node.type === "VariableDeclarator" && node.id?.name === "connectionLifetimeSeconds" && node.init?.value === 2592000) || ![issuer, adapter].every(source => /import \{[^}]*connectionLifetimeSeconds[^}]*\} from "\.\/config\.js"/.test(source))) throw new Error("Share the 30-day refresh lifetime from auth/config.ts");
   const nodes = parsedNodes(issuer);
   const options = nodes.find(node => node.type === "NewExpression" && node.callee?.name === "Provider")?.arguments?.[1]?.properties ?? [];
   const ttl = options.find(node => node.key?.name === "ttl")?.value.properties ?? [];
-  if (options.find(node => node.key?.name === "rotateRefreshToken")?.value.value !== true || ["RefreshToken", "Grant", "Session"].some(name => ttl.find(node => node.key?.name === name)?.value.value !== 2592000)) throw new Error("Rotate refresh tokens with 30-day parent lifetimes");
-  if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('["openid", "offline_access"].includes(value)') || !issuer.includes('issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token")') || !adapter.includes('["Grant", "Session", "RefreshToken"].includes(model) ? 2592000') || !server.includes('scope="scoat:read scoat:write offline_access"')) throw new Error("Ship refresh scopes, grants, persistence and bearer challenge together");
+  if (options.find(node => node.key?.name === "rotateRefreshToken")?.value.value !== true || ["RefreshToken", "Grant", "Session"].some(name => ttl.find(node => node.key?.name === name)?.value.name !== "connectionLifetimeSeconds")) throw new Error("Rotate refresh tokens with 30-day parent lifetimes");
+  if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('["openid", "offline_access"].includes(value)') || !issuer.includes('issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token")') || !adapter.includes('["Grant", "Session", "RefreshToken"].includes(model) ? connectionLifetimeSeconds') || !server.includes('scope="scoat:read scoat:write offline_access"')) throw new Error("Ship refresh scopes, grants, persistence and bearer challenge together");
   for (const text of ['https://claude.ai/api/mcp/auth_callback', 'localhost|127', '"native"', 'scoat-host-client-v2', 'scoat-chatgpt-client-v1', 'timingSafeEqual']) if (!registration.includes(text)) throw new Error("Keep signed ChatGPT and Claude callback registration and v1 compatibility");
 }

@@ -42,7 +42,7 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 :focus-visible { outline: 3px solid var(--ring); outline-offset: 4px; }
 @media (hover: hover) and (pointer: fine) { .account-content button:hover, .ui-button:hover { filter: brightness(.95); } .account-home:hover { color: var(--foreground); } }
 @media (prefers-reduced-motion: no-preference) { .account-content button, .ui-button { transition: filter var(--duration-micro) var(--ease-micro); } }
-@media (max-width: 44rem) { .account-main { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-block: 2rem; } .account-context { padding-block-start: 0; } .account-context h2 { font-size: 2.125rem; margin-block: .75rem; } .account-context h2 br { display: none; } .account-context > p { max-inline-size: 36ch; margin-block: .75rem 0; font-size: .875rem; } .account-journey { display: none; } .account-card { border-radius: 1rem; } .account-card-label { margin-block-end: 1.25rem; } .account-footer { font-size: .6875rem; gap: .25rem; } }
+@media (max-width: 44rem) { .account-main { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-block: 2rem; } .account-context { display: none; } .account-context h2 { font-size: 2.125rem; margin-block: .75rem; } .account-context h2 br { display: none; } .account-context > p { max-inline-size: 36ch; margin-block: .75rem 0; font-size: .875rem; } .account-journey { display: none; } .account-card { border-radius: 1rem; } .account-card-label { margin-block-end: 1.25rem; } .account-footer { font-size: .6875rem; gap: .25rem; } }
 
 .account-client { display: block; margin-block: .5rem .125rem; font-size: 1.125rem; }
 .account-notice > span:last-child, .account-help { font-size: .8125rem; }
@@ -55,3 +55,5 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-resend { margin-block-start: 1.5rem; padding-block-start: 1.25rem; border-block-start: 1px solid var(--border); }
 .account-resend form { margin-block-start: .75rem; }
 .account-resend p:last-child { margin-block: .5rem 0; }
+
+.account-content .account-decisions { grid-template-columns: repeat(2, minmax(0, 1fr)); }

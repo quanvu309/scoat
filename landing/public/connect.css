@@ -65,3 +65,5 @@
   .connect-intro .connect-note { display: none; }
   .connect-guide { flex-basis: 100%; }
 }
+
+.connect-eyebrow { color: var(--primary); font-size: .6875rem; font-weight: 600; letter-spacing: .1em; }

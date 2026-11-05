@@ -57,7 +57,7 @@ test("watch responses reject undeclared provider fields and disable activation c
  const start = issuer.indexOf('if (url.pathname === "/account/watch")');
  const end = issuer.indexOf('if (url.pathname === "/watch/unsubscribe")', start);
  assert.ok(start >= 0 && end > start);
- const inline = issuer.slice(start, end).replace("res.writeHead(200, watchHeaders);", "res.writeHead(200, { \"content-type\": \"text/html; charset=utf-8\" });");
+ const inline = issuer.slice(start, end).replace("pageHead(res, 200, watchHeaders);", "pageHead(res, 200, { \"content-type\": \"text/html; charset=utf-8\" });");
  assert.notEqual(inline, issuer.slice(start, end));
  assert.throws(() => checkWatchResponses(delivery, issuer.slice(0, start) + inline + issuer.slice(end)), /activation response/);
 });
@@ -139,8 +139,8 @@ test("the worker refuses absent mail before queue work and never reports false a
 });
 
 test("watch activation requires configured mail and catches invalid browser targets", () => {
- const issuer = read("src/auth/issuer.ts"), server = read("src/server.ts");
- const check = (w = watches, i = issuer, s = server) => checkWatchActivation(w, i, s);
+ const issuer = read("src/auth/issuer.ts"), server = read("src/server.ts"), views = read("src/browser/views.ts");
+ const check = (w = watches, i = issuer, s = server, v = views) => checkWatchActivation(w, i, s, v);
  assert.doesNotThrow(() => check());
  assert.throws(() => check(watches.replace("return this.deps.config.resendApiKey !== null;", "return true;")), /configured worker mail key/);
  for (const guard of ['  if (!this.available) return { kind: "unavailable", reason: "service-unconfigured" };', '  if (!this.available) throw new WatchRefusal("service-unconfigured");']) {
@@ -149,13 +149,13 @@ test("watch activation requires configured mail and catches invalid browser targ
  }
  assert.throws(() => check(watches, issuer.replace("if (!watches?.available)", "if (!watches)")), /through watch availability/);
  assert.throws(() => check(watches, issuer, server.replace("watches?.available === true", "watches !== undefined")), /through watch availability/);
- assert.throws(() => check(watches, issuer.replace("watches?.available && issued.finished", "watches && issued.finished")), /through watch availability/);
+ assert.throws(() => check(watches, issuer, server, views.replace("watches?.available && issued.finished", "watches && issued.finished")), /through watch availability/);
  for (const name of ["amount", "pence"]) assert.throws(() => check(watches, issuer.replace('if (!' + name + '.success) throw new WatchRefusal("invalid-target");', "")), /invalid-target/);
  const outside = issuer.replace("      try {\n        const pence = targetPence(fields.target);", "      const pence = targetPence(fields.target);\n      try {");
  assert.notEqual(outside, issuer);
  assert.throws(() => check(watches, outside), /inside the typed watch-refusal boundary/);
- assert.throws(() => check(watches, issuer.replace('form method="post" action="/account/watch"', 'form method="get" action="/account/watch"')), /correction form/);
- assert.throws(() => check(watches, issuer.replace('escapeHtml(correction.confirmation)', '"missing"')), /correction form/);
+ assert.throws(() => check(watches, issuer, server, views.replace('form method="post" action="/account/watch"', 'form method="get" action="/account/watch"')), /correction form/);
+ assert.throws(() => check(watches, issuer, server, views.replace('escapeHtml(correction.confirmation)', '"missing"')), /correction form/);
  assert.throws(() => check(watches, issuer.replace('moveRecipient: fields.recipient === "move"', 'moveRecipient: false')), /correction form/);
 });
 

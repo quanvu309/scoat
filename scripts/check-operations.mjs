@@ -105,7 +105,7 @@ const aggregateCommand = "node -e 'const keys = [\"quality\", \"protocol\", \"br
 const suiteCommands = {
  quality: ["npm run typecheck", "npm run lint", "npm test"],
  protocol: ["npm run db:migrate", "npm run db:migrate", "npm run db:seed -- --fixture ci-p01", "npm run db:seed -- --fixture ci-p01", ...["p01", "p02", "p03", "p04", "p05"].flatMap(scope => ["npm run verify -- " + scope, "npm run perf -- " + scope])],
- browser: ["npm run verify -- p06", "npm run perf -- p06", "npm run verify -- p07-controls", "npm run verify -- p07-card", "npm run verify -- p08"],
+ browser: ["npm run verify -- auth-ui", "npm run verify -- p06", "npm run perf -- p06", "npm run verify -- p07-controls", "npm run verify -- p07-card", "npm run verify -- p08"],
  operations: ["npm run verify -- p09-lineage", "npm run verify -- p09-recovery", "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"],
  "watch-performance": ["npm run perf -- p08"]
 };
@@ -172,6 +172,8 @@ export function checkHostedCoverage(source) {
   if (!same(steps.filter(step => suiteCommands[id].includes(step.run)).map(step => step.run), suiteCommands[id])) throw new Error(id + ": required commands retain suite order");
   const allowed = new Set(["npm ci", "npm run build", ...suiteCommands[id], ...(id === "browser" || id === "operations" || id === "protocol" ? [chromiumInstall] : []), ...(id === "operations" ? [pgdgInstall, systemdNode, mediaInstall] : [])]);
   for (const [index, step] of steps.entries()) {
+   if (id === "browser" && same(step, { run: "npm run verify -- auth-ui", env: { SCOAT_EVIDENCE_DIR: "auth-ui-evidence" } })) continue;
+   if (id === "browser" && same(step, { uses: "actions/upload-artifact@v4", if: "always()", with: { name: "auth-ui-screenshots", path: "auth-ui-evidence", "if-no-files-found": "error" } })) continue;
    if (step.uses !== undefined && index > 1) throw new Error(id + ": source and Node setup occur only once before consumers");
    if (!onlyKeys(step, ["name", "run", "uses", "with"]) || (step.run !== undefined ? step.uses !== undefined || step.with !== undefined || !allowed.has(step.run.trim()) : !["actions/checkout@v4", "actions/setup-node@v4"].includes(step.uses))) throw new Error(id + ": supported literal steps only; no conditions, overrides, failure swallowing or background commands");
   }

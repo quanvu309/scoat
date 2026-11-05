@@ -1,3 +1,4 @@
+import { pageHead, sendPage, refusalPage } from "./browser/page.js";
 import { ControlCodec } from "./controls/codec.js";
 import { Hunts } from "./hunt/index.js";
 import { Knowledge } from "./knowledge/index.js";
@@ -155,8 +156,8 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery; 
           return;
         }
         process.stderr.write(JSON.stringify({ event: "authentication_request_refused" }) + "\n");
-        if (!res.headersSent) res.writeHead(400);
-        res.end("Authentication request refused");
+        if (!res.headersSent) { pageHead(res, 400); sendPage(res, refusalPage()); }
+        else res.end();
       }
       return;
     }

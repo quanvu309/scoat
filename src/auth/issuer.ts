@@ -1,3 +1,5 @@
+import { sendPage, pageHead, completedPage, refusalPage, browserDocument, browserPolicy } from "../browser/page.js";
+import * as pages from "../browser/views.js";
 import { begin } from "../db/lineage.js";
 import { ControlCodec, intentSchema, actionSchema } from "../controls/codec.js";
 import { Hunts } from "../hunt/index.js";
@@ -13,7 +15,7 @@ import { Delivery } from "../delivery/index.js";
 import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
-import { authConfigSchema } from "./config.js";
+import { connectionLifetimeSeconds, authConfigSchema } from "./config.js";
 import { publicClient, RegisteredClients, registerClient } from "./registration.js";
 import { linkIdentity } from "./link.js";
 import type { Agent, Id } from "../domain.js";
@@ -52,20 +54,13 @@ export type Principal = Readonly<{
   [verified]: true;
 }>;
 export class InvalidCredential extends Error {}
-const escapeHtml = (value: string) => value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 function browserCookie(req: IncomingMessage) {
   return req.headers.cookie?.split("; ").find(value => value.startsWith("__Host-scoat-flow="))?.slice(18);
 }
 const watchHeaders = { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin", "cache-control": "no-store" } as const;
-const pounds = (pence: number) => "GBP " + (pence / 100).toFixed(2);
-function watchRefusalPage(reason: WatchRefusalReason, retry: string | null, correction: Readonly<{ confirmation: string; moveRecipient: boolean }> | null = null) {
-  if (reason === "invalid-target" && correction) return `<title>Correct your watch target</title><h1>Correct your watch target</h1><p>${escapeHtml(watchRefusalText[reason])}</p><p>Your recipient choice is unchanged.</p><form method="post" action="/account/watch"><input type="hidden" name="confirmation" value="${escapeHtml(correction.confirmation)}"><input type="hidden" name="decision" value="watch">${correction.moveRecipient ? '<input type="hidden" name="recipient" value="move">' : ""}<label>Your target delivered price (GBP)<input name="target" inputmode="decimal" required pattern="[0-9]{1,6}(\\.[0-9]{1,2})?" maxlength="16"></label><button>Confirm price watch</button></form>`;
-  const recovery = reason === "already-watching" || reason === "watch-limit" ? "Stop a watch from the link in its alert email or ask your agent to unwatch it, then start again." : reason === "service-unconfigured" || reason === "unfinished" || reason === "no-exact-supported-variant" || reason === "ambiguous-variant" ? "No price watch can start for this hunt." : "";
-  const again = retry ? `<p><a href="${escapeHtml(retry)}">Start again with a fresh public price</a></p>` : "<p>Choose Watch price again from your hunt card or hunt text to start with a fresh public price.</p>";
-  return `<title>Price watch not started</title><h1>Price watch not started</h1><p>${escapeHtml(watchRefusalText[reason])}</p>${recovery ? `<p>${escapeHtml(recovery)}</p>` : ""}${again}`;
-}
+
 function targetPence(value: string) {
  const amount = z.string().regex(/^[0-9]{1,6}(\.[0-9]{1,2})?$/).safeParse(value);
  if (!amount.success) throw new WatchRefusal("invalid-target");
@@ -74,6 +69,7 @@ function targetPence(value: string) {
  if (!pence.success) throw new WatchRefusal("invalid-target");
  return pence.data;
 }
+
 async function oneClick(req: IncomingMessage) {
   const type = req.headers["content-type"] ?? "";
   const media = type.split(";")[0]?.trim().toLowerCase();
@@ -111,6 +107,14 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
   const clients = config.clients.map(publicClient);
   const registration = config.registrationClientId ? new RegisteredClients(config) : undefined;
   const provider = new Provider(issuer, {
+    renderError: async (ctx, output) => {
+      if (!ctx.accepts("html")) { ctx.body = output; return; }
+      ctx.set("cache-control", "no-store");
+      ctx.set("referrer-policy", "same-origin");
+      ctx.set("content-security-policy", browserPolicy);
+      ctx.type = "html";
+      ctx.body = browserDocument(refusalPage());
+    },
     adapter: model => model === "Client" && registration ? registration.adapter() : postgresAdapter(pool)(model),
     jwks: config.jwks,
     cookies: { keys: config.cookieKeys },
@@ -157,11 +161,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     ttl: {
       AccessToken: 900,
       AuthorizationCode: 60,
-      Grant: 2592000,
-      RefreshToken: 2592000,
+      Grant: connectionLifetimeSeconds,
+      RefreshToken: connectionLifetimeSeconds,
       IdToken: 900,
       Interaction: 1200,
-      Session: 2592000,
+      Session: connectionLifetimeSeconds,
+
     },
     interactions: {
       url: (_ctx, interaction) => `/interaction/${interaction.uid}`,
@@ -216,7 +221,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     } satisfies Principal;
   }
   function loginPage(res: ServerResponse, state: string, message = "Enter your email to receive a sign-in code.") {
-    res.writeHead(200, watchHeaders);
+    pageHead(res, 200, watchHeaders);
     res.end(renderLoginPage(state, message));
   }
   async function loginRedirect(res: ServerResponse, context: z.infer<typeof contextSchema>) {
@@ -229,7 +234,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     const secret = await login.establish(subject);
     res.setHeader("set-cookie", `__Host-scoat-session=${secret}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
     if (!uid) {
-      res.writeHead(200, watchHeaders);
+      pageHead(res, 200, watchHeaders);
       res.end(signedInPage());
       return;
     }
@@ -312,8 +317,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       return;
     }
     if (url.pathname === "/account/erase-status" && req.method === "GET") {
-      res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
-      res.end(`<title>Check account erasure</title><p>Enter the status secret saved before erasure. Completed results remain available for 24 hours.</p><form method="post" action="/account/erase-status"><label>Status secret <input type="password" name="status" maxlength="128" required autocomplete="off"></label><button>Check erasure result</button></form>`);
+      pageHead(res, 200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
+      sendPage(res, pages.eraseStatus());
       return;
     }
     if (url.pathname === "/account/erase-status" && req.method === "POST") {
@@ -322,7 +327,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       if (!status || status.length > 128) throw new Error("Invalid status capability");
       const row = (await pool.query("SELECT operation,completed_at,policy FROM erase_status WHERE digest=$1 AND expires_at>now()", [digest(status)])).rows[0];
       if (!row) throw new Error("Status unavailable");
-      res.writeHead(200,{"content-type":"application/json","cache-control":"no-store","referrer-policy":"no-referrer"}); res.end(JSON.stringify(row)); return;
+      res.writeHead(200, {"content-type":"application/json","cache-control":"no-store","referrer-policy":"no-referrer"}); res.end(JSON.stringify(row)); return;
     }
     if (url.pathname === "/account/erase") {
       if (req.method === "GET") { await loginRedirect(res,{stage:"erase"}); return; }
@@ -341,8 +346,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
 
     if (url.pathname === "/account/watch") {
       if (!watches?.available) {
-        res.writeHead(503, watchHeaders);
-        res.end(watchRefusalPage("service-unconfigured", null));
+        pageHead(res, 503, watchHeaders);
+        sendPage(res, pages.watchRefusalPage("service-unconfigured", null));
         return;
       }
       if (req.method === "GET") {
@@ -369,12 +374,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           if (!consumed.rowCount) throw new WatchRefusal("expired");
           return watches.activate(client, { scope: context.target, hunt: context.hunt, target: context.watchTarget, targetPence: pence, observation, observedAt: context.observedAt, address: context.address, expectedRecipient: context.expectedRecipient, moveRecipient: context.moveRecipient });
         });
-        res.writeHead(200, watchHeaders);
-        res.end(`<title>Watch active</title><h1>Watch active</h1><p>Watch ${escapeHtml(activated.watch)} checks the public delivered price daily. An alert needs a price at or below ${pounds(activated.targetPence)} and strictly below the ${pounds(activated.baselinePence)} baseline.</p>${activated.movedWatches ? `<p>Alerts for your ${activated.movedWatches} other active ${activated.movedWatches === 1 ? "watch" : "watches"} now go to the same verified address.</p>` : ""}<p>Every alert email has a one-step unsubscribe link.</p>`);
+        pageHead(res, 200, watchHeaders);
+        sendPage(res, pages.watchActive(activated));
       } catch (error) {
         if (!(error instanceof WatchRefusal)) throw error;
-        res.writeHead(409, watchHeaders);
-        res.end(watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" }));
+        pageHead(res, 409, watchHeaders);
+        sendPage(res, pages.watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" }));
       }
       return;
     }
@@ -382,15 +387,15 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       if (!watches) throw new Error("Watches unavailable");
       const token = z.string().min(1).max(512).regex(/^[A-Za-z0-9_.-]+$/).parse(url.searchParams.get("token"));
       if (req.method === "GET") {
-        res.writeHead(200, watchHeaders);
-        res.end(`<title>Stop Scoat watch</title><h1>Stop this price watch?</h1><p>Stopping cancels future checks and any alert not yet submitted. An alert already handed to the mail provider may still arrive.</p><form method="post" action="/watch/unsubscribe?token=${escapeHtml(token)}"><input type="hidden" name="List-Unsubscribe" value="One-Click"><button>Stop watching</button></form>`);
+        pageHead(res, 200, watchHeaders);
+        sendPage(res, pages.unsubscribe(token));
         return;
       }
       if (req.method !== "POST") throw new Error("Unsubscribe requires a form POST");
       await oneClick(req);
       const result = await watches.unsubscribe(token);
-      res.writeHead(200, watchHeaders);
-      res.end(result.kind === "unsubscribed" ? `<title>Watch stopped</title><h1>Watch stopped</h1><p>No new checks or alerts will start.${result.mayStillArrive ? " One alert was already handed to the mail provider and may still arrive." : ""}</p>` : `<title>Watch not active</title><h1>This watch is not active</h1><p>No further alerts will start from this link.</p>`);
+      pageHead(res, 200, watchHeaders);
+      sendPage(res, pages.unsubscribed(result));
       return;
     }
     if (url.pathname === "/account/memory") {
@@ -418,7 +423,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         if (!approved.rowCount) throw new Error("Proposal unavailable");
         await client.query("COMMIT");
       } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
-      res.writeHead(200,{"content-type":"text/plain"}); res.end("Exact command approved. Resubmit it from the originating session."); return;
+      pageHead(res, 200); sendPage(res, completedPage("memory")); return;
     }
     if (url.pathname === "/account/link") {
       if (req.method === "GET") {
@@ -426,8 +431,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         return;
       }
       if (req.method !== "POST" || req.headers.origin !== issuer) {
-        res.writeHead(403);
-        res.end();
+        pageHead(res, 403);
+        sendPage(res, refusalPage());
         return;
       }
       const submitted = await form(req);
@@ -472,15 +477,17 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         if (req.method === "GET") {
           const callback = new URL(String(details.params.redirect_uri));
           const callbackSource = callback.origin === "null" ? callback.protocol : callback.origin;
-          res.writeHead(200, {
+          pageHead(res, 200, {
+
             "content-type": "text/html; charset=utf-8",
             "content-security-policy":
               `default-src 'none'; form-action 'self' ${callbackSource}; frame-ancestors 'none'; base-uri 'none'`,
             "cache-control": "no-store",
           });
-          res.end(
-            `<title>Scoat consent</title><p>Allow registered client ${String(details.params.client_id)} access to Scoat hunts with scopes ${String(details.params.scope).replace(/[^A-Za-z0-9: _~-]/g, "")} ?</p><form method="post"><input type="hidden" name="csrf" value="${csrf}"><button name="decision" value="allow">Allow</button><button name="decision" value="deny">Deny</button></form>`,
-          );
+          const origin = new URL(String(details.params.redirect_uri)).origin;
+          const name = origin === "https://chatgpt.com" ? "ChatGPT" : origin === "https://claude.ai" ? "Claude" : "your chat app";
+          const client = await provider.Client.find(String(details.params.client_id));
+          sendPage(res, pages.consent(details, csrf, {name, origin, refreshAllowed: client?.grantTypeAllowed("refresh_token") ?? false}));
           return;
         }
         const submitted =
@@ -492,8 +499,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           submitted.get("csrf") !== csrf ||
           !decision.success
         ) {
-          res.writeHead(403);
-          res.end();
+          pageHead(res, 403);
+          sendPage(res, refusalPage());
           return;
         }
         if (decision.data === "deny") {
@@ -558,12 +565,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           });
           return {forms,finished:hunt.finished === true,state:hunt.finished ? "Finished; its saved result stays unchanged." : hunt.stopped ? "Stop was already requested." : "Hunt is open."};
         });
-        const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-        res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
-        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent.</p>${watches?.available && issued.finished ? `<p><a href="${escape(watchUrl(issuer,actual.account,intent.hunt))}">Watch this finished hunt's price</a></p>` : ""}`+issued.forms.map(form=>{
-          const label=form.action.kind === "stop" ? "Stop accepting new discoveries" : "Skip row "+form.action.row;
-          return `<form method="post" action="/account/control"><input type="hidden" name="confirmation" value="${form.token}"><input type="hidden" name="csrf" value="${form.nonce}"><input type="hidden" name="action" value="${escape(JSON.stringify(form.action))}"><button>${escape(label)}</button></form>`;
-        }).join(""));
+
+        pageHead(res, 200, {"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
+        sendPage(res, pages.control(intent, issued, watches, issuer, actual));
         return;
       }
       if (flow.context.stage === "erase") {
@@ -577,8 +581,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await client.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[digest(status),randomUUID()]);
           await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"erase-confirm",target,status:digest(status)}});
           await client.query("COMMIT");
-          res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
-          res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Delivered mail is outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
+          pageHead(res, 200, {"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
+          sendPage(res, pages.erase(status, confirmation)); return;
+
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }
       if (flow.context.stage === "watch") {
@@ -589,20 +594,20 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         const retry = watchUrl(issuer, target.account, hunt);
         const address = claims.email_verified === true ? z.email().max(254).safeParse(claims.email) : null;
         if (!address?.success) {
-          res.writeHead(403, watchHeaders);
-          res.end(`<title>Verified email required</title><h1>Verified email required</h1><p>Your sign-in provider did not confirm a verified email address for this account. No watch was activated and no email will be sent.</p>`);
+          pageHead(res, 403, watchHeaders);
+          sendPage(res, pages.verifiedEmail());
           return;
         }
         const prepared = await watches.prepare(target, hunt);
         if (prepared.kind !== "ready") {
-          res.writeHead(409, watchHeaders);
-          res.end(watchRefusalPage(prepared.reason, null));
+          pageHead(res, 409, watchHeaders);
+          sendPage(res, pages.watchRefusalPage(prepared.reason, null));
           return;
         }
         const observation = await watches.observe(prepared.target);
         if (observation.kind !== "comparable") {
-          res.writeHead(200, watchHeaders);
-          res.end(`<title>Watch unavailable</title><h1>Watch cannot start</h1><p>The public price for ${escapeHtml(cleanShopUrl(prepared.target))} is unknown (${escapeHtml(observation.reason)}). No active price promise was created and no email will be sent.</p><p><a href="${escapeHtml(retry)}">Try again later</a></p>`);
+          pageHead(res, 200, watchHeaders);
+          sendPage(res, pages.watchUnavailable(prepared, observation, retry));
           return;
         }
         const moving = prepared.recipient !== null && prepared.recipient.address !== address.data;
@@ -613,13 +618,10 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await writeBrowserFlow(client,digest(confirmation),{ ...flow, context: { stage: "watch-confirm", target, hunt, address: address.data, expectedRecipient: prepared.recipient?.revision ?? null, moveRecipient, watchTarget: prepared.target, observation, observedAt: now } });
           return now;
         });
-        const masked = escapeHtml(maskAddress(address.data));
-        const recipient = moveRecipient && prepared.recipient
-          ? `<dd>${masked} (verified by your sign-in provider)</dd></dl><p><strong>Your sign-in provider verified a different address. Your ${prepared.otherActive} other active ${prepared.otherActive === 1 ? "watch alerts" : "watches alert"} ${escapeHtml(maskAddress(prepared.recipient.address))} now.</strong> Scoat sends every watch alert for this account to one verified address. Starting this watch moves alerts for all ${prepared.otherActive + 1} watches to ${masked}; an alert already handed to the mail provider may still arrive at the old address.</p><p><label><input type="checkbox" name="recipient" value="move" form="watch-confirm" required> Send alerts for all my watches to ${masked}</label></p>`
-          : `<dd>${masked} (verified by your sign-in provider)${moving && prepared.recipient ? `; replaces ${escapeHtml(maskAddress(prepared.recipient.address))}, which has no other active watch` : ""}</dd></dl>`;
+        const recipient = {address:maskAddress(address.data),previous:prepared.recipient ? maskAddress(prepared.recipient.address) : null,moving,moveRecipient,otherActive:prepared.otherActive};
         const suggested = prepared.suggestedPence === null ? "" : (prepared.suggestedPence / 100).toFixed(2);
-        res.writeHead(200, watchHeaders);
-        res.end(`<title>Confirm Scoat price watch</title><h1>Confirm price watch</h1><dl><dt>Item</dt><dd>Raspberry Pi 5, SKU ${escapeHtml(prepared.target.sku)}, variant ${prepared.target.variant}, quantity one</dd><dt>Seller</dt><dd>${escapeHtml(prepared.target.seller)}: <a href="${escapeHtml(cleanShopUrl(prepared.target))}">${escapeHtml(cleanShopUrl(prepared.target))}</a></dd><dt>Observed</dt><dd>${new Date(observedAt).toISOString()} from the public product and delivery pages</dd><dt>Item price</dt><dd>${pounds(observation.itemPence)}</dd><dt>Delivery</dt><dd>${pounds(observation.deliveryPence)} UK Royal Mail 1st Class, non-member, non-lithium</dd><dt>Public delivered baseline</dt><dd>${pounds(observation.amountPence)}</dd><dt>Alerts go to</dt>${recipient}<p>Scoat checks once a day for up to ${watchLimits.days} days and emails when the delivered public price is at or below your target and strictly below the baseline and any earlier alert. Student, coupon, cashback, rewards and member prices never count. At most ${watchLimits.active} active watches per account. Confirm within ${watchLimits.freshObservationSeconds / 60} minutes or start again.</p><form id="watch-confirm" method="post" action="/account/watch"><input type="hidden" name="confirmation" value="${confirmation}"><p><label for="watch-target">Your target delivered price (GBP)</label> <input id="watch-target" name="target" inputmode="decimal" required pattern="[0-9]{1,6}([.][0-9]{1,2})?" value="${suggested}"></p><button name="decision" value="watch">Start watching</button></form>`);
+        pageHead(res, 200, watchHeaders);
+        sendPage(res, pages.watchConfirm(prepared, observedAt, observation, recipient, suggested, confirmation));
         return;
       }
       if (flow.context.stage === "memory") {
@@ -636,8 +638,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await writeBrowserFlow(client,digest(confirmation),{ ...flow, context: { stage: "memory-confirm", target, key: flow.context.key } });
           await client.query("COMMIT");
           const display = JSON.stringify(command.command).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-          res.writeHead(200,watchHeaders);
-          res.end(`<title>Confirm Memory command</title><pre>${display}</pre><form method="post" action="/account/memory"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="allow">Approve exact command</button></form>`); return;
+          pageHead(res, 200, watchHeaders);
+          sendPage(res, pages.memory(display, confirmation)); return;
+
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }
       if (flow.context.stage === "link-current") {
@@ -648,12 +651,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         const target = accountScope.parse(existing.rows[0]);
         const confirmation = randomBytes(32).toString("base64url");
         await persistBrowserFlow(pool,digest(confirmation),{ ...flow, context: { stage: "link-confirm", target } });
-        res.writeHead(200, {
+        pageHead(res, 200, {
           "content-type": "text/html; charset=utf-8",
           "content-security-policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
           "cache-control": "no-store",
         });
-        res.end(`<title>Link a Scoat identity</title><p>Keep this Scoat account and sign in with the identity you want to add. Accounts with existing hunts or other linked identities require a separate migration.</p><form method="post" action="/account/link"><input type="hidden" name="confirmation" value="${confirmation}"><button>Sign in with the identity to add</button></form>`);
+        sendPage(res, pages.link(confirmation));
         return;
       }
       if (flow.context.stage === "link-candidate") {
@@ -665,14 +668,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           flow.context.startedAt,
           config.lifecycleKey,
         );
-        res.writeHead(200, {
-          "content-type": "text/plain",
+        pageHead(res, 200, {
+          "content-type": "text/html; charset=utf-8",
           "set-cookie":
             "__Host-scoat-flow=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
         });
-        res.end(
-          "Identity linked after both reauthentications. Sign in again to resume your account.",
-        );
+        sendPage(res, completedPage("link"));
         return;
       }
       if (flow.context.stage !== "login") throw new Error("Invalid callback stage");
@@ -693,8 +694,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"enroll-confirm",issuer:issuer,subject:claims.sub,uid:flow.context.uid}});
           await client.query("COMMIT");
         } catch(failure) { await client.query("ROLLBACK"); throw failure; } finally { client.release(); }
-        res.writeHead(200,watchHeaders);
-        res.end(`<title>Enroll in Scoat</title><p>Create a fresh Scoat account for this authenticated identity.</p><form method="post" action="/account/enroll"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="enroll">Create account</button></form>`); return;
+        pageHead(res, 200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
+        sendPage(res, pages.enroll(confirmation)); return;
+
       }
       await finishLogin(res, flow.context.uid, claims.sub, account.account);
       return;

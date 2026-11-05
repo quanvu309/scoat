@@ -284,6 +284,8 @@ export async function authFixture(databaseUrl, options = {}) {
         new URL(url).pathname.startsWith("/interaction/")
       ) {
         const html = await response.text();
+        assert.ok(html.includes("renew access while you’re away"), "refresh-capable clients must disclose background renewal");
+        assert.ok(html.includes("until you disconnect or delete your account"));
         const csrf = html.match(/name="csrf" value="([^"]+)"/)?.[1];
         assert.ok(csrf, html);
         for (const body of [

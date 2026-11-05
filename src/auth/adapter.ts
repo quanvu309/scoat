@@ -1,6 +1,7 @@
 import { retryTransaction } from "../db/transaction.js";
 import type { Adapter, AdapterPayload } from "oidc-provider";
 import type pg from "pg";
+import { connectionLifetimeSeconds } from "./config.js";
 import { z } from "zod";
 
 class InactiveArtifact extends Error {}
@@ -65,7 +66,8 @@ export function postgresAdapter(pool: pg.Pool) {
      const owners = await fence(client,payload);
      const oldOwners = await client.query<{account:string}>("SELECT account FROM oauth_artifact_owners WHERE model=$1 AND id=$2",[model,id]);
      if (oldOwners.rows.some(row => !owners.includes(row.account))) throw new InactiveArtifact("OAuth ownership cannot be removed");
-     await client.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(model,id) DO UPDATE SET payload=EXCLUDED.payload,expires_at=EXCLUDED.expires_at", [model,id,payload,Math.min(expiresIn,["Grant", "Session", "RefreshToken"].includes(model) ? 2592000 : model === "Interaction" ? 1200 : 3600)]);
+     await client.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(model,id) DO UPDATE SET payload=EXCLUDED.payload,expires_at=EXCLUDED.expires_at", [model,id,payload,Math.min(expiresIn,["Grant", "Session", "RefreshToken"].includes(model) ? connectionLifetimeSeconds : model === "Interaction" ? 1200 : 3600)]);
+
      await client.query("DELETE FROM oauth_artifact_owners WHERE model=$1 AND id=$2", [model,id]);
      for (const owner of owners) await client.query("INSERT INTO oauth_artifact_owners(model,id,account) VALUES($1,$2,$3)", [model,id,owner]);
     });

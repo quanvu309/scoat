@@ -123,6 +123,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
    await page.goto(proposal.url);
    assert.equal(await page.locator('form[action="/login/send"]').count(),1);
    refusals[name] = { freshCodeRequired: true, active: (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active").length };
+
   }
   const staleHunt = await finishedHunt(false);
   const stale = await memory({ op: "watch", requestKey: randomUUID(), hunt: staleHunt.hunt, target: { currency: "GBP", pence: 6000 } });
@@ -132,7 +133,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   await pool.query("UPDATE oauth_browser_flows SET data=jsonb_set(data,'{context,observedAt}',to_jsonb((data->'context'->>'observedAt')::bigint-180000)) WHERE data->'context'->>'stage'='watch-confirm'");
   await page.getByRole("button", { name: "Start watching" }).click();
   await page.waitForLoadState();
-  refusals.stale = { status: (await page.locator("body").innerText()).slice(0, 120), active: (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active").length };
+  refusals.stale = { status: await page.locator("body").innerText(), active: (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active").length };
   const foreign = await fetch(f.issuer + "/account/watch", { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/x-www-form-urlencoded" }, body: "confirmation=x&decision=watch" });
   refusals.foreignOrigin = foreign.status;
   assert.match(refusals.stale.status, /Price watch not started/);
@@ -140,13 +141,14 @@ export async function watchLanes(databaseUrl, evidence, head) {
   const nativePost = async values => {
    await page.evaluate(entries => { const form = document.createElement("form"); form.method = "post"; form.action = "/account/watch"; for (const [name, value] of entries) { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input); } document.body.append(form); form.submit(); }, values);
    await page.waitForLoadState();
-   return (await page.locator("body").innerText()).slice(0, 300);
+   return await page.locator("body").innerText();
   };
   refusals.expired = await nativePost([["confirmation", randomBytes(32).toString("base64url")], ["decision", "watch"], ["target", "60.00"]]);
   assert.match(refusals.expired, /expired or was already used/);
   await page.goto(proposalA.url);
   await f.nativeLogin(page);
-  refusals.alreadyWatching = (await page.locator("body").innerText()).slice(0, 300);
+  refusals.alreadyWatching = (await page.locator("body").innerText());
+
   assert.match(refusals.alreadyWatching, /already has an active price watch/);
   await pool.query("INSERT INTO watches(account,incarnation,id,hunt,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version) SELECT account,incarnation,gen_random_uuid(),'limit-'||g,target,basis,basis_digest,baseline_pence,baseline_observed_at,target_pence,recipient_revision,key_version FROM watches, generate_series(1,9) g WHERE id=$1", [watchA.watch]);
   const limitHunt = await finishedHunt(false);
@@ -154,7 +156,8 @@ export async function watchLanes(databaseUrl, evidence, head) {
   assert.equal(limitLink.available, true);
   await page.goto(limitLink.url);
   await f.nativeLogin(page);
-  refusals.limit = (await page.locator("body").innerText()).slice(0, 300);
+  refusals.limit = (await page.locator("body").innerText());
+
   assert.match(refusals.limit, /maximum number of active price watches/);
   refusals.limitProposal = await memory({ op: "watch", requestKey: randomUUID(), hunt: limitHunt.hunt, target: { currency: "GBP", pence: 6000 } });
   assert.equal(refusals.limitProposal.reason, "watch-limit");
@@ -394,7 +397,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
    await popup.getByRole("button", { name: "Start watching" }).click();
    const blocked = await popup.evaluate(() => document.querySelector("input[name=recipient]").validity.valueMissing);
    assert.equal(blocked, true);
-   assert.equal(await popup.title(), "Confirm Scoat price watch");
+   assert.equal(await popup.title(), "Confirm Scoat price watch · Scoat");
    await popup.screenshot({ path: path.join(evidence, "p08-review-8-move-consent.png"), fullPage: true });
    await popup.getByLabel(/Send alerts for all my watches/).check();
    await popup.getByRole("button", { name: "Start watching" }).click();

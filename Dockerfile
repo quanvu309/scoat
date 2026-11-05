@@ -3,6 +3,8 @@ WORKDIR /build
 COPY package.json package-lock.json tsconfig.json tsconfig.server.json vite.config.ts ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY src src
+COPY landing/public/ui.css landing/public/account.css landing/public/favicon.svg landing/public/
+COPY landing/public/fonts landing/public/fonts
 COPY db/migrations db/migrations
 COPY knowledge knowledge
 COPY scripts/build.mjs scripts/database.mjs scripts/

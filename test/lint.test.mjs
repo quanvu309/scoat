@@ -230,7 +230,9 @@ test("P06 exposes browser recovery and rejects links started before erasure", as
  const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8");
  const link=readFileSync(new URL("../src/auth/link.ts",import.meta.url),"utf8");
  const recovery='if (url.pathname === "/account/erase-status" && req.method === "GET")';
- for (const change of [issuer.replace(recovery,'if (false)'),issuer.replace('action="/account/erase-status"','action="/account/erase"'),issuer.replace('href="/account/erase-status"','href="/account/erase"'),issuer.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(change),/GET recovery form/);
+ const views=readFileSync(new URL("../src/browser/views.ts",import.meta.url),"utf8");
+ assert.throws(()=>checkEraseRecovery(issuer.replace(recovery,'if (false)')),/GET recovery form/);
+ for (const change of [views.replace('action="/account/erase-status"','action="/account/erase"'),views.replace('href="/account/erase-status"','href="/account/erase"'),views.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(issuer,change),/GET recovery form/);
  const refusal='if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");';
  assert.ok(link.includes(refusal));
  for (const replacement of ["","if (false) {"+refusal+"}",refusal.replace("suppressed.rowCount","false && suppressed.rowCount")]) assert.throws(()=>checkLinkSuppression(issuer,link.replace(refusal,replacement)),/pre-erasure link flows/);
@@ -251,7 +253,7 @@ test("connection policy rejects removed refresh and host guarantees", async () =
   const { checkConnectionPolicy } = await import("../scripts/check-structure.mjs");
   const sources = ["src/auth/issuer.ts", "src/auth/registration.ts", "src/auth/adapter.ts", "src/server.ts"].map(file => readFileSync(file, "utf8"));
   assert.doesNotThrow(() => checkConnectionPolicy(...sources));
-  for (const [index, before, after] of [[0, "rotateRefreshToken: true", "rotateRefreshToken: false"], [0, 'issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token"),', ''], [0, "RefreshToken: 2592000", "RefreshToken: 900"], [0, "Grant: 2592000", "Grant: 3600"], [0, "Session: 2592000", "Session: 3600"], [1, 'grant_types: ["authorization_code", "refresh_token"]', 'grant_types: ["authorization_code"]'], [1, "https://claude.ai/api/mcp/auth_callback", "https://foreign.example/callback"], [1, "scoat-chatgpt-client-v1", "retired"], [2, '? 2592000', '? 3600'], [3, 'scope="scoat:read scoat:write offline_access"', '']]) {
+  for (const [index, before, after] of [[0, "rotateRefreshToken: true", "rotateRefreshToken: false"], [0, 'issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token"),', ''], [0, "RefreshToken: connectionLifetimeSeconds", "RefreshToken: 900"], [0, "Grant: connectionLifetimeSeconds", "Grant: 3600"], [0, "Session: connectionLifetimeSeconds", "Session: 3600"], [1, 'grant_types: ["authorization_code", "refresh_token"]', 'grant_types: ["authorization_code"]'], [1, "https://claude.ai/api/mcp/auth_callback", "https://foreign.example/callback"], [1, "scoat-chatgpt-client-v1", "retired"], [2, '? connectionLifetimeSeconds', '? 3600'], [3, 'scope="scoat:read scoat:write offline_access"', '']]) {
     const changed = [...sources]; changed[index] = changed[index].replaceAll(before, after);
     assert.notEqual(changed[index], sources[index]);
     assert.throws(() => checkConnectionPolicy(...changed), /refresh|callback/);

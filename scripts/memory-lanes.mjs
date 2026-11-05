@@ -11,6 +11,7 @@ export async function confirm(f, url, action, decision, submit=true) {
   url = new URL(response.headers.get("location"),url).href;
  }
  assert.equal(response.status,200);
+ if ((await response.clone().text()).includes('action="/login/send"')) response = await f.codeLogin(response);
  const html = await response.text();
  const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
  assert.ok(confirmation,html);

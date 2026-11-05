@@ -62,6 +62,7 @@ jobs:
       - run: npm run db:migrate
       - run: npm run db:seed -- --fixture ci-p01
       - run: npm run db:seed -- --fixture ci-p01
+      - run: npx playwright install --with-deps chromium
       - run: npm run verify -- p01
       - run: npm run perf -- p01
       - run: npm run verify -- p02

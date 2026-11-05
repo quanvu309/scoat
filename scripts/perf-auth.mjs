@@ -139,14 +139,14 @@ const result = {
     samples: 500,
     batches: 5,
     operations: ["read", "record"],
-    issuer: "local separate HTTPS upstream process and persistent Scoat issuer",
+    issuer: "local TLS sign-in mail capture and persistent Scoat issuer",
     database: "disposable isolated schema",
   },
   issuerNetwork: {
     warmCallsMs: 0,
     loginRoundTripMs: issuerLoginMs,
     loginIncludes:
-      "browser simulation, upstream issuer, Scoat validation and consent; separate from warm call distribution",
+      "browser simulation, code mail capture, Scoat validation and consent; separate from warm call distribution",
   },
   exclusions: [
     "install",

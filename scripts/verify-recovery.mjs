@@ -506,7 +506,7 @@ await withDatabase(async adminUrl => {
    assert.equal(after.count, before.journal.count + 1);
    assert.equal((await failingTarget.pool.query("SELECT to_regclass('recovery_probe') IS NOT NULL AS present")).rows[0].present, true);
    assert.equal((await inspect(failingTarget.pool)).kind, "admitted");
-   return { journalBefore: before.journal.count, journalAfter: after.count, schemaHead: "0004_lineage (artifact constant; scratch 0005 is a test-only migration)" };
+   return { journalBefore: before.journal.count, journalAfter: after.count, schemaHead: (JSON.parse(await readFile(path.join(checkout,"db/migrations/meta/_journal.json"),"utf8"))).entries.at(-1).tag };
   });
  } finally {
   for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");

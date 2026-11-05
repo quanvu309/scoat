@@ -10,6 +10,7 @@ export async function erasureLanes(databaseUrl) {
  const f = await authFixture(databaseUrl);
  try {
   const one = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
+  const originalSubject = await f.subjectFor("upstream-subject-A");
   const principal = await f.authenticate(one.token), scope=[principal.agent.account,principal.agent.incarnation];
   const other = await f.login("host-two","other-erasure-subject");
   const otherPrincipal = await f.authenticate(other.token);
@@ -68,7 +69,7 @@ export async function erasureLanes(databaseUrl) {
   await assert.rejects(adapter.upsert("late-owned",{result:{login:{accountId:scope[0]}}},300),/Inactive OAuth owner/);
   assert.equal((await f.rpc(one.token,"tools/list")).status,401);
   assert.equal((await f.rpc(other.token,"tools/list")).status,200);
-  await assert.rejects(resolveIdentity(f.store.pool,f.config.upstreamIssuer,"upstream-subject-A"),/Explicit browser enrollment/);
+  await assert.rejects(resolveIdentity(f.store.pool,f.config.issuer,originalSubject),/Explicit browser enrollment/);
   const {Memory}=await import("../dist/memory/index.js");
   await assert.rejects(new Memory(f.store.pool,f.issuer,false).run({...principal.agent,session:principal.session},command),/Inactive account/);
   const status=erased.html.match(/<code>([^<]+)<\/code>/)?.[1]; assert.ok(status);
@@ -96,11 +97,13 @@ export async function erasureLanes(databaseUrl) {
   await f.restart();
   const logs=await readFile(f.logPath,"utf8");
   for (const secret of [one.token,status,"SYNTHETIC private","upstream-subject-A"]) assert.ok(!logs.includes(secret),"Ordinary log leaked private data");
-  const staleCallback=await fetch(staleLogin.callback,{redirect:"manual",headers:{cookie:staleLogin.cookie}});
+  const staleCallback=await fetch(staleLogin.callback,{redirect:"manual",method:staleLogin.method,body:staleLogin.body,headers:{origin:f.issuer,cookie:staleLogin.cookie}});
   assert.equal(staleCallback.status,400);
-  const staleLinkCallback=await fetch(staleLink.callback,{redirect:"manual",headers:{cookie:staleLink.cookie}});
+  const staleLinkCallback=await fetch(staleLink.callback,{redirect:"manual",method:staleLink.method,body:staleLink.body,headers:{origin:f.issuer,cookie:staleLink.cookie}});
   assert.equal(staleLinkCallback.status,400);
-  assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.upstreamIssuer,"upstream-subject-A"])).rows[0].count,"0");
+  assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.issuer,originalSubject])).rows[0].count,"0");
+  for (const table of ["login_addresses","login_challenges","login_sessions"]) assert.equal((await f.store.pool.query("SELECT count(*) FROM "+table+" WHERE subject=$1",[originalSubject])).rows[0].count,"0",table);
+
   const fresh=await f.login();
   const freshPrincipal=await f.authenticate(fresh.token);
   assert.notEqual(freshPrincipal.agent.account,scope[0]);
@@ -116,9 +119,9 @@ export async function erasureLanes(databaseUrl) {
    await earlyTransaction.query("COMMIT");
   } catch(error) { await earlyTransaction.query("ROLLBACK"); throw error; }
   finally { earlyTransaction.release(); }
-  assert.equal((await fetch(duringErase.callback,{redirect:"manual",headers:{cookie:duringErase.cookie}})).status,400);
+  assert.equal((await fetch(duringErase.callback,{redirect:"manual",method:duringErase.method,body:duringErase.body,headers:{origin:f.issuer,cookie:duringErase.cookie}})).status,400);
   assert.equal((await f.link("other-erasure-subject","upstream-subject-A")).status,200);
-  assert.equal((await resolveIdentity(f.store.pool,f.config.upstreamIssuer,"upstream-subject-A")).account,otherPrincipal.agent.account);
+  assert.equal((await resolveIdentity(f.store.pool,f.config.issuer,await f.subjectFor("upstream-subject-A"))).account,otherPrincipal.agent.account);
   const confirmationCandidate=await f.login("host-one","erasure-confirm-subject");
   const confirmationPrincipal=await f.authenticate(confirmationCandidate.token);
   const acrossConfirmation=await f.link("other-erasure-subject","erasure-confirm-subject",false,async()=>{
@@ -132,7 +135,9 @@ export async function erasureLanes(databaseUrl) {
    } catch(error) { await client.query("ROLLBACK"); throw error; }
    finally { client.release(); }
   });
-  assert.equal(acrossConfirmation.status,400);
+  assert.equal(acrossConfirmation.status,200);
+  assert.match(acrossConfirmation.text,/code/i);
+  assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_identities WHERE account=$1",[confirmationPrincipal.agent.account])).rows[0].count,"0");
   return {transcript:[{atomicOwnerDeletion:true,nestedMultiOwners:true,lateOAuthWriteDenied:true,cachedPrincipalDenied:true,oldBearerDenied:true,statusRecovery:true,recoveryFormReachableWithoutCredentials:true,foreignRecoveryOriginDenied:true,staleVerifiedCallbackDenied:true,staleLinkCallbackDenied:true,linkConfirmationSpansErasure:true,transactionStartDoesNotWeakenSuppression:true,freshPostErasureLinkAllowed:true,explicitFreshEnrollment:true}],receipt,ordinaryLog:f.logPath,jobs:0,postgres:"real PostgreSQL",https:"real local HTTPS"};
  } finally { await f.close(); }
 }

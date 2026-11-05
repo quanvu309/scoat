@@ -6,7 +6,7 @@ const infoCopy = Object.freeze({
     body: Object.freeze([
       "This landing page sets no cookies, runs no analytics or trackers and has no forms asking for personal details.",
       "The page and its fonts are served through Cloudflare, which processes standard request data such as IP addresses to deliver them.",
-      "Sign up and Log in take you to Scoat’s account pages, hosted by Clerk, where your email address is used for authentication.",
+      "Sign up and Log in take you to Scoat’s sign-in page. Scoat sends sign-in codes through Resend to verify your email address.",
     ]),
   }),
   terms: Object.freeze({

@@ -9,6 +9,7 @@ import { getRequestListener } from "@hono/node-server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
+import { LoginRefused } from "./auth/login.js";
 import { createIssuer, InvalidCredential } from "./auth/issuer.js";
 import { lifecycleSchema } from "./accounts/schema.js";
 import { maintainAccounts } from "./accounts/maintenance.js";
@@ -47,7 +48,7 @@ function refuseLineage(res: import("node:http").ServerResponse, reason: RefusalR
   res.end(JSON.stringify({ error: "service_unavailable", lineage: reason }));
 }
 
-export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
+export async function createHttpServer(options: Readonly<{ delivery?: Delivery; loginDelivery?: Delivery }> = {}) {
   const release = await verifyRelease();
   const configPath = process.env.SCOAT_AUTH_CONFIG;
   const store =
@@ -77,6 +78,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
         store.pool,
         codec ? {codec,hunts} : undefined,
         watches,
+        options.loginDelivery,
       );
     }
   } catch (error) {
@@ -272,6 +274,7 @@ if (
   try {
     server = await createHttpServer();
   } catch (error) {
+    if (error instanceof LoginRefused) { process.stderr.write(JSON.stringify({ event: "login_refused" }) + "\n"); process.exit(78); }
     if (!(error instanceof LineageRefused)) throw error;
     process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: error.reason }) + "\n");
     process.exit(78);

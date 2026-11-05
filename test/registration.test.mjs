@@ -10,8 +10,7 @@ import { publicClient, RegisteredClients, registerClient } from "../dist/auth/re
 const client = publicClient({ client_id: "scoat-chatgpt", redirect_uris: [chatgptRedirect] });
 const minimal = { redirect_uris: [chatgptRedirect] };
 const config = {
-  issuer: "https://issuer.example", upstreamIssuer: "https://identity.example",
-  upstreamClientId: "upstream", upstreamClientSecret: "fixture-only",
+  issuer: "https://issuer.example", loginMailKey: "fixture-only", loginMailFrom: "login@example.invalid",
   lifecycleKey: "k".repeat(64), lifecycleKeyVersion: "test", cookieKeys: ["c".repeat(32)], jwks: { keys: [{}] },
   clients: [{ client_id: "codex", redirect_uris: ["https://codex.example/callback"] }, { client_id: client.client_id, redirect_uris: [chatgptRedirect] }],
 };

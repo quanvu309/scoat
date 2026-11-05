@@ -56,6 +56,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
  };
  const approve = async (url, button) => {
   await page.goto(url);
+  await conditions.identity.login(page);
   await page.getByRole("button", { name: button }).waitFor();
   const response = page.waitForResponse(item => item.request().method() === "POST" && item.url().startsWith(issuer + "/account/"));
   await page.getByRole("button", { name: button }).click();
@@ -142,6 +143,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   const saveProposal = await one.memory(save);
   assert.equal(saveProposal.kind, "confirmation-required");
   await page.goto(saveProposal.url);
+  await conditions.identity.login(page);
   await page.getByRole("button", { name: "Approve exact command" }).waitFor();
   await capture("memory");
   const response = page.waitForResponse(item => item.request().method() === "POST" && item.url() === issuer + "/account/memory");
@@ -199,6 +201,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    const first = await stamp();
    assert.ok(first);
    await page.goto(hub);
+  await conditions.identity.login(page);
    await page.getByRole("button", { name: "Stop accepting new discoveries" }).waitFor();
    await capture("control");
    const repeated = await control(hub, "Stop accepting new discoveries");
@@ -242,11 +245,12 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    assert.equal(await frame.getByRole("link", { name: "Open clean shop link" }).getAttribute("href"), huntA.ready.url);
    await frame.getByRole("region", { name: "Finished quote", exact: true }).scrollIntoViewIfNeeded();
    await capture("card");
-   conditions.identity.setEmail({ email, email_verified: true });
+   await conditions.identity.setEmail({ email, email_verified: true });
    watched = await openCardLink(page, frame.getByRole("button", { name: "Watch price", exact: true }));
    assert.equal(watched, huntA.watchUrl);
   } finally { await card.close(); }
   await page.goto(watched);
+  await conditions.identity.login(page);
   await page.getByText("Confirm price watch").waitFor();
   const confirmText = await page.locator("body").innerText();
   assert.match(confirmText, /Public delivered baseline\s*GBP 70\.00/);
@@ -307,6 +311,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   const textWatch = /Watch price: (\S+)/.exec(fresh.content[0].text)?.[1];
   assert.equal(textWatch, fresh.structuredContent.controls.watch.url);
   await page.goto(textWatch);
+  await conditions.identity.login(page);
   await page.getByLabel("Your target delivered price (GBP)").fill("68.00");
   await page.getByRole("button", { name: "Start watching" }).click();
   await page.getByText("Watch active").waitFor();
@@ -316,10 +321,12 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   conditions.worker.pause();
   await conditions.schedule.tick();
   await conditions.schedule.nextDayCheck({ account, incarnation, watch: second.watch, day: day(1) });
+  const erasedIdentities = await conditions.read("SELECT subject FROM oauth_identities WHERE account=$1 AND incarnation=$2", [account, incarnation]);
   const before = { requests: (await conditions.mail.requests()).length, deliveries: (await conditions.mail.deliveries()).length, seller: conditions.seller.hits() };
   const queuedBefore = (await conditions.read(`SELECT count(*)::integer AS n FROM ${fixture.queueSchema}.job WHERE data->>'account'=$1`, [account]))[0].n;
   page.on("response", async response => { if (response.request().resourceType() === "document" && response.url().startsWith(issuer)) { const status = /<code>([^<]+)<\/code>/.exec(await response.text().catch(() => ""))?.[1]; if (status) secrets.add("erase status secret", status); } });
   await page.goto(issuer + "/account/erase");
+  await conditions.identity.login(page);
   await page.getByRole("button", { name: "Erase this account" }).waitFor();
   const erased = page.waitForResponse(item => item.request().method() === "POST" && item.url() === issuer + "/account/erase");
   await page.getByRole("button", { name: "Erase this account" }).click();
@@ -334,7 +341,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   assert.deepEqual(after, before);
   const queuedAfter = (await conditions.read(`SELECT count(*)::integer AS n FROM ${fixture.queueSchema}.job WHERE data->>'account'=$1`, [account]))[0].n;
   assert.equal(queuedAfter, 0);
-  const needles = { account, incarnation, subject: "upstream-subject-A", email };
+  const needles = { account, incarnation, email, ...Object.fromEntries(erasedIdentities.map((identity,index)=>["subject"+index,identity.subject])) };
   const inventory = {};
   for (const [schema, owner] of [[(await conditions.read("SELECT current_schema() AS s"))[0].s, "application"], [fixture.queueSchema, "queue"]]) {
    const tables = await conditions.read("SELECT table_name FROM information_schema.tables WHERE table_schema=$1 AND table_type='BASE TABLE' ORDER BY table_name", [schema]);
@@ -344,7 +351,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    }
   }
   const tombstone = (await conditions.read("SELECT erased_at IS NOT NULL AS erased FROM hunt_accounts WHERE account=$1", [account]))[0];
-  assert.deepEqual(inventory, { "application.account_suppression:account": 1, "application.account_suppression:incarnation": 1, "application.hunt_accounts:account": 1, "application.hunt_accounts:incarnation": 1 });
+  assert.deepEqual(inventory, { "application.account_suppression:account": erasedIdentities.length, "application.account_suppression:incarnation": erasedIdentities.length, "application.hunt_accounts:account": 1, "application.hunt_accounts:incarnation": 1 });
   assert.equal(tombstone.erased, true);
   const rpc = async (token, method, params) => (await fetch(issuer + "/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25", authorization: "Bearer " + token }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).status;
   const refusals = { hostOne: await rpc(one.login.token, "tools/list", {}), hostTwo: await rpc(two.login.token, "tools/list", {}), cardGrants: [] };

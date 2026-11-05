@@ -22,6 +22,22 @@ export async function authLanes(databaseUrl) {
     assert.equal((await f.rpc(null, "tools/list")).status, 401);
     const one = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
     assert.equal(typeof one.refresh, "string", "code exchange must issue a refresh token");
+    const delayed = await f.login("host-one", undefined, undefined, true);
+    const flowState = createHash("sha256").update(delayed.body.get("state")).digest("hex");
+    const delayedFlow = (await f.store.pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1", [flowState])).rows[0].data;
+    const aged = await f.store.pool.query("UPDATE oauth_artifacts SET expires_at=expires_at-interval '6 minutes',payload=jsonb_set(payload,'{exp}',to_jsonb((payload->>'exp')::bigint-360)) WHERE model='Interaction' AND id=$1 RETURNING id", [delayedFlow.context.uid]);
+    assert.equal(aged.rowCount, 1);
+    let delayedResponse = await f.browser(delayed.callback, { method: delayed.method, headers: { origin: f.issuer }, body: delayed.body });
+    assert.equal(delayedResponse.status, 303, "A valid code after six minutes must preserve the OAuth continuation: " + await delayedResponse.clone().text());
+    for (let step = 0; step < 5 && delayedResponse.status === 303; step++) delayedResponse = await f.browser(new URL(delayedResponse.headers.get("location"), f.issuer));
+    assert.equal(delayedResponse.status, 200);
+    assert.match(await delayedResponse.text(), /Allow/);
+    assert.equal(delayed.interactionCookies.length, 2);
+    for (const cookie of delayed.interactionCookies) {
+      const expires = cookie.match(/expires=([^;]+)/i)?.[1];
+      assert.ok(expires && Date.parse(expires) - Date.now() > 19 * 60 * 1000, "Interaction and resume cookies must outlive the email flow");
+    }
+    passed("late-code", { interactionAgedSeconds: 360, consentReached: true, interactionCookieLifetimeSeconds: 1200 });
     const refresh = async (login, value = login.refresh) => {
       const response = await fetch(f.issuer + "/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: login.client, grant_type: "refresh_token", refresh_token: value, resource: f.issuer + "/mcp" }) });
       return { status: response.status, body: await response.json() };
@@ -120,7 +136,7 @@ export async function authLanes(databaseUrl) {
             view.account ??
               (
                 await f.store.pool.query(
-                  "SELECT account FROM oauth_identities WHERE subject='upstream-subject-A'",
+                  "SELECT account FROM oauth_identities WHERE subject=$1", [await f.subjectFor("upstream-subject-A")],
                 )
               ).rows[0].account,
           ],
@@ -241,7 +257,7 @@ export async function authLanes(databaseUrl) {
     const active = await f.login();
     const account = (
       await f.store.pool.query(
-        "SELECT account FROM oauth_identities WHERE subject='upstream-subject-A'",
+        "SELECT account FROM oauth_identities WHERE subject=$1", [await f.subjectFor("upstream-subject-A")],
       )
     ).rows[0].account;
     const grants = read(
@@ -450,7 +466,7 @@ export async function authLanes(databaseUrl) {
       const subject = "refusal-" + kind;
       const candidate = await f.login("host-two", subject);
       if (kind === "hunts") assert.ok((await call(candidate.token, "start", { requestKey: randomUUID(), intent, profile: null })).ok);
-      const binding = (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE subject=$1", [subject])).rows[0];
+      const binding = (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE subject=$1", [await f.subjectFor(subject)])).rows[0];
       if (kind === "identities") await f.store.pool.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)", [binding.issuer, subject + "-other", binding.account, binding.incarnation]);
       const snapshot = async () => ({
         accounts: (await f.store.pool.query("SELECT account,incarnation,erased FROM hunt_accounts WHERE account=$1", [binding.account])).rows,
@@ -492,7 +508,7 @@ export async function authLanes(databaseUrl) {
     });
     assert.equal(body.status, 413);
     assert.equal(
-      (await fetch(f.issuer + "/upstream/callback", { redirect: "manual" }))
+      (await fetch(f.issuer + "/login/complete", { method:"POST", headers:{origin:f.issuer}, body:new URLSearchParams({state:"forged",code:"000000"}), redirect: "manual" }))
         .status,
       400,
     );

@@ -23,3 +23,15 @@ export function checkBrowserPages(files) {
   visit(ast.program);
  }
 }
+
+export function checkBrowserOutcomes(issuer, server) {
+ const ast = parse(issuer, { sourceType: "module", plugins: ["typescript"] });
+ function visit(node) {
+  if (!node || typeof node !== "object") return;
+  if (node.type === "CallExpression" && node.callee.object?.name === "res" && node.callee.property?.name === "end" && node.arguments[0]?.type === "StringLiteral") throw new Error("src/auth/issuer.ts: use completedPage or refusalPage from src/browser/page.ts for browser outcomes");
+  for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+ }
+ visit(ast.program);
+ if (server.includes('res.end("Authentication request refused")') || !server.includes("sendPage(res, refusalPage())") || !issuer.includes("browserDocument(refusalPage())")) throw new Error("src/server.ts: use refusalPage from src/browser/page.ts at the browser error boundary and provider renderError");
+}
+

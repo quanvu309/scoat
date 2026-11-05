@@ -1,5 +1,6 @@
 import { checkLoginCodes } from "./check-login.mjs";
-import { checkBrowserTokens, checkBrowserPages } from "./check-browser-ui.mjs";
+import { checkBrowserTokens, checkBrowserPages, checkBrowserOutcomes } from "./check-browser-ui.mjs";
+
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
@@ -164,6 +165,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
   checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
+  checkBrowserOutcomes(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserPages(Object.fromEntries(["src/auth/issuer.ts", "src/server.ts"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkBrowserTokens(fs.readFileSync("landing/public/ui.css", "utf8"), Object.fromEntries(["landing/public/styles.css", "landing/public/connect.css", "landing/public/account.css"].map(file => [file, fs.readFileSync(file, "utf8")])), Object.fromEntries(["landing/public/index.html", "landing/public/connect/index.html"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));

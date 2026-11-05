@@ -25,6 +25,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Agent receipt keys occupy browser namespace or repeat Stop changes its timestamp | Reject reserved agent keys before store access and preserve the first Stop | checkControlPrerequisites; missing/dead guard and timestamp-overwrite fixtures; PostgreSQL receipt absence and repeated Stop |
 | Landing and browser pages fork the theme | Keep semantic colors, typography and motion tokens in landing/public/ui.css; load them before page styles | checkBrowserTokens; original 6d10041 independent theme and missing stylesheet negatives |
 | Security handlers grow isolated browser fragments | Render all browser HTML through src/browser/views.ts and the document/header owner src/browser/page.ts; bundle the shared theme into the release | checkBrowserPages; original c515888 and 998ed02 issuer fragments; browser document/header regression |
+| Browser outcomes fall back to raw prose or provider errors | Send completedPage or refusalPage through the shared page owner, including the provider error boundary | checkBrowserOutcomes; original 875b305 linked-identity and Memory prose; missing browser refusal negative |
 | Comments outside src | Use parser-checked comment-free JS/TS, YAML, JSON and SQL | check-no-comments; test/lint.test.mjs |
 | SDK in domain | Keep SDK imports in boundary adapters | checkSdkImports; SDK-import fixture |
 | Permissive wire objects | Use strict schemas including union branches | checkWire; permissive-object fixture |

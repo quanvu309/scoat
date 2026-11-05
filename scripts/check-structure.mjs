@@ -1,5 +1,5 @@
 import { checkLoginCodes } from "./check-login.mjs";
-import { checkBrowserTokens } from "./check-browser-ui.mjs";
+import { checkBrowserTokens, checkBrowserPages } from "./check-browser-ui.mjs";
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
@@ -48,6 +48,7 @@ function walk(dir) {
       checkSdkImports(file, source);
       checkControlImports(file,source);
       checkScratchAllocation(file, source);
+      if (file.startsWith("src/auth/") || file === "src/server.ts") checkBrowserPages({ [file]: source });
     }
   }
 }
@@ -163,7 +164,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
   checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
-  checkBrowserTokens(fs.readFileSync("landing/public/ui.css", "utf8"), { "landing/public/styles.css": fs.readFileSync("landing/public/styles.css", "utf8") }, Object.fromEntries(["landing/public/index.html", "landing/public/connect/index.html"].map(file => [file, fs.readFileSync(file, "utf8")])));
+  checkBrowserPages(Object.fromEntries(["src/auth/issuer.ts", "src/server.ts"].map(file => [file, fs.readFileSync(file, "utf8")])));
+  checkBrowserTokens(fs.readFileSync("landing/public/ui.css", "utf8"), Object.fromEntries(["landing/public/styles.css", "landing/public/connect.css", "landing/public/account.css"].map(file => [file, fs.readFileSync(file, "utf8")])), Object.fromEntries(["landing/public/index.html", "landing/public/connect/index.html"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));
   checkControlPrerequisites(fs.readFileSync("src/hunt/index.ts", "utf8"),fs.readFileSync("src/mcp/index.ts", "utf8"));
@@ -514,18 +516,19 @@ export function checkLinkSuppression(issuer,link) {
  const entry = nodes.find(node => node.type === "IfStatement" && node.test?.right?.value === "/account/link");
  requireOrderedStatements(entry?.consequent.body ?? [],'await loginRedirect(res,{stage:"link-candidate",target:flow.context.target,startedAt:flow.initiatedAt});',message);
 }
-export function checkEraseRecovery(source) {
+export function checkEraseRecovery(source, views = fs.readFileSync("src/browser/views.ts", "utf8")) {
  const nodes = parsedNodes(source);
  const entry = nodes.find(node => node.type === "IfStatement" && node.test.type === "LogicalExpression" && node.test.left.right?.value === "/account/erase-status" && node.test.right.right?.value === "GET");
  const body = entry?.consequent.body ?? [];
- const html = body.find(node => node.type === "ExpressionStatement" && member(node.expression.callee,"res","end"))?.expression.arguments[0];
- const page = html?.type === "TemplateLiteral" && html.expressions.length === 0 ? html.quasis[0].value.cooked : "";
- const headers = body.find(node => node.type === "ExpressionStatement" && member(node.expression.callee,"res","writeHead"))?.expression.arguments[1]?.properties ?? [];
+ const renders = body.some(node => node.type === "ExpressionStatement" && node.expression.callee?.name === "sendPage" && member(node.expression.arguments[1]?.callee,"pages","eraseStatus"));
+ const view = method(parsedNodes(views), "eraseStatus");
+ const page = renders && view ? views.slice(view.start,view.end) : "";
+ const headers = body.find(node => node.type === "ExpressionStatement" && node.expression.callee?.name === "pageHead")?.expression.arguments[2]?.properties ?? [];
  const header = name => headers.find(node => node.key.value === name)?.value.value;
- const linked = nodes.some(node => node.type === "TemplateElement" && node.value.cooked.includes('href="/account/erase-status"'));
+ const linked = views.includes('href="/account/erase-status"');
  if (!page.includes('<form method="post" action="/account/erase-status">') || !page.includes('name="status"') || !header("content-security-policy")?.includes("form-action 'self'") || header("cache-control") !== "no-store" || header("referrer-policy") !== "same-origin" || !linked || body.at(-1)?.type !== "ReturnStatement") throw new Error("Expose a credential-free GET recovery form linked before erasure; submit status secrets by same-origin POST with same-origin Referrer-Policy");
  const confirmation = nodes.find(node => node.type === "IfStatement" && node.test.right?.value === "erase" && node.test.left?.property?.name === "stage");
- const confirmationHeaders = astNodes(confirmation).find(node => node.type === "CallExpression" && member(node.callee,"res","writeHead"))?.arguments[1]?.properties ?? [];
+ const confirmationHeaders = astNodes(confirmation).find(node => node.type === "CallExpression" && node.callee?.name === "pageHead")?.arguments[2]?.properties ?? [];
  if (!["cache-control","referrer-policy"].every((name,index) => confirmationHeaders.some(node => node.key.value === name && node.value.value === ["no-store","same-origin"][index]))) throw new Error("Serve the erase confirmation status secret with no-store and same-origin Referrer-Policy");
 }
 export function checkExplicitEnrollment(source) {
@@ -699,7 +702,7 @@ export function checkWatchBoundary(issuer, watches, memory) {
  const text = sqlOf(one).map(item => item.text).join("\n");
  if (!one || !text.includes("multipart/form-data") || !text.includes("application/x-www-form-urlencoded") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === ">" && node.left?.name === "size") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === "!==" && fieldOf(node.left, "entries", "length") && node.right?.value === 1) || !/await oneClick\(req\);/.test(issuer)) throw new Error("Accept bounded RFC 8058 one-click in multipart and urlencoded forms with exactly one field");
 }
-export function checkWatchActivation(watches, issuer, server) {
+export function checkWatchActivation(watches, issuer, server, views = fs.readFileSync("src/browser/views.ts", "utf8")) {
  const nodes = parsedNodes(watches);
  const available = method(nodes, "available");
  if (!available || !/return this\.deps\.config\.resendApiKey !== null;/.test(watches.slice(available.start, available.end))) throw new Error("Watch availability requires a configured worker mail key");
@@ -708,14 +711,14 @@ export function checkWatchActivation(watches, issuer, server) {
   const first = owner?.body?.body?.[0];
   if (!first || !/^if \(!this\.available\)/.test(watches.slice(first.start, first.end))) throw new Error("Refuse unconfigured watch preparation and activation before state access");
  }
- if (!/if \(!watches\?\.available\) \{\s*res\.writeHead\(503, watchHeaders\)/.test(issuer) || !/watches\?\.available === true/.test(server) || !/watches\?\.available && issued\.finished/.test(issuer)) throw new Error("Route browser, MCP and control links through watch availability");
+ if (!/if \(!watches\?\.available\) \{\s*pageHead\(res, 503, watchHeaders\)/.test(issuer) || !/watches\?\.available === true/.test(server) || !/watches\?\.available && issued\.finished/.test(views)) throw new Error("Route browser, MCP and control links through watch availability");
  const target = method(parsedNodes(issuer), "targetPence");
  const body = target ? issuer.slice(target.start, target.end) : "";
  if (!/watchTargetPence\.safeParse/.test(body) || !/if \(!amount\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body) || !/if \(!pence\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body)) throw new Error("Return typed invalid-target refusals for malformed and out-of-range prices");
  const caught = parsedNodes(issuer).some(node => node.type === "TryStatement" && node.handler && issuer.slice(node.handler.start, node.handler.end).includes("error instanceof WatchRefusal") && node.block.body.some(statement => statement.type === "VariableDeclaration" && statement.declarations.some(declaration => declaration.init?.type === "CallExpression" && declaration.init.callee?.name === "targetPence")));
  if (!caught) throw new Error("Parse browser target prices inside the typed watch-refusal boundary");
- const refusal = method(parsedNodes(issuer), "watchRefusalPage");
- const refusalBody = refusal ? issuer.slice(refusal.start, refusal.end) : "";
+ const refusal = method(parsedNodes(views), "watchRefusalPage");
+ const refusalBody = refusal ? views.slice(refusal.start, refusal.end) : "";
  if (!refusalBody.includes('form method="post" action="/account/watch"') || !refusalBody.includes('escapeHtml(correction.confirmation)') || !refusalBody.includes('correction.moveRecipient') || !issuer.includes('watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" })')) throw new Error("Render an invalid-target correction form retaining the confirmation and recipient choice");
 }
 export function checkWatchWorker(worker, delivery) {
@@ -762,10 +765,10 @@ export function checkWatchResponses(delivery, issuer) {
  const accepted = parsedNodes(delivery).find(node => node.type === "VariableDeclarator" && node.id?.name === "accepted");
  if (!astNodes(accepted?.init).some(node => node.type === "CallExpression" && member(node.callee, "z", "strictObject"))) throw new Error("Parse the Resend accepted response with a strict object schema");
  const route = parsedNodes(issuer).find(node => node.type === "IfStatement" && astNodes(node.test).some(part => part.type === "StringLiteral" && part.value === "/account/watch"));
- const headers = astNodes(route?.consequent).filter(node => node.type === "CallExpression" && member(node.callee, "res", "writeHead"));
+ const headers = astNodes(route?.consequent).filter(node => node.type === "CallExpression" && node.callee?.name === "pageHead");
  const declared = name => parsedNodes(issuer).find(node => node.type === "VariableDeclarator" && node.id?.name === name)?.init;
  const object = argument => argument?.type === "Identifier" ? declared(argument.name) : argument;
- if (!headers.length || headers.some(call => !astNodes(object(call.arguments[1])).some(node => node.type === "ObjectProperty" && node.key?.value === "cache-control" && node.value?.value === "no-store"))) throw new Error("Serve the watch activation response with cache-control no-store");
+ if (!headers.length || headers.some(call => !astNodes(object(call.arguments[2])).some(node => node.type === "ObjectProperty" && node.key?.value === "cache-control" && node.value?.value === "no-store"))) throw new Error("Serve the watch activation response with cache-control no-store");
 }
 
 export function checkWatchVerification(skill, index, runner) {

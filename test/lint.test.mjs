@@ -230,7 +230,9 @@ test("P06 exposes browser recovery and rejects links started before erasure", as
  const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8");
  const link=readFileSync(new URL("../src/auth/link.ts",import.meta.url),"utf8");
  const recovery='if (url.pathname === "/account/erase-status" && req.method === "GET")';
- for (const change of [issuer.replace(recovery,'if (false)'),issuer.replace('action="/account/erase-status"','action="/account/erase"'),issuer.replace('href="/account/erase-status"','href="/account/erase"'),issuer.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(change),/GET recovery form/);
+ const views=readFileSync(new URL("../src/browser/views.ts",import.meta.url),"utf8");
+ assert.throws(()=>checkEraseRecovery(issuer.replace(recovery,'if (false)')),/GET recovery form/);
+ for (const change of [views.replace('action="/account/erase-status"','action="/account/erase"'),views.replace('href="/account/erase-status"','href="/account/erase"'),views.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(issuer,change),/GET recovery form/);
  const refusal='if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");';
  assert.ok(link.includes(refusal));
  for (const replacement of ["","if (false) {"+refusal+"}",refusal.replace("suppressed.rowCount","false && suppressed.rowCount")]) assert.throws(()=>checkLinkSuppression(issuer,link.replace(refusal,replacement)),/pre-erasure link flows/);

@@ -14,37 +14,7 @@
   font-display: swap;
 }
 
-:root {
-  color-scheme: light;
-  --background: #ffffff;
-  --foreground: #292e34;
-  --card: #ffffff;
-  --card-foreground: #292e34;
-  --popover: #ffffff;
-  --popover-foreground: #292e34;
-  --primary: #30557a;
-  --primary-foreground: #ffffff;
-  --secondary: #f9fafc;
-  --secondary-foreground: #292e34;
-  --muted: #f9fafc;
-  --muted-foreground: #646a70;
-  --accent: #edf4fd;
-  --accent-foreground: #30557a;
-  --success: #345a3d;
-  --border: #d1d5d8;
-  --input: #d1d5d8;
-  --ring: #30557a;
-  --radius: 22px;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --ease-micro: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
-  --duration-micro: 150ms;
-  --duration-panel: 280ms;
-  --shadow-receipt: 0 30px 60px -20px rgb(41 46 52 / 0.28), 0 2px 6px rgb(41 46 52 / 0.08);
-  --page-pad-block: 40px;
-  --page-pad-inline: 48px;
-}
+
 
 *,
 *::before,

@@ -15,8 +15,12 @@ export function compareViews(prior:HuntView,next:HuntView):"accept"|"drop"|"retr
  }
  return lower ? higher ? "retry" : "drop" : "accept";
 }
+export function initialState(initial:Snapshot,bridge:CardBridge|undefined):CardState {
+ if(initial.value.view.final.kind==="finished") return {snapshot:initial,status:bridge?"stale":"unsupported",message:"Finished result. It no longer changes, so the card does not poll."};
+ return {snapshot:initial,status:bridge?"stale":"unsupported",message:bridge?"Connecting…":"Live updates unavailable in this host. Use the browser links or canonical text."};
+}
 export function createController(initial:Snapshot,bridge:CardBridge|undefined,notify:(state:CardState)=>void,clock={now:()=>Date.now(),set:(fn:()=>void,ms:number)=>setTimeout(fn,ms),clear:(id:ReturnType<typeof setTimeout>)=>clearTimeout(id)},visibleInitially=true) {
- let state:CardState={snapshot:initial,status:bridge?"stale":"unsupported",message:bridge?"Connecting…":"Live updates unavailable in this host. Use the browser links or canonical text."};
+ let state:CardState=initialState(initial,bridge);
  let capability:Capability|undefined, timer:ReturnType<typeof setTimeout>|undefined, flight=false, visible=visibleInitially, disposed=false, terminal=false, sequence=0, applied=0, failures=0;
  const publish=()=>{if(!disposed) notify(state);};
  const clear=()=>{if(timer!==undefined) clock.clear(timer);timer=undefined;};

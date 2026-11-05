@@ -2,6 +2,19 @@ import { checkCardBuild, checkCardRouting, checkCardRenewal, checkCardProjection
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+test("a card opened on a finished hunt states its final result without polling", async () => {
+ const calls=[];
+ const bridge={capability:async op=>{calls.push(op);throw new Error("unexpected");},read:async()=>{calls.push("read");throw new Error("unexpected");},openLink:async()=>{}};
+ const finished=cardSnapshot();finished.value.view.final={kind:"finished",quote:null};
+ const changes=[];
+ const controller=createController(finished,bridge,state=>changes.push(state));
+ try {
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.deepEqual(calls,[]);
+  assert.equal(controller.getState().message,"Finished result. It no longer changes, so the card does not poll.");
+  assert.ok(changes.every(state=>state.message!=="Connecting…"));
+ } finally { controller.dispose(); }
+});
 import { createController, compareViews } from "../dist/card/index.js";
 import { snapshotSchema, capabilitySchema, CardFailure } from "../dist/card/contracts.js";
 import { checkComments } from "../scripts/check-no-comments.mjs";

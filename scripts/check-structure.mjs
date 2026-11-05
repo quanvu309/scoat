@@ -5,6 +5,7 @@ import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
+import { checkPerfStory } from "./check-perf.mjs";
 import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
@@ -200,6 +201,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkOperationsVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync("scripts/perf.mjs", "utf8"));
   checkAcceptanceAuthority({ story: fs.readFileSync("scripts/story-lanes.mjs", "utf8"), conditions: fs.readFileSync("scripts/story-conditions.mjs", "utf8") });
   checkAcceptanceLinkCapture(fs.readFileSync("scripts/story-lanes.mjs", "utf8"));
+  checkPerfStory({ entry: fs.readFileSync("scripts/perf.mjs", "utf8"), p09: fs.readFileSync("scripts/perf-p09.mjs", "utf8"), story: fs.readFileSync("scripts/perf-story.mjs", "utf8"), lineage: fs.readFileSync("scripts/perf-lineage.mjs", "utf8") });
   checkFixtureWorker(fs.readFileSync("scripts/watch-worker.mjs", "utf8"));
   checkAcceptanceVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
@@ -757,7 +759,7 @@ export function checkWatchVerification(skill, index, runner) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
- checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
+ checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
  checkWatchLockOrder(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchRecipient(fs.readFileSync("src/memory/watches.ts", "utf8"));

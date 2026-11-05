@@ -5,7 +5,7 @@ permissions:
 jobs:
   foundation:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -46,3 +46,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run verify -- p06
       - run: npm run perf -- p06
+      - run: npm run verify -- p08
+      - run: npm run perf -- p08

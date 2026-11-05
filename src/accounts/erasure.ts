@@ -1,5 +1,6 @@
 import { SerializationConflict } from "../db/transaction.js";
 import { deleteMemory } from "../memory/storage.js";
+import { deleteWatches } from "../memory/watches.js";
 import { deleteHunts } from "../hunt/postgres.js";
 import { deleteAuthentication } from "../auth/erasure.js";
 import { createHmac } from "node:crypto";
@@ -22,10 +23,11 @@ export async function eraseAccount(client: pg.PoolClient, scope: AccountScope, l
   await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')", [...prefix,pseudonym,keyVersion]);
  }
  const authentication = await deleteAuthentication(client,scope,identities.rows);
+ const watches = await deleteWatches(client,scope);
  const memory = await deleteMemory(client,scope);
  const hunts = await deleteHunts(client,scope);
- const counts = { ...authentication,...memory,...hunts };
+ const counts = { ...authentication,...watches.counts,...memory,...hunts };
  await client.query("UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2",prefix);
  await client.query("UPDATE erase_status SET completed_at=now(),expires_at=now()+interval '24 hours' WHERE digest=$1", [statusDigest]);
- return { kind: "erased", counts, retention: { policy: "p06-v1", suppressionDays: 31, completionHours: 24, backupMaximumDays: 30, backupEnforcement: "UNTESTED operational gate", providerDeletion: "Upstream identity is retained by its provider", deliveredEmail: "Previously delivered or provider-accepted mail cannot be recalled", hostCopies: "Host transcripts and exported copies remain outside local erasure", lifecycleKey: "Persisted deployment key; rotation and restore require current suppression ledger", jobs: 0 } };
+ return { kind: "erased", counts, retention: { policy: "p06-v1", suppressionDays: 31, completionHours: 24, backupMaximumDays: 30, backupEnforcement: "UNTESTED operational gate", providerDeletion: "Upstream identity is retained by its provider", deliveredEmail: "Previously delivered or provider-accepted mail cannot be recalled", watchMail: { mayStillArrive: watches.mayStillArrive, meaning: watches.mayStillArrive ? "A submission marker was unresolved; that alert may still arrive. No new watch work starts after this commit." : "No unresolved watch submission markers; no new watch work starts after this commit." }, hostCopies: "Host transcripts and exported copies remain outside local erasure", lifecycleKey: "Persisted deployment key; rotation and restore require current suppression ledger", jobs: watches.counts.queue_jobs ?? 0 } };
 }

@@ -23,7 +23,7 @@ test("agent keys reserve the browser namespace including newline suffixes",()=>{
 });
 test("direct agent requests reject reserved keys before store or knowledge access",async()=>{
  const forbidden=()=>{throw new Error("Reserved request reached a dependency");};
- const hunts=new Hunts({store:{transact:forbidden},knowledge:{read:forbidden},delivery:{}});
+ const hunts=new Hunts({store:{transact:forbidden},knowledge:{read:forbidden}});
  for (const request of requests) {
   const result=await hunts.run({agent:{account:"a",incarnation:"i",kind:"agent",client:"test"},request:{...request,requestKey:"person:nonce"},now:"2026-11-04T00:00:00.000Z"});
   assert.equal(result.ok,false);

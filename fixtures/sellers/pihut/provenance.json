@@ -1,0 +1,9 @@
+{
+  "purpose": "Non-runtime offline regression recordings for the pihut-rpi5-v1 parser. Never imported by production source.",
+  "recordings": [
+    { "file": "product-2026-11-05.html.gz", "url": "https://thepihut.com/products/raspberry-pi-5", "observedAt": "2026-11-04T19:49:12Z", "status": 200, "finalUrl": "https://thepihut.com/products/raspberry-pi-5", "bytes": 646158, "sha256": "09b945616a8f4b36ac010f18f6f4aaf42aae0ae0772bedc1c9704e25338c5c96", "capture": "raw HTTPS bytes recorded by the parent delivery agent, not TinyFish cleaned HTML" },
+    { "file": "delivery-2026-11-05.html.gz", "url": "https://thepihut.com/pages/delivery", "observedAt": "2026-11-04T19:49:13Z", "status": 200, "finalUrl": "https://thepihut.com/pages/delivery", "bytes": 304965, "sha256": "53da6da6d7e38dee26ec3e21aee7487c63029ee50f680f09832410c51b48f527", "capture": "raw HTTPS bytes recorded by the parent delivery agent" }
+  ],
+  "scope": "Raspberry Pi 5 board product 7628874285251 only, quantity one, exact recorded variant/SKU, UK Royal Mail 1st Class non-member non-lithium delivery. Other products, bundles, batteries and inferred membership or shipping remain unknown.",
+  "synthetic": "Lane and perf fixtures edit only the recorded variant price or availability in memory and are labelled synthetic local fixtures."
+}

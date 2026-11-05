@@ -141,6 +141,7 @@ test("card verification routing rejects missing header selector index and driver
  assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,notes:documentation.notes.replace("**createController**","**mountCard**")}),/Document the implemented/);
  assert.throws(()=>checkCardRouting(skill,index+"Live shopping, watches and the live card remain outside the implemented surface.",driver,documentation),/Document the implemented/);
  assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,agents:documentation.agents.replace("\n| Card bundling","\n\n| Card bundling")}),/continuous Markdown table/);
+ assert.throws(()=>checkCardRouting(skill,index,driver,{...documentation,agents:documentation.agents.replace("| Risk | Required fix | Enforcement and negative proof |\n| --- | --- | --- |", "| Risk | Required fix | Enforcement and negative proof |\n| Misplaced row | Fix | Proof |\n| --- | --- | --- |")}),/delimiter directly after the header/);
 });
 
 test("card projection retains slot proofs, finished quote and status details",()=>{

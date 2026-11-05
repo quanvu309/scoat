@@ -87,8 +87,13 @@ const result=await withDatabase(async databaseUrl=>{
    lane("bounded local render and bridge timing samples, deliberate delay separated, hidden zero requests");
    return {browser:browser.version(),backgroundPolls,samples,requestOperations,secretLeaks:0,observedRotatingSecrets:secrets.size,errors,recordingMs:Date.now()-started};
   }
-  await frame.getByRole("button",{name:"Watch unavailable"}).click();
-  await frame.getByText(/Watch requires/).waitFor();
+  assert.equal(f.initial.controls.watch.available,false);
+  await frame.getByRole("button",{name:"Why no price watch?"}).click();
+  await frame.getByText(f.initial.controls.watch.reason).waitFor();
+  const unconfigured=(await f.memory({op:"watch",requestKey:randomUUID(),hunt:f.initial.value.view.hunt,target:{currency:"GBP",pence:6000}})).structuredContent;
+  assert.equal(unconfigured.kind,"watch-unavailable");
+  assert.equal(unconfigured.reason,"service-unconfigured");
+  assert(!("url" in unconfigured));
   const skip=f.initial.controls.skip.find(item=>item.row===f.initial.value.view.rows[2].row.id);
   const button=frame.getByRole("button",{name:"Skip "+f.initial.value.view.rows[2].row.label,exact:true});
   await button.focus();

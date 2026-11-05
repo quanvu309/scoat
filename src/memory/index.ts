@@ -7,12 +7,14 @@ import { releaseSchema } from "../knowledge/index.js";
 import { readFinishedResult, countRecentHunts, readRecentHunts } from "../hunt/postgres.js";
 import { digest } from "../hunt/postgres.js";
 import { memoryInput, profileSchema } from "./contracts.js";
+import { cancelWatch, prepareWatch, readWatches, watchLimits, watchRefusalReasons, watchRefusalText, watchUrl } from "./watches.js";
+import type { PreparedWatch } from "./watches.js";
 
 type Caller = AccountScope & Readonly<{ client: string; session: string }>;
 const cursorSchema = z.strictObject({ account: z.string(), incarnation: z.uuid(), collection: z.enum(["saved", "recent"]), after: z.string().max(256) });
-const outcomeSchema = z.union([z.strictObject({ kind: z.literal("profile"), revision: z.uuid() }), z.strictObject({ kind: z.literal("saved"), item: z.uuid() }), z.strictObject({ kind: z.literal("unfinished") })]);
+const outcomeSchema = z.union([z.strictObject({ kind: z.literal("profile"), revision: z.uuid() }), z.strictObject({ kind: z.literal("saved"), item: z.uuid() }), z.strictObject({ kind: z.literal("unfinished") }), z.strictObject({ kind: z.literal("watching"), watch: z.uuid() }), z.strictObject({ kind: z.literal("watch-unavailable"), reason: z.enum(watchRefusalReasons), explanation: z.string(), limits: z.strictObject({ active: z.number().int(), seller: z.string() }) }), z.strictObject({ kind: z.literal("unwatched"), watch: z.uuid(), wasActive: z.boolean(), jobs: z.number().int(), acceptedAlerts: z.number().int(), mayStillArrive: z.number().int() })]);
 export class Memory {
- constructor(private readonly pool: pg.Pool, private readonly issuer: string) {}
+ constructor(private readonly pool: pg.Pool, private readonly issuer: string, private readonly watches: boolean) {}
  private async transaction<T>(scope: Caller, run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   return retryTransaction(this.pool,async client => {
    const active = await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",[scope.account,scope.incarnation]);
@@ -41,6 +43,10 @@ export class Memory {
      const count = (await client.query("SELECT count(*)::integer AS saved FROM memory_items WHERE account=$1 AND incarnation=$2", prefix)).rows[0];
      return { kind: "overview", profile: row ? { revision: z.uuid().parse(row.revision), value: profileSchema.parse(row.value) } : null, counts: {...count,hunts:await countRecentHunts(client,caller)} };
     }
+    if (request.collection === "watches") {
+     if (request.after) throw new Error("Watches have no cursor");
+     return readWatches(client,caller);
+    }
     let after = "";
     if (request.after) {
      const cursor = cursorSchema.parse(JSON.parse(Buffer.from(request.after,"base64url").toString("utf8")));
@@ -61,6 +67,18 @@ export class Memory {
    if (row.client !== caller.client || row.session !== caller.session || !row.replay) throw new Error("Command session unavailable");
    if (row.outcome) return outcomeSchema.parse(row.outcome);
    if (!row.fresh) throw new Error("Proposal expired; use a new request key");
+   if (request.op === "unwatch") {
+    const result = await cancelWatch(client,caller,request.watch);
+    await client.query("UPDATE memory_commands SET outcome=$4,command=NULL,approved=false WHERE account=$1 AND incarnation=$2 AND key=$3", [...prefix,request.requestKey,result]);
+    return result;
+   }
+   if (request.op === "watch") {
+    const prepared: PreparedWatch = this.watches ? await prepareWatch(client,caller,request.hunt) : { kind: "unavailable", reason: "service-unconfigured" };
+    if (prepared.kind === "ready") return { kind: "confirmation-required", command: request, url: watchUrl(this.issuer,caller.account,request.hunt), proposedTarget: request.target, baseline: "A fresh public delivered price is observed in your browser confirmation; personalized, student, coupon, cashback or reward totals are never the baseline. The person confirms the target and alert address in the browser; this proposal cannot activate a watch.", limits: { active: watchLimits.active, days: watchLimits.days } };
+    const outcome = prepared.reason === "unfinished" ? { kind: "unfinished" as const } : { kind: "watch-unavailable" as const, reason: prepared.reason, explanation: watchRefusalText[prepared.reason], limits: { active: watchLimits.active, seller: "The Pi Hut Raspberry Pi 5, exact variant link, UK Royal Mail 1st Class only" } };
+    await client.query("UPDATE memory_commands SET outcome=$4,command=NULL,approved=false WHERE account=$1 AND incarnation=$2 AND key=$3", [...prefix,request.requestKey,outcome]);
+    return outcome;
+   }
    if (!row.approved) return { kind: "confirmation-required", command: request, url: this.issuer + "/account/memory?account=" + encodeURIComponent(caller.account) + "&key=" + encodeURIComponent(request.requestKey) };
    let outcome: z.infer<typeof outcomeSchema>;
    if (request.op === "profile") {

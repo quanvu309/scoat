@@ -1,5 +1,6 @@
 import type { ControlLinksFor } from "../controls/codec.js";
 import { Memory } from "../memory/index.js";
+import { watchEntry } from "../memory/watches.js";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Hunts } from "../hunt/index.js";
@@ -11,29 +12,20 @@ import { dispatchParsed } from "./index.js";
 import type { ToolCall } from "./index.js";
 import { toHuntRequest } from "./contracts.js";
 
-export function authenticatedDispatch(store: HuntStore, principal: Principal, issuer: string, links?: ControlLinksFor) {
+export function authenticatedDispatch(store: HuntStore, principal: Principal, issuer: string, links?: ControlLinksFor, watches = false) {
+  const controlsFor = (view: Parameters<ControlLinksFor>[2] & Parameters<typeof watchEntry>[2]) => links ? { ...links(issuer, principal.agent, view), watch: watchEntry(watches ? issuer : null, principal.agent.account, view) } : undefined;
+  const controlText = (controls: ReturnType<typeof controlsFor>) => controls ? "\nBrowser controls: " + controls.hub + "\n" + (controls.watch.available ? "Watch price: " + controls.watch.url : "Price watch unavailable: " + controls.watch.reason) : "";
   const hunts = new Hunts({
     store,
     knowledge: new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),
-    delivery: {
-      readyLink: async () => {
-        throw new Error("Live delivery requires separate verification");
-      },
-      recheck: async () => {
-        throw new Error("Live delivery requires separate verification");
-      },
-      email: async () => {
-        throw new Error("Mail unavailable");
-      },
-    },
   });
   const grants = new ReadGrants(store.pool);
   const now = () =>
     z.string().brand<"UtcInstant">().parse(new Date().toISOString());
   return async (call: ToolCall): Promise<CallToolResult> => {
     if (call.name === "scoat_memory") {
-      if (["profile","save"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
-      const result = await new Memory(store.pool,issuer).run({ ...principal.agent, session: principal.session },call.input);
+      if (["profile","save","watch","unwatch"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
+      const result = await new Memory(store.pool,issuer,watches).run({ ...principal.agent, session: principal.session },call.input);
       return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
     }
     if (call.name === "scoat_guide")
@@ -50,7 +42,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         request,
         now: now(),
       });
-      const controls=reply.ok && "view" in reply.value ? links?.(issuer,principal.agent,reply.value.view) : undefined;
+      const controls=reply.ok && "view" in reply.value ? controlsFor(reply.value.view) : undefined;
       return {
         isError: !reply.ok,
         content: [
@@ -58,7 +50,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             type: "text",
             text:
               reply.ok && "view" in reply.value
-                ? reply.value.view.text+(controls ? "\nBrowser controls: "+controls.hub+"\n"+controls.watch.reason : "")
+                ? reply.value.view.text+controlText(controls)
                 : JSON.stringify(reply),
           },
         ],
@@ -87,7 +79,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         },
         now: now(),
       });
-      const controls=reply.ok && "view" in reply.value ? links?.(issuer,principal.agent,reply.value.view) : undefined;
+      const controls=reply.ok && "view" in reply.value ? controlsFor(reply.value.view) : undefined;
       return {
         isError: !reply.ok,
         content: [
@@ -95,7 +87,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             type: "text",
             text:
               reply.ok && "view" in reply.value
-                ? reply.value.view.text+(controls ? "\nBrowser controls: "+controls.hub+"\n"+controls.watch.reason : "")
+                ? reply.value.view.text+controlText(controls)
                 : JSON.stringify(reply),
           },
         ],

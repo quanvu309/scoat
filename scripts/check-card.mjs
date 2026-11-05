@@ -28,7 +28,7 @@ export function checkCardRouting(skill, index, driver, documentation) {
  if(!skill.split("---")[1]?.includes("P07 live card") || !skill.includes("features/card.md") || !index.includes("[live card](card.md)") || !driver.includes('process.argv[2] === "p07-card"')) throw new Error("Route P07 live card through the skill header, selector, feature index and executable driver");
  if(!documentation?.host.includes("| Fresh same-account browser Stop/Skip and atomic replay |") || !documentation.host.includes("| Live React card, bridge, polling, grant rotation and native controls |") || !documentation.notes.includes("**createController**") || !documentation.notes.includes("**VerifiedControl**") || /\*\*(mountCard|inspect)\*\*/.test(documentation.notes) || index.includes("watches and the live card remain outside")) throw new Error("Document the implemented P07 card and browser controls; keep P01 fixture limitations historical");
  const lines=documentation.agents.split("\n"),first=lines.findIndex(line=>line.startsWith("| Risk |")),last=lines.findLastIndex(line=>line.startsWith("|"));
- if(first<0 || lines.slice(first,last+1).some(line=>!line.startsWith("|"))) throw new Error("Keep every foundation enforcement row in one continuous Markdown table");
+ if(first<0 || !/^\|\s*-+\s*\|\s*-+\s*\|\s*-+\s*\|$/.test(lines[first+1]??"") || lines.slice(first,last+1).some(line=>!line.startsWith("|"))) throw new Error("Keep every foundation enforcement row in one continuous Markdown table with its delimiter directly after the header");
 }
 export function checkCardRenewal(source) {
  let renewals=0;

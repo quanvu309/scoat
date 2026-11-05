@@ -7,7 +7,7 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **createController** (`index.ts`): Owns a single polling flight, three-second refresh with bounded backoff, visible/mounted/unfinished eligibility and terminal revocation. It retains the last canonical view while stale and refuses dominated, incomparable or irreversible snapshot regressions.
 - **CardBridge** (`index.ts`): Read-only capability open/renew/read plus host link opening. Grant secrets stay in the controller and app-only result metadata.
 - **CardTransport** (`adapter.ts`): Accepts schema-valid messages only from the configured parent window and keeps private bridge messages out of logs.
-- **Card** (`renderer.tsx`): Renders canonical HuntView scenarios, evidence, budgets, progress and clean shop links. Stop and Skip open exact browser confirmations; Watch explains its P08 dependency.
+- **Card** (`renderer.tsx`): Renders canonical HuntView scenarios, evidence, budgets, progress and clean shop links. Stop and Skip open exact browser confirmations. Watch price opens the same canonical `/account/watch?account=&hunt=` link that the hunt text prints; when no watch can start, the card and text give the reason.
 - **Bundle** (`index.html`): The production MCP resource is a single bundled React document. The historical P01 fixture remains isolated under tests.
 
 ## src/controls/codec.ts
@@ -89,7 +89,19 @@ Production `src/mcp/authenticated.ts` builds dispatch from the authenticated pri
 
 ## src/memory/index.ts
 
-P06 implements bounded profile, recent/saved lists and immutable item reads. Profile/save use persisted proposals requiring fresh exact browser approval bound to the account incarnation, OAuth client and live session. The agent resubmits the same command to apply one transaction and recover its compact receipt. Hunts owns finished-result and recent-history reads. Accounts owns erasure and calls feature-owned deletion ports. Watch and email behavior are deferred. See [Memory and erasure](memory-erasure.md).
+P06 implements bounded profile, recent/saved lists and immutable item reads. Profile/save use persisted proposals requiring fresh exact browser approval bound to the account incarnation, OAuth client and live session. The agent resubmits the same command to apply one transaction and recover its compact receipt. Hunts owns finished-result and recent-history reads. Accounts owns erasure and calls feature-owned deletion ports. See [Memory and erasure](memory-erasure.md).
+
+### P08 price watches
+
+`src/memory/watches.ts` owns watches. `prepareWatch` is one deep operation shared by the MCP proposal, the browser confirmation and activation. It reads the finished result, resolves the exact supported variant, checks for an existing watch and the active limit, reads the agent's suggested target with the strict `watchCommandSchema`, and reads the current recipient. The browser issuer runs no watch SQL.
+
+The canonical entry is `GET /account/watch?account=&hunt=`. It is safe: it only starts a fresh same-account sign-in. The person then confirms the target and the verified recipient on a no-store native form. An agent proposal only suggests a target and cannot activate a watch. Without `SCOAT_WATCH_CONFIG`, MCP returns `watch-unavailable: service-unconfigured`, and the card and text explain why.
+
+Recipient policy: each account has one verified alert address. If a new confirmation verifies a different address while other watches are active, the page names the change. Activation requires an explicit "send alerts for all my watches" checkbox. It then re-points every active watch and every unsubmitted alert to the new revision. An alert whose marker was already committed keeps the old revision, so the sender refuses it and reports that it may still arrive. If the recipient changes between page and POST, activation is refused. `read watches` shows `alertsCurrentRecipient` and each alert's refusal reason.
+
+Stale, expired, used, duplicate and over-limit confirmations return a no-store 409 page with the reason and a fresh-start link. Unrelated failures keep the generic refusal. The watch config `issuer` must be an exact HTTPS origin. The server refuses to start if it differs from the authorization issuer origin.
+
+Lock order is account, then watch, then alert, recipient and queue rows. The daily plan locks sorted account fences first. Erasure locks the account's watch rows before deleting alerts, recipients and queue jobs. Queue deletion removes scoped jobs in every queue name and state, including legacy dead-letter rows, then proves no survivor remains. RFC 8058 one-click accepts `multipart/form-data` and `application/x-www-form-urlencoded`. The body is bounded to 4 KiB and must hold exactly one `List-Unsubscribe=One-Click` field.
 
 ## Historical P01 foundation
 
@@ -113,7 +125,7 @@ npm run db:seed -- --fixture p01-lane1
 
 `db:migrate` runs the checked-in Drizzle migration journal under an advisory lock. `db:seed` inserts one idempotent UK/GBP fixture-lane marker and prints the stored row. Neither creates fake account identities or shopping results. Both require the explicit lane DSN. The HTTP foundation does not require these dependencies yet. Mailpit captures local email only; P01 sends none. The seller's `/product` route is fixture data, not a production recheck transport; it is never imported into `src/`. A future recheck adapter must stay fixture-only. Stop dependencies with `docker compose -p scoat-p01-lane1 down -v` using the same selected ports/environment. Remove only the lane's volumes. Docker/Compose execution is untested in environments without Docker.
 
-`npm run start:worker` exits nonzero with an explicit P08-unavailable message. GitHub Actions runs install, build, typecheck, lint, tests, repeated Postgres migrations/seeds, HTTP verification and perf on standard `ubuntu-latest`. No runner registration, caches, uploaded artifacts or external services are configured. CI's fixture passes do not discharge the real-host gates.
+`npm run start:worker` starts the P08 pg-boss watch worker from `DATABASE_URL` and `SCOAT_WATCH_CONFIG`. It exits before installing the queue or writing a submission marker when `resendApiKey` is null. `Watches.send` also refuses an absent mail transport before the marker, so no alert is reported as "may still arrive" without a provider call. Run the server and worker from the same watch config. GitHub Actions runs install, build, typecheck, lint, tests, repeated Postgres migrations/seeds, HTTP verification and perf on standard `ubuntu-latest`. No runner registration, caches, uploaded artifacts or external services are configured. CI's fixture passes do not discharge the real-host gates.
 
 ## P02 immutable knowledge
 

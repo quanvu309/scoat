@@ -446,6 +446,7 @@ export function checkErasureCoordinator(source) {
   await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')",[...prefix,pseudonym,keyVersion]);
  }
  const authentication = await deleteAuthentication(client,scope,identities.rows);
+ const watches = await deleteWatches(client,scope);
  const memory = await deleteMemory(client,scope);
  const hunts = await deleteHunts(client,scope);
  await client.query("UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2",prefix);
@@ -570,4 +571,175 @@ export function checkControlImports(file,source) {
  for(const node of nodes.filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
   if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
  }
+}
+
+export function checkWatchSender(source) {
+ const nodes = parsedNodes(source);
+ const send = nodes.find(node => node.type === "ClassMethod" && node.key.name === "send");
+ const inner = astNodes(send);
+ const submit = inner.find(node => node.type === "CallExpression" && member(node.callee?.object, "this", "deps") && node.callee.property?.name === "submit") ?? inner.find(node => node.type === "CallExpression" && node.callee?.property?.name === "submit");
+ if (!send || !submit) throw new Error("Watches.send must submit through the delivery boundary");
+ const markers = inner.filter(node => (node.type === "StringLiteral" || node.type === "TemplateLiteral") && /SET state='submitting',marked_at=/.test(node.value ?? node.quasis?.map(part => part.value.raw).join("")));
+ const marker = markers[0];
+ const markerTransaction = inner.find(node => node.type === "CallExpression" && node.callee?.name === "retryTransaction" && node.start < (marker?.start ?? 0) && node.end > (marker?.end ?? 0));
+ const fencedMarker = markerTransaction && astNodes(markerTransaction).some(node => node.type === "CallExpression" && node.callee?.name === "activeAccount" && node.start < marker.start);
+ if (markers.length !== 1 || !markerTransaction || !fencedMarker || markerTransaction.end > submit.start) throw new Error("Commit one fenced durable submission marker before provider network IO");
+ const before = inner.filter(node => node.start > markerTransaction.end && node.end < submit.start);
+ if (!before.some(node => node.type === "CallExpression" && node.callee?.name === "activeAccount")) throw new Error("Recheck the active account incarnation inside the send fence before submission");
+ const revision = node => node.type === "BinaryExpression" && node.operator === "!==" && member(node.left, "recipient", "revision") && member(node.right, "alert", "recipient_revision");
+ const gate = before.find(node => node.type === "IfStatement" && astNodes(node.test).some(revision));
+ if (!gate) throw new Error("Refuse a changed recipient revision inside the send fence");
+ if (!astNodes(gate.consequent).some(node => node.type === "ReturnStatement")) throw new Error("Return before submission when the send fence recheck fails");
+ for (const [object, property, value, label] of [["watch", "status", "active", "watch status"], ["watch", "live", true, "watch expiry"], ["alert", "open", true, "retry deadline"]]) {
+  if (!astNodes(gate.test).some(node => node.type === "BinaryExpression" && node.operator === "!==" && fieldOf(node.left, object, property) && node.right?.value === value)) throw new Error(`Recheck the ${label} inside the send fence before submission`);
+ }
+ const mailGate = inner.find(node => node.type === "IfStatement" && node.test.type === "UnaryExpression" && node.test.operator === "!" && node.test.argument?.type === "MemberExpression" && node.test.argument.property?.name === "canSubmit" && node.consequent.type === "ThrowStatement");
+ if (!mailGate || mailGate.start > markerTransaction.start) throw new Error("Refuse an absent mail transport before writing a submission marker");
+ const [message, , key, signal] = submit.arguments;
+ if (!astNodes(message).some(node => member(node, "alert", "message")) || !astNodes(key).some(node => member(node, "alert", "provider_key"))) throw new Error("Submit the immutable stored payload and provider key on every retry");
+ if (signal?.type !== "CallExpression" || !member(signal.callee, "AbortSignal", "timeout") || !member(signal.arguments[0], "watchLimits", "submitMilliseconds")) throw new Error("Bound provider submission with the watch submit deadline");
+ if (!inner.some(node => node.type === "CallExpression" && member(node.callee, "client", "on") && node.arguments[0]?.value === "error")) throw new Error("Handle sender connection loss without crashing the worker");
+ const guarded = inner.find(node => node.type === "TryStatement" && node.block.start < submit.start && node.block.end > submit.end);
+ if (!astNodes(guarded?.finalizer).some(node => node.type === "CallExpression" && member(node.callee, "client", "release"))) throw new Error("Release the fenced sender connection on every return path");
+}
+
+function fieldOf(node, object, property) {
+ return (node?.type === "MemberExpression" || node?.type === "OptionalMemberExpression") && node.object?.name === object && node.property?.name === property && !node.computed;
+}
+function sqlOf(owner) {
+ return astNodes(owner).filter(node => node.type === "StringLiteral" || node.type === "TemplateLiteral").map(node => ({ node, text: node.value ?? node.quasis.map(part => part.value.raw).join("${}") }));
+}
+function method(nodes, name) {
+ return nodes.find(node => (node.type === "ClassMethod" && node.key.name === name) || (node.type === "FunctionDeclaration" && node.id?.name === name));
+}
+export function checkWatchLockOrder(watches) {
+ const nodes = parsedNodes(watches);
+ const locking = owner => sqlOf(owner).filter(item => /\b(UPDATE|DELETE|INSERT)\b|FOR (SHARE|UPDATE)/.test(item.text) && !/pg_advisory/.test(item.text)).sort((a, b) => a.node.start - b.node.start);
+ const plan = locking(method(nodes, "plan"));
+ if (!plan.length || !/FROM hunt_accounts/.test(plan[0].text) || !/ORDER BY a\.account,a\.incarnation/.test(plan[0].text) || !/FOR SHARE/.test(plan[0].text)) throw new Error("Plan must lock sorted account fences before watch, alert or queue rows");
+ const scope = sqlOf(method(nodes, "plan")).some(item => item.text === "(account,incarnation) IN (SELECT * FROM unnest($1::text[],$2::uuid[]))");
+ if (!scope || plan.slice(1).some(item => !item.text.includes("WHERE ${} AND"))) throw new Error("Plan must scope watch and alert work to the fenced accounts");
+ const horizon = plan.findIndex(item => /UPDATE watch_alerts/.test(item.text));
+ if (horizon < 1 || !/FROM watches w[\s\S]*FOR SHARE/.test(plan[horizon - 1].text)) throw new Error("Plan must lock watch rows before alert rows");
+ const planning = astNodes(method(nodes, "plan"));
+ const advancing = planning.find(node => node.type === "AssignmentExpression" && node.operator === "=" && node.left?.name === "cursor" && fieldOf(node.right, "page", "last"));
+ const loop = planning.find(node => node.type === "ForStatement" && node.test === null && node.start < plan[0].node.start && node.end > advancing?.end);
+ if (!plan[0].text.includes("(a.account,a.incarnation)>($1::text,$2::uuid)") || !loop || !advancing || sqlOf(method(nodes, "plan")).some(item => !/FROM hunt_accounts/.test(item.text) && /FROM (watches w|watch_alerts) WHERE/.test(item.text) && /\bLIMIT\b/.test(item.text))) throw new Error("Plan must advance account keyset pages and enqueue every fenced watch and alert");
+ const erase = locking(method(nodes, "deleteWatches"));
+ if (!erase.length || !/SELECT id FROM watches[\s\S]*FOR UPDATE/.test(erase[0].text)) throw new Error("Erasure must lock watch rows before alert, recipient and queue rows");
+}
+export function checkWatchRecipient(watches) {
+ const activate = method(parsedNodes(watches), "activate");
+ const repoint = sqlOf(activate).filter(item => /UPDATE watches SET recipient_revision/.test(item.text));
+ if (repoint.length !== 1 || /\bid=\$/.test(repoint[0].text) || !/status='active'/.test(repoint[0].text)) throw new Error("A recipient change must re-point every active watch, never only the new watch");
+ if (!sqlOf(activate).some(item => /UPDATE watch_alerts SET recipient_revision[\s\S]*state='pending'/.test(item.text))) throw new Error("A recipient change must re-point unsubmitted alerts");
+ const refusals = astNodes(activate).filter(node => node.type === "NewExpression" && node.callee?.name === "WatchRefusal" && node.arguments[0]?.value === "recipient-changed");
+ if (refusals.length < 2) throw new Error("Refuse a recipient move without the confirmed revision and explicit consent");
+}
+export function checkWatchEntry(codec, contract, dispatch, renderer) {
+ if (/watch\s*:/.test(codec)) throw new Error("Derive the canonical watch entry from the Memory watch aggregate, not a fixed codec reason");
+ if (!/watch:z\.discriminatedUnion\("available",\[z\.strictObject\(\{available:z\.literal\(true\),url:https\}\)/.test(contract)) throw new Error("Card controls must carry the canonical watch link when available");
+ if (!/watch: watchEntry\(/.test(dispatch) || !/controls\.watch\.available \? "Watch price: " \+ controls\.watch\.url/.test(dispatch)) throw new Error("Text and card controls must share one canonical watch entry");
+ if (/Watch unavailable<\/button>/.test(renderer) || !/open\(controls\.watch\.url\)/.test(renderer)) throw new Error("The live card must open the canonical watch link");
+}
+export function checkWatchBoundary(issuer, watches, memory) {
+ const issuerNodes = parsedNodes(issuer);
+ const watchBlocks = issuerNodes.filter(node => node.type === "IfStatement" && astNodes(node.test).some(part => part.type === "StringLiteral" && (part.value === "/account/watch" || part.value === "watch"))).map(node => issuer.slice(node.start, node.end)).join("\n");
+ if (!watchBlocks || /memory_commands|readFinishedResult|resolveWatchTarget|hunt_accounts/.test(watchBlocks) || /import[^;]*\b(readFinishedResult|resolveWatchTarget)\b/.test(issuer)) throw new Error("Keep watch preparation SQL in the Memory watch aggregate");
+ if (/z\.object\(\{ op: z\.literal\("watch"\)/.test(issuer + watches + memory) || !/watchCommandSchema\.parse/.test(watches)) throw new Error("Parse watch proposals with the authoritative strict command schema");
+ const prepare = method(parsedNodes(watches), "prepareWatch");
+ const callers = ["activate"].map(name => method(parsedNodes(watches), name));
+ if (!prepare || callers.some(owner => !astNodes(owner).some(node => node.type === "CallExpression" && node.callee?.name === "prepareWatch")) || !/prepareWatch\(client,caller,request\.hunt\)/.test(memory) || !/watches\.prepare\(target, hunt\)/.test(issuer)) throw new Error("Share one deep watch prepare operation across proposal, confirmation and activation");
+ if (!/if \(!\(error instanceof WatchRefusal\)\) throw error;/.test(issuer) || !/if \(!pending\) throw new WatchRefusal\("expired"\)/.test(issuer)) throw new Error("Render typed watch refusals and keep unrelated failures generic");
+ if (!/if \(watches && watches\.issuer !== issuer\) throw/.test(issuer) || !/url\.origin === value/.test(watches)) throw new Error("Use one authoritative issuer origin for watch unsubscribe links");
+ const one = method(parsedNodes(issuer), "oneClick");
+ const text = sqlOf(one).map(item => item.text).join("\n");
+ if (!one || !text.includes("multipart/form-data") || !text.includes("application/x-www-form-urlencoded") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === ">" && node.left?.name === "size") || !astNodes(one).some(node => node.type === "BinaryExpression" && node.operator === "!==" && fieldOf(node.left, "entries", "length") && node.right?.value === 1) || !/await oneClick\(req\);/.test(issuer)) throw new Error("Accept bounded RFC 8058 one-click in multipart and urlencoded forms with exactly one field");
+}
+export function checkWatchActivation(watches, issuer, server) {
+ const nodes = parsedNodes(watches);
+ const available = method(nodes, "available");
+ if (!available || !/return this\.deps\.config\.resendApiKey !== null;/.test(watches.slice(available.start, available.end))) throw new Error("Watch availability requires a configured worker mail key");
+ for (const name of ["prepare", "activate"]) {
+  const owner = method(nodes, name);
+  const first = owner?.body?.body?.[0];
+  if (!first || !/^if \(!this\.available\)/.test(watches.slice(first.start, first.end))) throw new Error("Refuse unconfigured watch preparation and activation before state access");
+ }
+ if (!/if \(!watches\?\.available\) \{\s*res\.writeHead\(503, watchHeaders\)/.test(issuer) || !/watches\?\.available === true/.test(server) || !/watches\?\.available && issued\.finished/.test(issuer)) throw new Error("Route browser, MCP and control links through watch availability");
+ const target = method(parsedNodes(issuer), "targetPence");
+ const body = target ? issuer.slice(target.start, target.end) : "";
+ if (!/watchTargetPence\.safeParse/.test(body) || !/if \(!amount\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body) || !/if \(!pence\.success\) throw new WatchRefusal\("invalid-target"\)/.test(body)) throw new Error("Return typed invalid-target refusals for malformed and out-of-range prices");
+ const caught = parsedNodes(issuer).some(node => node.type === "TryStatement" && node.handler && issuer.slice(node.handler.start, node.handler.end).includes("error instanceof WatchRefusal") && node.block.body.some(statement => statement.type === "VariableDeclaration" && statement.declarations.some(declaration => declaration.init?.type === "CallExpression" && declaration.init.callee?.name === "targetPence")));
+ if (!caught) throw new Error("Parse browser target prices inside the typed watch-refusal boundary");
+ const refusal = method(parsedNodes(issuer), "watchRefusalPage");
+ const refusalBody = refusal ? issuer.slice(refusal.start, refusal.end) : "";
+ if (!refusalBody.includes('form method="post" action="/account/watch"') || !refusalBody.includes('escapeHtml(correction.confirmation)') || !refusalBody.includes('correction.moveRecipient') || !issuer.includes('watchRefusalPage(error.reason, retry, { confirmation: fields.confirmation, moveRecipient: fields.recipient === "move" })')) throw new Error("Render an invalid-target correction form retaining the confirmation and recipient choice");
+}
+export function checkWatchWorker(worker, delivery) {
+ const start = method(parsedNodes(worker), "startWorker");
+ const first = start?.body.body[0];
+ if (first?.type !== "IfStatement" || !/canSubmit/.test(worker.slice(first.test.start, first.test.end)) || first.consequent.type !== "ThrowStatement") throw new Error("Refuse worker startup without a mail transport before queue work");
+ if (!/if \(config\.resendApiKey === null\) throw/.test(worker)) throw new Error("Refuse production worker startup without a mail key");
+ if (/mail-unconfigured/.test(delivery)) throw new Error("An absent mail transport must never become ambiguous provider acceptance");
+}
+export function checkWatchQueueIsolation(queue, fixture, drivers = []) {
+ if (drivers.some(source => /\b(?:FROM|UPDATE|INTO|JOIN) pgboss\./.test(source))) throw new Error("Queue verification and performance drivers must use the fixture namespace");
+ if (!/SELECT current_schema\(\) AS schema/.test(queue) || !/createHash\("sha256"\)\.update\(schema\)/.test(queue) || !/schema === "public" \? "pgboss"/.test(queue)) throw new Error("Derive each queue namespace from its application schema, preserving public production queues");
+ if ((queue.match(/await queueSchemaFor\(/g) ?? []).length !== 2) throw new Error("Resolve the same queue namespace for enqueue and scoped erasure");
+ if (!fixture.includes("const queueSchema = await queueSchemaFor(f.store.pool);") || !fixture.includes("DROP SCHEMA IF EXISTS ${queueSchema} CASCADE") || fixture.includes("DROP SCHEMA IF EXISTS pgboss")) throw new Error("Fixtures must drop only their own derived queue schema");
+}
+
+export function checkWatchErasure(watches, queue, erasure) {
+ const nodes = parsedNodes(watches);
+ const remove = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "deleteWatches");
+ const cancel = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "cancelWatch");
+ for (const owner of [remove, cancel]) if (!astNodes(owner).some(node => node.type === "AwaitExpression" && node.argument?.callee?.name === "deleteScopedJobs")) throw new Error("Delete scoped queue jobs in every watch cancellation and erasure");
+ const queueNodes = parsedNodes(queue);
+ const scoped = queueNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "deleteScopedJobs");
+ const deletes = sqlOf(scoped).filter(item => /DELETE FROM/.test(item.text));
+ if (deletes.length !== 1 || /\bname\b/.test(deletes[0].text) || !/data @> \$1::jsonb/.test(deletes[0].text)) throw new Error("Queue erasure must delete scoped jobs in every queue name and state, including legacy dead-letter rows");
+ if (!astNodes(scoped).some(node => node.type === "ThrowStatement")) throw new Error("Queue erasure must prove zero survivors across all job states");
+ if (/deadLetter/.test(queue)) throw new Error("Keep dead-letter routing disabled for account-scoped watch jobs");
+ if (!erasure.includes("watchMail: { mayStillArrive: watches.mayStillArrive")) throw new Error("Report unresolved watch submission markers in the erasure receipt");
+}
+
+export function checkPublicFetch(source) {
+ if (/addSubnet\("::ffff:/.test(source)) throw new Error("Do not block IPv4-mapped IPv6 with a BlockList subnet; check the embedded IPv4 explicitly");
+ const nodes = parsedNodes(source);
+ const fetch = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "fetchPublic");
+ const hostCheck = astNodes(fetch).find(node => node.type === "CallExpression" && member(node.callee, "hosts", "has"));
+ const loop = astNodes(fetch).find(node => node.type === "ForStatement");
+ if (!hostCheck || !loop || hostCheck.start < loop.start || hostCheck.end > loop.end) throw new Error("Check the public host allowlist on every redirect hop");
+ const get = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "get");
+ if (!astNodes(get).some(node => node.type === "ObjectProperty" && node.key?.name === "lookup" && node.value?.name === "pin")) throw new Error("Connect only to the validated pinned address");
+ if (!astNodes(get).some(node => node.type === "ObjectProperty" && node.key?.name === "rejectUnauthorized" && node.value?.value === true)) throw new Error("Verify seller TLS hostnames");
+}
+
+export function checkWatchResponses(delivery, issuer) {
+ const accepted = parsedNodes(delivery).find(node => node.type === "VariableDeclarator" && node.id?.name === "accepted");
+ if (!astNodes(accepted?.init).some(node => node.type === "CallExpression" && member(node.callee, "z", "strictObject"))) throw new Error("Parse the Resend accepted response with a strict object schema");
+ const route = parsedNodes(issuer).find(node => node.type === "IfStatement" && astNodes(node.test).some(part => part.type === "StringLiteral" && part.value === "/account/watch"));
+ const headers = astNodes(route?.consequent).filter(node => node.type === "CallExpression" && member(node.callee, "res", "writeHead"));
+ const declared = name => parsedNodes(issuer).find(node => node.type === "VariableDeclarator" && node.id?.name === name)?.init;
+ const object = argument => argument?.type === "Identifier" ? declared(argument.name) : argument;
+ if (!headers.length || headers.some(call => !astNodes(object(call.arguments[1])).some(node => node.type === "ObjectProperty" && node.key?.value === "cache-control" && node.value?.value === "no-store"))) throw new Error("Serve the watch activation response with cache-control no-store");
+}
+
+export function checkWatchVerification(skill, index, runner) {
+ if (!skill.split("---")[1]?.includes("P08") || !skill.split("## Completion")[0].includes("features/watches.md") || !index.includes("[price watches](watches.md)") || !runner.includes('process.argv[2] === "p08"')) throw new Error("Route P08 watch changes to features/watches.md and the runnable p08 branch");
+}
+
+if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
+ checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
+ checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
+ checkWatchLockOrder(fs.readFileSync("src/memory/watches.ts", "utf8"));
+ checkWatchRecipient(fs.readFileSync("src/memory/watches.ts", "utf8"));
+ checkWatchEntry(fs.readFileSync("src/controls/codec.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/renderer.tsx", "utf8"));
+ checkWatchActivation(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
+ checkWatchBoundary(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/memory/index.ts", "utf8"));
+ checkWatchWorker(fs.readFileSync("src/worker.ts", "utf8"), fs.readFileSync("src/delivery/index.ts", "utf8"));
+ checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));
+ checkWatchResponses(fs.readFileSync("src/delivery/index.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"));
+ checkWatchVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
 }

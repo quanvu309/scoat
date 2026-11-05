@@ -5,11 +5,11 @@ import type { Adapter, ClientMetadata } from "oidc-provider";
 import { chatgptRedirect } from "./config.js";
 import type { AuthConfig } from "./config.js";
 
-export function publicClient(client: AuthConfig["clients"][number]) {
+export function publicClient(client: AuthConfig["clients"][number] & { application_type?: "native" }) {
   return {
     ...client,
     response_types: ["code"],
-    grant_types: ["authorization_code"],
+    grant_types: ["authorization_code", "refresh_token"],
     token_endpoint_auth_method: "none",
     subject_type: "public",
   } satisfies ClientMetadata;
@@ -29,17 +29,19 @@ const unsupported = new Set([
   "tls_client_certificate_bound_access_tokens", "dpop_bound_access_tokens", "authorization_signed_response_alg", "authorization_encrypted_response_alg", "authorization_encrypted_response_enc",
   "registration_access_token", "registration_client_uri", "client_id_issued_at", "client_secret_expires_at",
 ]);
-const callback = z.string().max(200).refine(value => value === chatgptRedirect || /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/.test(value)).brand<"ChatgptCallback">();
+const callback = z.string().max(200).refine(value => value === chatgptRedirect || /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/.test(value) || value === "https://claude.ai/api/mcp/auth_callback" || /^http:\/\/(localhost|127\.0\.0\.1)(?::([1-9][0-9]{0,4}))?\/callback$/.test(value) && URL.canParse(value)).brand<"HostCallback">();
+const loopback = (redirect: string) => redirect.startsWith("http:");
+
 const metadata = z.strictObject({
   redirect_uris: z.tuple([callback]),
   response_types: z.tuple([z.literal("code")]).optional(),
   grant_types: z.array(z.enum(["authorization_code", "refresh_token"])).min(1).max(2).refine(values => values.includes("authorization_code") && new Set(values).size === values.length).optional(),
   token_endpoint_auth_method: z.literal("none").optional(),
-  application_type: z.literal("web").optional(),
+  application_type: z.enum(["web", "native"]).optional(),
   subject_type: z.literal("public").optional(),
   scope: z.string().min(1).max(128).refine(value => {
     const scopes = value.split(" ");
-    return new Set(scopes).size === scopes.length && scopes.every(scope => ["openid", "scoat:read", "scoat:write"].includes(scope));
+    return new Set(scopes).size === scopes.length && scopes.every(scope => ["openid", "offline_access", "scoat:read", "scoat:write"].includes(scope));
   }).optional(),
   client_name: display.optional(),
   client_uri: display.optional(),
@@ -50,6 +52,7 @@ const metadata = z.strictObject({
   software_id: display.optional(),
   software_version: display.optional(),
 }).catchall(extension).superRefine((value, ctx) => {
+  if (value.application_type !== undefined && (value.application_type === "native") !== loopback(value.redirect_uris[0])) ctx.addIssue({ code: "custom", path: ["application_type"], message: "Application type must match callback" });
   if (Object.keys(value).length > 40) ctx.addIssue({ code: "custom", message: "Too many metadata members" });
   for (const key of Object.keys(value)) {
     if (key.length > 128 || unsupported.has(key)) ctx.addIssue({ code: "custom", path: [key], message: "Unsupported security metadata" });
@@ -77,6 +80,12 @@ export class RegisteredClients {
   #clientFor(redirect: z.infer<typeof callback>) {
     if (redirect === chatgptRedirect) return this.#client;
     const key = this.#keys[0];
+    if (!redirect.startsWith("https://chatgpt.com/connector/oauth/")) {
+      const host = loopback(redirect) ? "claude-code" : "claude";
+      const encoded = Buffer.from(redirect).toString("base64url");
+      const mac = createHmac("sha256", key.secret).update(JSON.stringify(["scoat-host-client-v2", this.#issuer, this.#client.client_id, host, redirect])).digest("base64url");
+      return publicClient({ client_id: `scoat-cb.v2.${key.version}.${host}.${encoded}.${mac}`, redirect_uris: [redirect], ...(loopback(redirect) ? { application_type: "native" } : {}) });
+    }
     const id = redirect.slice("https://chatgpt.com/connector/oauth/".length);
     return publicClient({ client_id: `scoat-cb.v1.${key.version}.${id}.${this.#mac(key.secret, redirect)}`, redirect_uris: [redirect] });
   }
@@ -84,12 +93,23 @@ export class RegisteredClients {
   metadata(raw: unknown) {
     const parsed = metadata.safeParse(raw);
     if (!parsed.success) return parsed.error.issues.some(issue => issue.path[0] === "redirect_uris")
-      ? { error: "invalid_redirect_uri", error_description: "Only an exact supported ChatGPT callback is accepted" }
+      ? { error: "invalid_redirect_uri", error_description: "Only a supported ChatGPT or Claude callback is accepted" }
       : { error: "invalid_client_metadata", error_description: "Unsupported OAuth client metadata" };
-    return { ...this.#clientFor(parsed.data.redirect_uris[0]), scope: parsed.data.scope ?? "openid scoat:read scoat:write" };
+    return { ...this.#clientFor(parsed.data.redirect_uris[0]), scope: parsed.data.scope ?? "openid offline_access scoat:read scoat:write" };
   }
 
   resolve(id: string) {
+    const v2 = /^scoat-cb\.v2\.([A-Za-z0-9_-]{1,8})\.(claude|claude-code)\.([A-Za-z0-9_-]{1,270})\.([A-Za-z0-9_-]{43})$/.exec(id);
+    if (v2) {
+      const [, version, host, encoded, mac] = v2;
+      const key = this.#keys.find(value => value.version === version);
+      if (!key || !encoded || !mac) return undefined;
+      const parsed = callback.safeParse(Buffer.from(encoded, "base64url").toString("utf8"));
+      if (!parsed.success || (host === "claude-code" ? !loopback(parsed.data) : parsed.data !== "https://claude.ai/api/mcp/auth_callback")) return undefined;
+      const expected = createHmac("sha256", key.secret).update(JSON.stringify(["scoat-host-client-v2", this.#issuer, this.#client.client_id, host, parsed.data])).digest("base64url");
+      if (!timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return undefined;
+      return publicClient({ client_id: id, redirect_uris: [parsed.data], ...(loopback(parsed.data) ? { application_type: "native" } : {}) });
+    }
     const match = /^scoat-cb\.v1\.([A-Za-z0-9_-]{1,8})\.([A-Za-z0-9_-]{1,128})\.([A-Za-z0-9_-]{43})$/.exec(id);
     if (!match) return undefined;
     const [, version, connection, mac] = match;

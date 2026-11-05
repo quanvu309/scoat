@@ -341,7 +341,7 @@ export async function authFixture(databaseUrl, options = {}) {
     });
     const tokens = await response.json();
     assert.equal(response.status, 200, JSON.stringify(tokens));
-    return { token: tokens.access_token, steps, client };
+    return { token: tokens.access_token, refresh: tokens.refresh_token, steps, client };
   }
   async function link(current, candidate, pauseAtCandidate = false, beforeCandidate) {
     identity = current;

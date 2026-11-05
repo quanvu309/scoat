@@ -119,7 +119,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     discovery: registration ? { registration_endpoint: issuer + "/reg" } : {},
     responseTypes: ["code"],
     clientAuthMethods: ["none"],
-    scopes: ["openid"],
+    scopes: ["openid", "offline_access"],
+    rotateRefreshToken: true,
+    issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token"),
     extraParams: {
       state: (ctx, value) => {
         if (!value || ctx.oidc.params?.resource !== resource || ctx.oidc.params?.code_challenge_method !== "S256")
@@ -156,10 +158,11 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     ttl: {
       AccessToken: 900,
       AuthorizationCode: 60,
-      Grant: 3600,
+      Grant: 2592000,
+      RefreshToken: 2592000,
       IdToken: 900,
       Interaction: 300,
-      Session: 3600,
+      Session: 2592000,
     },
     interactions: {
       url: (_ctx, interaction) => `/interaction/${interaction.uid}`,
@@ -436,7 +439,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         JSON.stringify({
           resource,
           authorization_servers: [issuer],
-          scopes_supported: ["scoat:read", "scoat:write"],
+          scopes_supported: ["scoat:read", "scoat:write", "offline_access"],
           bearer_methods_supported: ["header"],
         }),
       );
@@ -491,7 +494,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
               clientId: String(details.params.client_id),
             });
         if (!grant) throw new Error("Missing consent grant");
-        grant.addOIDCScope("openid");
+        grant.addOIDCScope(String(details.params.scope ?? "").split(" ").filter(value => ["openid", "offline_access"].includes(value)).join(" "));
         const requested = String(details.params.scope ?? "")
           .split(" ")
           .filter((value) => ["scoat:read", "scoat:write"].includes(value));

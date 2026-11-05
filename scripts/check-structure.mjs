@@ -170,6 +170,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
+  checkConnectionPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/auth/registration.ts", "utf8"), fs.readFileSync("src/auth/adapter.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));
   checkAuthVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
@@ -414,7 +415,7 @@ export function checkAuthorizationPolicy(source) {
   const scopes = options.find(node => node.key?.name === "scopes")?.value;
   const features = options.find(node => node.key?.name === "features")?.value.properties ?? [];
   const disabled = ["registration", "dPoP", "pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
-  if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
+  if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid","offline_access"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
 }
 export function checkBrowserLink(source) {
   const nodes = parsedNodes(source);
@@ -832,4 +833,12 @@ export function checkCardOutputContract(adapter, card, contract, server = fs.rea
  if ([adapter,card].some(source => source.includes('"scoat/cardFailure"')) || !card.includes("cardOutput.safeParse(reply.structuredContent)")) throw new Error("Read card errors from the shared structured contract");
  if (!contract.includes('huntSnapshot as snapshotSchema } from "../mcp/outputs.js"')) throw new Error("Share the snapshot output owner with the card");
  if (adapter.includes("JSON.stringify(")) throw new Error("Serialize public results only at conform");
+}
+export function checkConnectionPolicy(issuer, registration, adapter, server) {
+  const nodes = parsedNodes(issuer);
+  const options = nodes.find(node => node.type === "NewExpression" && node.callee?.name === "Provider")?.arguments?.[1]?.properties ?? [];
+  const ttl = options.find(node => node.key?.name === "ttl")?.value.properties ?? [];
+  if (options.find(node => node.key?.name === "rotateRefreshToken")?.value.value !== true || ["RefreshToken", "Grant", "Session"].some(name => ttl.find(node => node.key?.name === name)?.value.value !== 2592000)) throw new Error("Rotate refresh tokens with 30-day parent lifetimes");
+  if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('["openid", "offline_access"].includes(value)') || !issuer.includes('issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token")') || !adapter.includes('["Grant", "Session", "RefreshToken"].includes(model) ? 2592000') || !server.includes('scope="scoat:read scoat:write offline_access"')) throw new Error("Ship refresh scopes, grants, persistence and bearer challenge together");
+  for (const text of ['https://claude.ai/api/mcp/auth_callback', 'localhost|127', '"native"', 'scoat-host-client-v2', 'scoat-chatgpt-client-v1', 'timingSafeEqual']) if (!registration.includes(text)) throw new Error("Keep signed ChatGPT and Claude callback registration and v1 compatibility");
 }

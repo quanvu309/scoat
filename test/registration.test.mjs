@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { createServer, request } from "node:http";
 import pg from "pg";
 import { postgresAdapter } from "../dist/auth/adapter.js";
@@ -31,7 +32,7 @@ test("registration selector is optional and rejects ambiguous or different clien
 });
 
 test("registration returns stable public metadata and ignores bounded display fields", () => {
-  const expected = { ...client, scope: "openid scoat:read scoat:write" };
+  const expected = { ...client, scope: "openid offline_access scoat:read scoat:write" };
   assert.deepEqual(registrationMetadata(minimal, client), expected);
   assert.deepEqual(registrationMetadata(minimal, client), expected);
   assert.deepEqual(registrationMetadata({ ...minimal, token_endpoint_auth_method: "none", response_types: ["code"], grant_types: ["authorization_code"], application_type: "web", subject_type: "public", client_name: "Untrusted display name", client_uri: "https://unreachable.invalid", contacts: ["display@example.invalid"], software_id: "test", harmless_extension: "ignored", extension_list: ["bounded"] }, client), expected);
@@ -47,7 +48,7 @@ test("registration rejects callback variations and security metadata", () => {
     { token_endpoint_auth_method: "client_secret_basic" }, { token_endpoint_auth_method: "private_key_jwt" },
     { grant_types: ["refresh_token"] }, { grant_types: ["client_credentials"] },
     { response_types: ["token"] }, { application_type: "native" }, { subject_type: "pairwise" },
-    { scope: "offline_access" }, { scope: "scoat:read unknown" }, { scope: "scoat:read scoat:read" }, { scope: "" },
+    { scope: "scoat:read unknown" }, { scope: "scoat:read scoat:read" }, { scope: "" },
     { client_id: "codex" }, { client_secret: "secret" }, { software_statement: "unsigned" }, { jwks: {} }, { jwks_uri: "https://attacker.example/keys" },
     { request_uris: ["https://attacker.example"] }, { client_name: "x".repeat(1025) }, { contacts: [1] }, { unknown_extension: {} }, { unknown_extension: "x".repeat(1025) }, { request_object_signing_alg: "none" }, { dpop_bound_access_tokens: true },
   ]) assert.equal(registrationMetadata({ ...minimal, ...extra }, client).error, "invalid_client_metadata", JSON.stringify(extra));
@@ -75,7 +76,7 @@ test("real HTTP registration has bounded JSON, precise refusals and no managemen
     for (const response of registered) {
       assert.equal(response.status, 201);
       assert.equal(response.headers.get("cache-control"), "no-store");
-      assert.deepEqual(await response.json(), { ...client, scope: "openid scoat:read scoat:write" });
+      assert.deepEqual(await response.json(), { ...client, scope: "openid offline_access scoat:read scoat:write" });
     }
     for (const method of ["GET", "PUT", "DELETE"]) {
       const response = await fetch(endpoint, { method });
@@ -86,7 +87,7 @@ test("real HTTP registration has bounded JSON, precise refusals and no managemen
     assert.equal((await post(JSON.stringify(minimal), { "content-type": "application/json; charset=UTF-8" })).status, 201);
     assert.equal((await post("{}", { "content-type": "text/plain" })).status, 415);
     assert.equal((await post("{}", { "content-type": "application/json", "content-encoding": "gzip" })).status, 415);
-    for (const body of ["", "{", "null", "[]", JSON.stringify({ ...minimal, scope: "offline_access" })]) {
+    for (const body of ["", "{", "null", "[]", JSON.stringify({ ...minimal, scope: "unsupported" })]) {
       const response = await post(body);
       assert.equal(response.status, 400);
       assert.equal(response.headers.get("cache-control"), "no-store");
@@ -140,7 +141,7 @@ test("callback-bound clients are deterministic, issuer-bound and immutable acros
   const raw = { redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"] };
   const result = clients.metadata(raw);
   assert.equal(result.error, undefined);
-  assert.deepEqual(result.grant_types, ["authorization_code"]);
+  assert.deepEqual(result.grant_types, ["authorization_code", "refresh_token"]);
   assert.equal(result.token_endpoint_auth_method, "none");
   assert.deepEqual(clients.metadata(raw), result);
   assert.ok(result.client_id.length <= 200);
@@ -184,4 +185,41 @@ test("refusal diagnostics expose bounded field names and no attacker values", ()
   const json = JSON.stringify(diagnostic);
   for (const secret of ["never-print-this", "secret.example", "hidden", "arbitrary"]) assert.equal(json.includes(secret), false);
   assert.equal(clients.refusal(minimal), undefined);
+});
+
+
+test("Claude hosted and native callbacks register with refresh grants", () => {
+  for (const redirect of ["https://claude.ai/api/mcp/auth_callback", "http://localhost:54321/callback", "http://127.0.0.1:54322/callback"]) {
+    const result = clients.metadata({ redirect_uris: [redirect], scope: "openid offline_access scoat:read scoat:write" });
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.grant_types, ["authorization_code", "refresh_token"]);
+    assert.deepEqual(clients.resolve(result.client_id).redirect_uris, [redirect]);
+  }
+});
+
+
+test("existing v1 IDs retain their original signing contract", () => {
+  const redirect = "https://chatgpt.com/connector/oauth/existing_connection";
+  const mac = createHmac("sha256", selected.registrationKeys[0].secret).update(JSON.stringify(["scoat-chatgpt-client-v1", selected.issuer, client.client_id, redirect])).digest("base64url");
+  const id = `scoat-cb.v1.first.existing_connection.${mac}`;
+  assert.deepEqual(clients.resolve(id), publicClient({ client_id: id, redirect_uris: [redirect] }));
+});
+
+test("Claude v2 IDs bind callback, host, issuer and retained registration keys", () => {
+  const rotated = new RegisteredClients(authConfigSchema.parse({ ...selected, registrationKeys: [{ version: "second", secret: "s".repeat(64) }, ...selected.registrationKeys] }));
+  const retired = new RegisteredClients(authConfigSchema.parse({ ...selected, registrationKeys: [{ version: "second", secret: "s".repeat(64) }] }));
+  const foreign = new RegisteredClients(authConfigSchema.parse({ ...selected, issuer: "https://other.example" }));
+  for (const redirect of ["https://claude.ai/api/mcp/auth_callback", "http://localhost:54321/callback", "http://127.0.0.1:54322/callback"]) {
+    const raw = { redirect_uris: [redirect] };
+    const result = clients.metadata(raw);
+    const { scope, ...resolved } = result;
+    assert.deepEqual(clients.metadata(raw), result);
+    assert.match(result.client_id, /^scoat-cb\.v2\./);
+    assert.deepEqual(rotated.resolve(result.client_id), resolved);
+    assert.notEqual(rotated.metadata(raw).client_id, result.client_id);
+    assert.equal(retired.resolve(result.client_id), undefined);
+    assert.equal(foreign.resolve(result.client_id), undefined);
+    for (const id of [result.client_id + "x", result.client_id.replace(".claude.", ".claude-code."), result.client_id.replace(".claude-code.", ".claude."), result.client_id.replace(Buffer.from(redirect).toString("base64url"), Buffer.from(redirect + "/other").toString("base64url"))].filter(id => id !== result.client_id)) assert.equal(clients.resolve(id), undefined);
+  }
+  for (const redirect of ["http://localhost:65536/callback", "http://localhost:0/callback", "http://127.0.0.1:1234/callback?x=1", "http://localhost.evil.example:1234/callback", "https://claude.ai/api/mcp/auth_callback/", "https://claude.ai:443/api/mcp/auth_callback"]) assert.equal(clients.metadata({ redirect_uris: [redirect] }).error, "invalid_redirect_uri");
 });

@@ -25,5 +25,8 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Conditional rewards lose attribution | Retain scenario selection, later rewards and perks together | checkScenarioProjection; original conditional shape; exact-set reward regression |
 | Invalid sellers or extra slots count as complete | Check exact recipe slots and exclude the original shop using canonical seller identity | checkViewCoverage; original signatures and slot loop; original-shop, duplicate and extra-slot regression |
 | Fresh hosted runner lacks ~/tmp | Allocate task scratch with scratchDirectory, which creates its parent | checkScratchAllocation; original mkdtemp calls; absent-parent concurrent allocation regression |
+| Finish disagrees with inferred seller coverage | Use canonical HuntView.progress for the finish decision | checkDurableCommands; original nullable seller call; PostgreSQL unspecified-shop regression |
+| Race harness releases before database contention | Prove a PostgreSQL lock conflict before signaling a contended barrier | checkRaceBarriers; both original premature signals; real NOWAIT conflicts retained in verification receipts |
+| Lock guidance prescribes superseded behavior | Document exclusive hunt fences for finish and stop | checkTransactionGuidance; original every-row sentence |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

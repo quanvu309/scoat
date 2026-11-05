@@ -54,7 +54,7 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **run**: TODO record: refuse if row skipped by person or hunt finished; checkEvidence each offer; CAS the row.
 - **run**: TODO   on conflict return Failure{conflict, next:"read the hunt and retry this row"} with no partial write.
 - **run**: TODO   after Stop, reject every found outcome, including corrections; accept named gaps. Stop does not cancel the host process.
-- **run**: TODO finish: transact lockAll; finishable(rows) else Failure{incomplete, next: names open rows};
+- **run**: TODO finish: READ COMMITTED transaction with exclusive hunt fence; finishable(rows) else Failure{incomplete, next: names open rows};
 - **run**: TODO   priceQuotes + pickBest (or the selection); mint the ready link via delivery; store final.
 - **run**: TODO Every reply is the fresh renderView, so the agent always sees the directive.
 - **control**: Person controls from the card. Skip is sticky and wins over same-row evidence. Stop asks the agent to name gaps and finish.
@@ -64,11 +64,11 @@ Design intent moved out of the code. The code has no comments; names and interfa
 
 ## src/hunt/store.ts
 
-- **SlotRecord**: @internal Owned by hunt/index.ts only. No other module may import this file. Storage model (base from candidate C): one record per row with its own revision, so parallel subagents on different rows never conflict. Finish locks every row of the hunt in one transaction.
+- **SlotRecord**: @internal Owned by hunt/index.ts only. The PostgreSQL adapter uses these records. Storage model (base from candidate C): one record per row with its own revision, so parallel subagents on different rows never conflict. Finish takes the exclusive hunt fence.
 - **skippedByPerson**: Sticky. Written only by Hunts.control. Wins over any agent write to the same row.
 - **Receipt**: Same key + same payload digest replays the stored reply. Same key + different digest is refused.
-- **putRow**: Fails with conflict when the stored revision differs. Increments revision on success.
-- **transact**: Serializable transaction. `lockAll` takes every row lock of a hunt (finish, stop).
+- **putRow**: Called only after revision validation behind the exclusive target-row lock; writes the next revision.
+- **transact**: READ COMMITTED; account fence first, hunt fence second, sorted addressed row locks last. Record takes shared account/shared hunt and exclusive target row; finish and Stop take exclusive hunt.
 
 ## src/index.ts
 
@@ -166,3 +166,17 @@ At most 16 benefits per anchor are composable. A seventeenth produces a named in
 Row slots structurally record checked proof, named gap or pending status; person skip belongs to the row. Missing, duplicate or unexpected slots remain unresolved. Other-seller slots require four distinct sellers excluding the original shop, with trimmed case-insensitive identity comparisons; explicit named gaps and person skips remain valid resolutions. All eight release rows survive every profile state. One HuntView owns all quotes, progress, gaps, directives, clean product links and money, including losing scenarios, unknown delivery and incomplete-optimum limitations. Its text renderer receives only that projection.
 
 Run `npm run verify -- p03` and `npm run perf -- p03` after build. These are compiled synthetic module checks. Separate model-agent and real-host sessions and fixed two-vCPU performance acceptance remain required external gates.
+
+## P04 durable command contract
+
+AccountScope contains account and incarnation from a trusted actor. createAccount explicitly assigns a fresh incarnation. Commands never create accounts. Tombstones survive erasure and fence every read, write and receipt replay.
+
+HuntStore.transact owns READ COMMITTED, account then hunt lifecycle fences, request-key insertion/lock, sorted addressed row locks, commit and rollback. Fence modes are shared/exclusive. Only SQLSTATE 40001/40P01 retries, at most three attempts. No external fetch or mail inside transactions. Start resolves knowledge/profile beforehand. No hunt update on ordinary record.
+
+Tx.snapshot uses one statement for all HuntView inputs including own writes. Render and store the exact Result receipt in the mutation transaction. Final stores the full immutable view. Canonical JSON SHA256 binds account/incarnation/requestKey to payload. Old replays return stored replies.
+
+The strict compatibility command carries requestKey, hunt and evidence containing current server-assigned offer IDs and nonempty exact-set proof. It takes exclusive hunt fence and validates exact IDs, seller, variant and P03 authority. Finish Selection refers to these IDs. Correction deletes compatibility touching superseded IDs atomically; no pairwise inference. None retains checked description/proof. Skip is sticky. Stop forbids all found including corrections. Row revisions are the only ordinary-write conflict tokens.
+
+None observations may supply a seller; other-sellers none requires it to resolve coverage, while original-shop rows default to intent.shop. Open reads retain historical offers but omit stale offers and expired compatibility from fresh pricing, with named evidence gaps. Finished snapshots and stored receipts remain immutable historical responses. inspect accepts an optional trusted command time for deterministic compiled verification.
+
+Start probes an existing receipt behind the account fence before loading knowledge or profile inputs. A replay remains available when those providers fail. A cache miss loads outside locks, then the mutation transaction rechecks the incarnation and request key; erasure or a concurrent winner still prevails.

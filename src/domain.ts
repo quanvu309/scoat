@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type { moneySchema, proofSchema, statusSchema, adjustmentSchema, offerInputSchema, selectionSchema, compatibilitySchema } from "./hunt/evidence.js";
 export type Id<Tag extends string> = string & z.$brand<Tag>;
 export type AccountId = Id<"AccountId">;
+export type Incarnation = Id<"Incarnation">;
+export type AccountScope = Readonly<{ account: AccountId; incarnation: Incarnation }>;
 export type HuntId = Id<"HuntId">;
 export type RowId = Id<"RowId">;
 export type OfferId = Id<"OfferId">;
@@ -99,11 +101,13 @@ export type ReadyLink = Readonly<{
     steps: readonly Step[];
 }>;
 export type Agent = Readonly<{
+    incarnation: Incarnation;
     account: AccountId;
     client: string;
     kind: "agent";
 }>;
 export type Person = Readonly<{
+    incarnation: Incarnation;
     account: AccountId;
     kind: "person";
     grant: Id<"AppGrant">;

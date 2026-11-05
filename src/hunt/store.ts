@@ -1,4 +1,4 @@
-import type { AccountId, HuntId, Instant, Intent, Offer, Profile, Quote, ReleaseId, RequestKey, RowId, RowRevision } from "../domain.js";
+import type { AccountId, HuntId, Instant, Intent, Profile, Quote, ReleaseId, RowId, RowRevision } from "../domain.js";
 import type { SlotCompletion } from "./index.js";
 export type SlotRecord = Readonly<{ slot: number; completion: SlotCompletion; seller: string | null }>;
 export type RowRecord = Readonly<{
@@ -24,32 +24,8 @@ export type HuntRecord = Readonly<{
         readonly at: Instant;
     };
 }>;
-export type Receipt = Readonly<{
-    account: AccountId;
-    key: RequestKey;
-    digest: string;
-    reply: unknown;
-}>;
-export interface Tx {
-    hunt(id: HuntId): Promise<HuntRecord | null>;
-    rows(id: HuntId): Promise<readonly RowRecord[]>;
-    offers(id: HuntId): Promise<readonly Offer[]>;
-    putRow(row: RowRecord, expected: RowRevision): Promise<"ok" | "conflict">;
-    addOffers(offers: readonly Offer[]): Promise<void>;
-    putHunt(hunt: HuntRecord): Promise<void>;
-    receipt(account: AccountId, key: RequestKey): Promise<Receipt | null>;
-    putReceipt(receipt: Receipt): Promise<void>;
-    recent(account: AccountId, limit: number): Promise<readonly HuntRecord[]>;
-    erase(account: AccountId): Promise<void>;
-}
-export interface HuntStore {
-    transact<T>(args: {
-        hunt: HuntId | null;
-        lockAll: boolean;
-    }, run: (tx: Tx) => Promise<T>): Promise<T>;
-}
-export function createHuntStore(args: {
-    databaseUrl: string;
-}): HuntStore {
-    throw new Error("not implemented");
-}
+export { PostgresHuntStore, StoreFailure } from "./postgres.js";
+export type { Tx, Scope, Snapshot } from "./postgres.js";
+export type HuntStore = import("./postgres.js").PostgresHuntStore;
+export function createHuntStore(args: { databaseUrl: string }): HuntStore { return new PostgresHuntStore(args); }
+import { PostgresHuntStore } from "./postgres.js";

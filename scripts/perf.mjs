@@ -1,3 +1,4 @@
+if (process.argv[2] === "p04") { await import("./perf-durable.mjs"); process.exit(process.exitCode ?? 0); }
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

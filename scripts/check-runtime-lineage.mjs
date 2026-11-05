@@ -17,6 +17,16 @@ const named = (nodes, name) => nodes.find(node => node.type === "FunctionDeclara
 const calls = (nodes, name) => nodes.filter(node => node.type === "CallExpression" && (node.callee?.name === name || node.callee?.property?.name === name));
 const queries = nodes => calls(nodes, "query").map(call => literal(call.arguments[0])).filter(text => text !== null);
 
+export function checkFixtureJournal({ fixture, journal }) {
+ const body = nodesOf(named(parsed(journal), "migrateFixtureDatabase"));
+ const gate = calls(body, "migrateAdmitted")[0];
+ if (!gate || gate.arguments[0]?.name !== "pool" || !calls(nodesOf(gate.arguments[1]), "applyPending").length || !calls(body, "releaseJournal").length || calls(body, "query").length) throw new Error("Fixture journals come from real migrations under the admission gate, never synthetic journal rows");
+ const fixtureNodes = parsed(fixture);
+ const initialize = calls(fixtureNodes, "migrateFixtureDatabase")[0];
+ const schema = calls(fixtureNodes, "query").find(call => nodesOf(call.arguments[0]).some(node => /CREATE SCHEMA/.test(literal(node) ?? "")));
+ if (!initialize || initialize.arguments[0]?.name !== "admin" || !schema || initialize.end > schema.start) throw new Error("Migrate the base database before creating the private fixture schema");
+}
+
 export function checkMigrationAdmission({ database, lineage, journal }) {
  const databaseNodes = parsed(database);
  if (databaseNodes.some(node => node.type === "ImportDeclaration" && /drizzle-orm/.test(node.source.value)) || /pg_advisory_lock\(/.test(database)) throw new Error("Migrate applies the release journal only through the lineage-owned admission gate");

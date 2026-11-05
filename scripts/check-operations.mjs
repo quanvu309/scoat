@@ -131,6 +131,8 @@ export function checkLaneTools(lanes) {
  }
  const recovery = lanes.find(item => item.file === "scripts/verify-recovery.mjs")?.source ?? "";
  if (!/baseArtifact\(checkout, root, "6ec8b75"\)/.test(recovery)) throw new Error("Build the labeled 6ec8b75 base artifact inside task scratch");
+ const tools = lanes.find(item => item.file === "scripts/lane-tools.mjs")?.source ?? "";
+ if (!tools.includes('"--userconfig=" + devNull') || !tools.includes('!/^npm_config_/i.test(key)') || !tools.includes('env: installEnv')) throw new Error("Install the comparison artifact without inherited npm configuration or user config");
 }
 
 const required = ["DATABASE_URL", "PORT", "SCOAT_LISTEN_HOST", "SCOAT_AUTH_CONFIG", "SCOAT_CONTROL_CONFIG", "SCOAT_WATCH_CONFIG", "SCOAT_TLS_KEY", "SCOAT_TLS_CERT", "SCOAT_PG_BIN"];

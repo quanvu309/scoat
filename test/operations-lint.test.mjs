@@ -78,6 +78,8 @@ test("P09 lanes resolve tools from explicit environment and build the base artif
  assert.doesNotThrow(() => checkLaneTools(lanes));
  for (const file of ["scripts/verify-lineage.mjs", "scripts/verify-recovery.mjs"]) assert.throws(() => checkLaneTools(lanes.map(item => item.file === file ? { file, source: original("bd69b97", file) } : item)), /never developer installs/);
  assert.throws(() => checkLaneTools(lanes.map(item => item.file === "scripts/verify-recovery.mjs" ? { file: item.file, source: replaced(item.source, "baseArtifact(checkout, root, \"6ec8b75\")", "baseArtifact(checkout, root, \"HEAD\")") } : item)), /6ec8b75 base artifact/);
+ assert.throws(() => checkLaneTools(lanes.map(item => item.file === "scripts/lane-tools.mjs" ? { ...item, source: original("3a28271", item.file) } : item)), /inherited npm configuration/);
+ for (const [from, to] of [['"--userconfig=" + devNull', '"--silent"'], ['!/^npm_config_/i.test(key)', 'true'], ['env: installEnv', 'env: process.env']]) assert.throws(() => checkLaneTools(lanes.map(item => item.file === "scripts/lane-tools.mjs" ? { ...item, source: replaced(item.source, from, to) } : item)), /inherited npm configuration/);
 });
 
 test("systemd units share one release and environment file, never restart exit 78, and the env example holds placeholders", () => {

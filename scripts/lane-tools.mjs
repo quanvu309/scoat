@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, symlink } from "node:fs/promises";
 import path from "node:path";
+import { devNull } from "node:os";
 
 const exec = promisify(execFile);
 const sha = async file => createHash("sha256").update(await readFile(file)).digest("hex");
@@ -30,7 +31,8 @@ export async function baseArtifact(checkout, scratch, revision) {
   await symlink(path.join(checkout, "node_modules"), path.join(base, "node_modules"));
   dependencies = "checkout node_modules installed from a lockfile identical to " + revision;
  } else {
-  await exec("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: base, timeout: 600000, maxBuffer: 1 << 24 });
+  const installEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
+  await exec("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--userconfig=" + devNull], { cwd: base, env: installEnv, timeout: 600000, maxBuffer: 1 << 24 });
   dependencies = "npm ci of the " + revision + " lockfile inside task scratch";
  }
  await exec(process.execPath, ["node_modules/typescript/bin/tsc", "-p", "tsconfig.server.json"], { cwd: base, timeout: 300000, maxBuffer: 1 << 24 });

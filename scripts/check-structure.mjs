@@ -6,7 +6,7 @@ import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
 import { checkPerfStory } from "./check-perf.mjs";
-import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage } from "./check-runtime-lineage.mjs";
+import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage, checkFixtureJournal } from "./check-runtime-lineage.mjs";
 import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
@@ -143,6 +143,7 @@ export function checkDriver(source) {
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   const runtimeLineage = { database: fs.readFileSync("scripts/database.mjs", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), journal: fs.readFileSync("src/db/journal.ts", "utf8") };
   checkMigrationAdmission(runtimeLineage);
+  checkFixtureJournal({ fixture: fs.readFileSync("scripts/auth-fixture.mjs", "utf8"), journal: fs.readFileSync("scripts/fixture-journal.mjs", "utf8") });
   checkJournalReadiness({ readiness: fs.readFileSync("src/readiness.ts", "utf8"), lineage: runtimeLineage.lineage, journal: runtimeLineage.journal });
   checkRequestLineage(fs.readFileSync("src/server.ts", "utf8"));
   const lineageSources = [];

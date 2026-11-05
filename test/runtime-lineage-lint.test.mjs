@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage } from "../scripts/check-runtime-lineage.mjs";
+import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage, checkFixtureJournal } from "../scripts/check-runtime-lineage.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const original = file => execFileSync("git", ["show", "655c490:" + file], { cwd: new URL("..", import.meta.url), encoding: "utf8", maxBuffer: 1 << 24 });
@@ -10,6 +10,14 @@ const replaced = (source, from, to) => { assert.ok(source.includes(from), "missi
 const migration = { database: read("scripts/database.mjs"), lineage: read("src/db/lineage.ts"), journal: read("src/db/journal.ts") };
 const readiness = { readiness: read("src/readiness.ts"), lineage: migration.lineage, journal: migration.journal };
 const server = read("src/server.ts");
+
+test("fixture journals certify real base migrations before private schema setup; the original synthetic journal fails", () => {
+ const inputs = { fixture: read("scripts/auth-fixture.mjs"), journal: read("scripts/fixture-journal.mjs") };
+ assert.doesNotThrow(() => checkFixtureJournal(inputs));
+ assert.throws(() => checkFixtureJournal({ ...inputs, journal: execFileSync("git", ["show", "9290141:scripts/fixture-journal.mjs"], { encoding: "utf8" }) }), /never synthetic journal rows/);
+ assert.throws(() => checkFixtureJournal({ ...inputs, fixture: replaced(inputs.fixture, "await migrateFixtureDatabase(admin);", "await migrateFixtureDatabase(store.pool);") }), /base database/);
+ assert.throws(() => checkFixtureJournal({ ...inputs, fixture: replaced(inputs.fixture, "await migrateFixtureDatabase(admin);", "") }), /base database/);
+});
 
 test("migrate admits through the lineage gate; the original unfenced drizzle migrate fails", () => {
  assert.doesNotThrow(() => checkMigrationAdmission(migration));

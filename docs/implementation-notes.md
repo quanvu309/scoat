@@ -98,9 +98,9 @@ P01 now implements strict wire contracts and unavailable/forbidden dispatch. Req
 - **unsubscribe**: Signed unsubscribe link from the email; cancels one watch, returns nothing.
 - **profileOf**: @internal Read by Hunts at start when the request carries no profile.
 
-## P01 foundation
+## Historical P01 foundation
 
-Use Node 24.21.0 and the committed npm lockfile. Run `npm ci`, `npm run build`, then `npm start`. The fixture server binds only `127.0.0.1:3000` (`PORT` overrides it), exposes stateless Streamable HTTP at `/mcp` and process readiness at `/healthz`. A ready process does not imply working shopping, OAuth, database or email. The response declares those limitations. No external deployment is supported in this phase.
+Use Node 24.21.0 and the committed npm lockfile. Run `npm ci`, `npm run build`, then the P01 driver. The historical fixture server binds only `127.0.0.1:3000` (`PORT` overrides it), exposes stateless Streamable HTTP at `/mcp` and process readiness at `/healthz`. A ready process does not imply working shopping, OAuth, database or email. The response declares those limitations. No external deployment is supported in this phase.
 
 `npm run verify -- doctor` launches a disposable compiled server, reads readiness, then closes it. `npm run verify -- p01` launches its own process on an ephemeral loopback port and exercises ten declared scenarios. `--lane 1` through `--lane 10` select one. CLI transcripts are primary evidence under `~/tmp/scoat-delivery/p01/run-*/lane-*/transcript.json`; no UI screenshots are claimed. Lanes 6 and 7 remain UNTESTED without real host sessions; lane 8 is PARTIAL with an isolated session-binding fixture, not production authentication. The summary always distinguishes fixture checks from full P01 verification. `SCOAT_EVIDENCE_DIR` selects an absolute evidence directory. Cleanup stops only the child processes each run created and preserves evidence.
 
@@ -180,3 +180,10 @@ The strict compatibility command carries requestKey, hunt and evidence containin
 None observations may supply a seller; other-sellers none requires it to resolve coverage, while original-shop rows default to intent.shop. Open reads retain historical offers but omit stale offers and expired compatibility from fresh pricing, with named evidence gaps. Finished snapshots and stored receipts remain immutable historical responses. inspect accepts an optional trusted command time for deterministic compiled verification.
 
 Start probes an existing receipt behind the account fence before loading knowledge or profile inputs. A replay remains available when those providers fail. A cache miss loads outside locks, then the mutation transaction rechecks the incarnation and request key; erasure or a concurrent winner still prevails.
+
+
+## P05 authenticated remote boundary
+
+Current production behavior and exact launch configuration are documented in [host support](host-support.md). `src/server.ts` requires configured HTTPS issuer/upstream identity and PostgreSQL; the P01 unauthenticated server exists only in `test/fixtures/legacy-server.mjs` for historical regression drivers. The production registry mounts guide and durable hunt commands, prompts, all historical pinned resources and bound read capabilities. Memory/watch variants and Person controls are unreleased.
+
+`npm run verify -- p05` produces actual local HTTPS OAuth/database interaction transcripts and a canonical final HuntView. `npm run perf -- p05` produces raw samples and runner/fixture/exclusion metadata. Each receipt identifies its exact source head and working-tree state. These commands are authoritative; unit tests do not replace them. Real upstream deployment, ten real-host/model-agent lanes, screenshots/video, fixed two-vCPU acceptance and independent parent review remain separate gates.

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { checkComments } from "../scripts/check-no-comments.mjs";
 import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkHuntAuthority, checkCandidateSearch, checkViewCoverage, checkCodeAuthority, checkScenarioProjection, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
@@ -67,4 +68,111 @@ test("scratch lint rejects the original GitHub runner failure", () => {
   assert.throws(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));'), /scratchDirectory/);
   assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
   assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
+});
+
+test("P05 evidence rejects the original shallow hosted checkout", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yaml", import.meta.url), "utf8");
+  const original = workflow.replace("        with:\n          fetch-depth: 0\n", "");
+  assert.notEqual(original, workflow);
+  assert.throws(() => checkWorkflow(original), /fetch-depth: 0/);
+  assert.doesNotThrow(() => checkWorkflow(workflow));
+});
+
+test("P05 rejects the original unauthenticated server and public authority constructors", async()=>{
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision}=await import("../scripts/check-structure.mjs");
+  assert.throws(()=>checkConsentDecision('if (req.method !== "POST" || req.headers.origin !== issuer || submitted.get("csrf") !== csrf) { throw new Error("refused"); }'),/explicit allow or deny/);
+  assert.throws(()=>checkRemoteBoundary('const server=createMcpServer();'),/verified issuer/);
+  assert.throws(()=>checkPublicAuthority('export { authenticate, person, mount } from "./mcp/index.js";'),/public barrel/);
+  assert.throws(()=>checkGrantRenewal('class Grants { async use() { if(op==="renew") return this.open(principal,hunt); } }'),/atomically/);
+  assert.throws(()=>checkGrantRenewal('class ReadGrants { async open() { const result = await this.pool.query("INSERT INTO oauth_read_grants SELECT account FROM hunt_accounts WHERE NOT erased"); return result; } }'),/Fence capability/);
+});
+
+
+test("P05 review guards reject the reproduced boundary bypasses", async () => {
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision,checkAuthorizationPolicy,checkLinkRetirement,checkAuthVerification,checkBrowserLink} = await import("../scripts/check-structure.mjs");
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const link = readFileSync(new URL("../src/auth/link.ts", import.meta.url), "utf8");
+  for (const injected of ["allowedOrigins.push(String(req.headers.origin));", "allowedHosts.push(String(req.headers.host));", "const alias = allowedOrigins; alias.push(auth.issuer);"]) {
+    assert.throws(() => checkHostConfig(server.replace("    res.setHeader", injected + "\n    res.setHeader")), /immutable/);
+  }
+  assert.throws(() => checkRemoteBoundary('const x="Authentication is not configured"; async function h(){ try { await auth.authenticate(req); } catch {} const server=createMcpServer(); }'), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal)", "authenticatedDispatch(store, ignored)")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("res.end(\"Authentication is not configured\");\n      return;", "res.end(\"Authentication is not configured\");")), /Fail closed/);
+  for (const value of ['export * from "./auth/identity.js";', 'export { principalFor as safe } from "./auth/identity.js";']) assert.throws(() => checkPublicAuthority(value), /public barrel/);
+  assert.doesNotThrow(() => checkPublicAuthority('export type * from "./auth/issuer.js";'));
+  assert.throws(() => checkGrantRenewal('/* NOT erased FOR SHARE */ class ReadGrants { async open(){ const p=this.pool; return p.query("INSERT INTO oauth_read_grants VALUES(1)"); } }'), /Fence capability/);
+  assert.throws(() => checkConsentDecision('const ok=["allow","deny"].includes(submitted.get("decision") ?? ""); await provider.interactionFinished(req,res,{consent:{}});'), /explicit allow or deny/);
+  assert.throws(() => checkConsentDecision(issuer.replace("!decision.success", "false")), /explicit allow or deny/);
+  assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
+  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
+  assert.doesNotThrow(() => checkConsentDecision(issuer));
+  assert.doesNotThrow(() => checkConsentDecision(issuer.replace("!decision.success", '!z.enum(["allow","deny"]).safeParse(submitted.get("decision")).success')));
+  assert.throws(() => checkRemoteBoundary(server.replace("!(error instanceof InvalidCredential)", "false")), /infrastructure failures/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('throw new errors.InvalidTarget("Explicit resource required");', 'return resource;')), /missing explicit resource/);
+  assert.throws(() => checkBrowserLink(issuer.replace('req.method === "GET"', 'req.method === "UNAVAILABLE"')), /Start linking in a browser/);
+  assert.throws(() => checkBrowserLink(issuer.replace('DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data', 'SELECT data FROM oauth_browser_flows WHERE state=$1')), /browser-bound confirmation/);
+  assert.throws(() => checkBrowserLink(issuer.replace("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
+  const skill = readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md", import.meta.url), "utf8");
+  assert.throws(() => checkAuthVerification(skill.replace("features/auth.md", "features/foundation.md"), index), /Route OAuth/);
+  assert.throws(() => checkAuthVerification("---\ndescription: excludes OAuth\n---\n## Completion", index), /Route OAuth/);
+});
+
+
+test("P05 guards reject residual alias, result and dead-condition bypasses", async () => {
+  const {checkRemoteBoundary,checkPublicAuthority,checkGrantRenewal,checkConsentDecision} = await import("../scripts/check-structure.mjs");
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const grants = readFileSync(new URL("../src/auth/grants.ts", import.meta.url), "utf8");
+  const replace = (source, from, to) => {
+    assert.ok(source.includes(from), `Missing mutation target: ${from}`);
+    const changed = source.replace(from, to);
+    assert.notEqual(changed, source);
+    return changed;
+  };
+  const open = "async open(principal: Principal, hunt: HuntId) {";
+  for (const access of ['const { pool } = this; await pool.query("SELECT 1");', 'await this["pool"].query("SELECT 1");']) {
+    assert.throws(() => checkGrantRenewal(replace(grants, open, open + access)), /Fence capability/);
+  }
+  for (const value of [
+    'import { createIssuer } from "./auth/issuer.js"; export { createIssuer };',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export { issue as safe };',
+    'import * as a from "./auth/issuer.js"; export { a };',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export default issue;',
+    'import { createIssuer as issue } from "./auth/issuer.js"; export const leak = issue;',
+  ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
+  assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
+  assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", "principal = forged; const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  const parser = 'const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));';
+  const named = replace(issuer, parser, 'const decisionSchema = z.enum(["allow", "deny"]); const decision = decisionSchema.safeParse(submitted.get("decision"));');
+  assert.doesNotThrow(() => checkConsentDecision(named));
+  const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
+  assert.doesNotThrow(() => checkConsentDecision(renamed));
+  assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
+  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", assignment + "const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  const rejection = issuer.slice(issuer.indexOf("        if (\n          req.method"), issuer.indexOf('        if (decision.data === "deny")'));
+  assert.ok(rejection.includes("!decision.success"));
+  assert.throws(() => checkConsentDecision(replace(issuer, rejection, "if (false) {" + rejection + "}")), /explicit allow or deny/);
+  assert.doesNotThrow(() => checkRemoteBoundary(server));
+  assert.doesNotThrow(() => checkGrantRenewal(grants));
+});
+
+
+test("P05 disables unsupported DPoP and preserves candidate linking refusals", async () => {
+  const {checkAuthorizationPolicy,checkLinkRetirement} = await import("../scripts/check-structure.mjs");
+  const issuer = readFileSync(new URL("../src/auth/issuer.ts", import.meta.url), "utf8");
+  const link = readFileSync(new URL("../src/auth/link.ts", import.meta.url), "utf8");
+  for (const change of ["", "dPoP: { enabled: true },"]) {
+    assert.ok(issuer.includes("dPoP: { enabled: false },"));
+    assert.throws(() => checkAuthorizationPolicy(issuer.replace("dPoP: { enabled: false },", change)), /unused issuer endpoints/);
+  }
+  for (const name of ["hunts", "others"]) {
+    assert.ok(link.includes(`if (${name}.rowCount)`));
+    for (const condition of ["false", `false && ${name}.rowCount`]) assert.throws(() => checkLinkRetirement(link.replace(`if (${name}.rowCount)`, `if (${condition})`)), /Refuse candidate accounts/);
+  }
+  assert.doesNotThrow(() => checkLinkRetirement(link));
 });

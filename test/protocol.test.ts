@@ -61,7 +61,8 @@ test("ordinary HTTP client sees app-only tool but cannot authorize it", async ()
     for (const tool of listed.tools) assert.deepEqual(tool.inputSchema, schemas()[tool.name]);
     assert.deepEqual(listed.tools.find(tool => tool.name === "scoat_card")._meta.ui.visibility, ["app"]);
     const result = await client.callTool({ name: "scoat_card", arguments: { op: "act", hunt: "h", grant: "arbitrary", requestKey: "k", action: { kind: "stop" } } });
-    assert.equal(result.structuredContent.error.code, "forbidden");
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent, undefined);
     const invalid = await client.callTool({ name: "scoat_hunt", arguments: { op: "list", account: "forged" } });
     assert.equal(invalid.isError, true);
     assert.equal(invalid.structuredContent, undefined);

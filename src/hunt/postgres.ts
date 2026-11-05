@@ -48,7 +48,7 @@ export class Tx {
   async receipt(reply: unknown) {
     if (this.scope.request) await this.client.query("UPDATE hunt_receipts SET reply=$4 WHERE account=$1 AND incarnation=$2 AND key=$3", [...this.prefix,this.scope.request.key,JSON.stringify(reply)]);
   }
-  async ids(): Promise<HuntId[]> { return (await this.client.query("SELECT id FROM durable_hunts WHERE account=$1 AND incarnation=$2 ORDER BY id", this.prefix)).rows.map(r => r.id); }
+  async ids(after = "", limit = 20): Promise<HuntId[]> { return (await this.client.query("SELECT id FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id>$3 ORDER BY id LIMIT $4", [...this.prefix,after,limit])).rows.map(r => r.id); }
   async erase() {
     await this.client.query("UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2", this.prefix);
     await this.client.query("DELETE FROM durable_hunts WHERE account=$1 AND incarnation=$2", this.prefix);

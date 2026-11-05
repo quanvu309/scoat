@@ -63,10 +63,21 @@ export function checkRequestLineage(server) {
  const refuse = named(nodes, "refuseLineage");
  if (!refuse || !/res\.writeHead\(503/.test(textOf(server, refuse))) throw new Error("A typed lineage refusal during a request reports 503");
  const create = nodesOf(named(nodes, "createHttpServer"));
- for (const name of ["route", "authenticate", "handleRequest", "invoke"]) {
+ for (const name of ["route", "authenticate", "handleRequest"]) {
   const call = calls(create, name)[0];
   const inner = call ? create.filter(node => node.type === "TryStatement" && node.block.start <= call.start && node.block.end >= call.end).sort((left, right) => right.start - left.start)[0] : undefined;
   const first = inner?.handler?.body.body[0];
   if (!inner?.handler?.param || first?.type !== "IfStatement" || textOf(server, first.test) !== "error instanceof LineageRefused" || !calls(nodesOf(first.consequent), "refuseLineage").length) throw new Error("Map a typed lineage refusal to 503 before any generic 400, 401 or 503 response: " + name);
  }
+ const call = calls(create, "invoke")[0];
+ const inner = call ? create.filter(node => node.type === "TryStatement" && node.block.start <= call.start && node.block.end >= call.end).sort((left, right) => right.start - left.start)[0] : undefined;
+ const first = inner?.handler?.body.body[0];
+ if (first?.type !== "IfStatement" || textOf(server, first.test) !== "error instanceof LineageRefused" || textOf(server, first.consequent) !== "invocationRefusal = error.reason;" || calls(nodesOf(inner?.handler), "refuseLineage").length) throw new Error("Capture the invoke lineage refusal without writing a response before the SDK finishes: invoke");
+ const adapter = calls(create, "getRequestListener")[0];
+ const body = adapter?.arguments[0]?.body?.body;
+ const response = body?.[0];
+ const refusal = body?.[1];
+ const fallback = body?.[2];
+ if (response?.type !== "VariableDeclaration" || !calls(nodesOf(response), "handleRequest").length || refusal?.type !== "IfStatement" || textOf(server, refusal.test) !== "invocationRefusal !== undefined" || !/return Response\.json\(\{ error: "service_unavailable", lineage: invocationRefusal \}, \{ status: 503 \}\)/.test(textOf(server, refusal.consequent)) || fallback?.type !== "ReturnStatement" || fallback.argument?.name !== "response") throw new Error("Translate the invoke refusal to one HTTP 503 after the SDK response resolves; preserve other SDK responses");
+
 }

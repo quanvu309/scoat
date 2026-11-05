@@ -34,3 +34,23 @@ export async function sealRace(pool, send) {
     holder.release();
   }
 }
+
+export async function invokeSealRace(pool, send) {
+  const holder = await pool.connect();
+  try {
+    await holder.query("BEGIN");
+    const { pid } = (await holder.query("SELECT pg_backend_pid() AS pid")).rows[0];
+    await holder.query("LOCK TABLE oauth_identities IN ACCESS EXCLUSIVE MODE");
+    const sending = send();
+    sending.catch(() => undefined);
+    const waiter = await contended(pool, "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) AND query LIKE '%oauth_identities%'", [pid], "authenticated tool dispatch waits for identity resolution");
+    const { sealId } = await seal(pool);
+    await holder.query("ROLLBACK");
+    return { ...await sending, sealId, contention: { holder: pid, request: waiter.pid } };
+  } catch (error) {
+    await holder.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    holder.release();
+  }
+}

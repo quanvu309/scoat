@@ -40,6 +40,15 @@ test("a mid-request lineage refusal maps to 503 on every request path; the origi
  assert.throws(() => checkRequestLineage(original("src/server.ts")), /reports 503/);
  assert.throws(() => checkRequestLineage(replaced(server, "      } catch (error) {\n        if (error instanceof LineageRefused) {\n          refuseLineage(res, error.reason);\n          return;\n        }\n        process.stderr.write(JSON.stringify({ event: \"authentication_request_refused\" }) + \"\\n\");", "      } catch (error) {\n        process.stderr.write(JSON.stringify({ event: \"authentication_request_refused\" }) + \"\\n\");")), /: route/);
  assert.throws(() => checkRequestLineage(replaced(server, "      if (error instanceof LineageRefused) {\n        refuseLineage(res, error.reason);\n        return;\n      }\n      if (!(error instanceof InvalidCredential)) {", "      if (!(error instanceof InvalidCredential)) {")), /: authenticate/);
- assert.throws(() => checkRequestLineage(replaced(server, "      } catch (error) {\n        if (error instanceof LineageRefused) refuseLineage(res, error.reason);\n        throw error;\n      } finally {", "      } finally {")), /: invoke/);
+ assert.throws(() => checkRequestLineage(replaced(server, "      } catch (error) {\n        if (error instanceof LineageRefused) invocationRefusal = error.reason;\n        throw error;\n      } finally {", "      } finally {")), /: invoke/);
  assert.throws(() => checkRequestLineage(replaced(server, "    } catch (error) {\n      if (error instanceof LineageRefused) {\n        refuseLineage(res, error.reason);\n        return;\n      }\n      process.stderr.write(JSON.stringify({ event: \"mcp_request_refused\" }) + \"\\n\");", "    } catch {\n      process.stderr.write(JSON.stringify({ event: \"mcp_request_refused\" }) + \"\\n\");")), /: handleRequest/);
+});
+
+test("invoke-time seals have one HTTP response owner; the original double-write fails", () => {
+ const old = execFileSync("git", ["show", "9290141:src/server.ts"], { encoding: "utf8" });
+ assert.throws(() => checkRequestLineage(old), /without writing a response/);
+ assert.throws(() => checkRequestLineage(replaced(server, "invocationRefusal = error.reason;", "refuseLineage(res, error.reason);")), /without writing a response/);
+ assert.throws(() => checkRequestLineage(replaced(server, "invocationRefusal !== undefined", "false && invocationRefusal !== undefined")), /one HTTP 503/);
+ assert.throws(() => checkRequestLineage(replaced(server, "{ status: 503 }", "{ status: 200 }")), /one HTTP 503/);
+ assert.throws(() => checkRequestLineage(replaced(server, "        return response;", "        return Response.json({});")), /preserve other SDK responses/);
 });

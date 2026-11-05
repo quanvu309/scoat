@@ -22,6 +22,7 @@
     "accounts:maintain": "node scripts/maintain-accounts.mjs"
   },
   "dependencies": {
+    "@hono/node-server": "2.1.6",
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.32.2",
     "drizzle-orm": "0.45.4",

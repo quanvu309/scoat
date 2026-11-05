@@ -5,7 +5,8 @@ import { createServer } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { getRequestListener } from "@hono/node-server";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
 import { createIssuer, InvalidCredential } from "./auth/issuer.js";
@@ -179,12 +180,13 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     }
     const validationMs = performance.now() - authStart;
     const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec), watches?.available === true);
+    let invocationRefusal: RefusalReason | undefined;
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {
         return await invoke(call);
       } catch (error) {
-        if (error instanceof LineageRefused) refuseLineage(res, error.reason);
+        if (error instanceof LineageRefused) invocationRefusal = error.reason;
         throw error;
       } finally {
         if (!res.headersSent)
@@ -194,7 +196,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
           );
       }
     });
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new WebStandardStreamableHTTPServerTransport({
       enableJsonResponse: true,
       enableDnsRebindingProtection: true,
       allowedHosts,
@@ -221,7 +223,15 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       }
       await server.connect(transport);
-      await transport.handleRequest(req, res, body);
+      const handleRequest = getRequestListener(async (request) => {
+        const response = await transport.handleRequest(request, { parsedBody: body });
+        if (invocationRefusal !== undefined) {
+          process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: invocationRefusal }) + "\n");
+          return Response.json({ error: "service_unavailable", lineage: invocationRefusal }, { status: 503 });
+        }
+        return response;
+      }, { overrideGlobalObjects: false });
+      await handleRequest(req, res);
     } catch (error) {
       if (error instanceof LineageRefused) {
         refuseLineage(res, error.reason);

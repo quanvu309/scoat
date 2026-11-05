@@ -12,7 +12,7 @@ import { scratchDirectory } from "./scratch.mjs";
 import { authFixture } from "./auth-fixture.mjs";
 import { inspect, seal, unseal } from "../dist/db/lineage.js";
 import { admitTarget } from "../dist/recovery/handoff.js";
-import { sealRace } from "./lineage-race.mjs";
+import { sealRace, invokeSealRace } from "./lineage-race.mjs";
 import { intent } from "../test/fixtures/hunt.mjs";
 import { recordRelease, verifyRelease, releaseDirectories, releaseFiles, releaseManifest } from "../dist/release.js";
 import { health } from "../dist/readiness.js";
@@ -346,6 +346,25 @@ await withDatabase(async adminUrl => {
     assert.equal(results[label].healthAfterUnseal, 200);
    }
    return results;
+  });
+
+  await gate("O11 a seal after authentication returns one 503 without a double-response stack", async () => {
+   const pool = new pg.Pool({ connectionString: f.databaseUrl, max: 4 });
+   pool.on("error", () => undefined);
+   pools.push(pool);
+   const { token } = await f.login();
+   const send = () => f.rpc(token, "tools/call", { name: "scoat_hunt", arguments: { op: "start", requestKey: randomUUID(), intent, profile: null } });
+   const raced = await invokeSealRace(pool, send);
+   await unseal(pool, raced.sealId);
+   assert.equal(raced.status, 503);
+   assert.deepEqual(raced.body, { error: "service_unavailable", lineage: "sealed" });
+   const after = await send();
+   assert.equal(after.status, 200);
+   assert.equal(after.body.result.structuredContent.ok, true);
+   const log = await readFile(f.logPath, "utf8");
+   assert.doesNotMatch(log, /ERR_HTTP_HEADERS_SENT|at responseViaResponseObject/);
+   assert.ok(log.split("\n").some(line => line === JSON.stringify({ event: "lineage_refused", reason: "sealed" })));
+   return { status: raced.status, body: raced.body, contention: raced.contention, afterUnseal: after.status, doubleResponseStack: false };
   });
 
   const future = await futureRelease();

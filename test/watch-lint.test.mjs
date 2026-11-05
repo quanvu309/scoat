@@ -109,10 +109,10 @@ test("a recipient change re-points every active watch only with explicit consent
 });
 
 test("text and live card expose one canonical watch entry", () => {
- const codec = read("src/controls/codec.ts"), contract = read("src/card/contracts.ts"), dispatch = read("src/mcp/authenticated.ts"), renderer = read("src/card/renderer.tsx");
+ const codec = read("src/controls/codec.ts"), contract = read("src/mcp/outputs.ts"), dispatch = read("src/mcp/authenticated.ts"), renderer = read("src/card/renderer.tsx");
  assert.doesNotThrow(() => checkWatchEntry(codec, contract, dispatch, renderer));
  assert.throws(() => checkWatchEntry(codec.replace("url:link({kind:\"skip\",row:row.row.id})}))};", "url:link({kind:\"skip\",row:row.row.id})})),watch:{available:false,reason:\"Watch through scoat_memory op watch; Scoat returns a browser confirmation link for a supported exact public item\"}};"), contract, dispatch, renderer), /fixed codec reason/);
- assert.throws(() => checkWatchEntry(codec, contract.replace(/watch:z\.discriminatedUnion\([^\n]*\]\)\}\);/, "watch:z.strictObject({available:z.literal(false),reason:z.string()})});"), dispatch, renderer), /canonical watch link/);
+ assert.throws(() => checkWatchEntry(codec, contract.replace("available: z.literal(true)", "available: z.literal(false)"), dispatch, renderer), /canonical watch link/);
  assert.throws(() => checkWatchEntry(codec, contract, dispatch.replace("watch: watchEntry(", "watch: ({ available: false as const, reason: \"Watch through scoat_memory\" }) && watchEntry("), renderer), /one canonical watch entry/);
  assert.throws(() => checkWatchEntry(codec, contract, dispatch, renderer.replace(/\{controls\?\.watch\.available \?[^\n]*<\/>\}/, "<button onClick={()=>setNotice(controls?.watch.reason ?? \"unavailable\")}>Watch unavailable</button>")), /open the canonical watch link/);
 });

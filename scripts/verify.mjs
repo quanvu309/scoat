@@ -60,12 +60,12 @@ try {
       for (const field of ["account", "person", "actor", "total", "unknown"]) {
         const result = await call("scoat_hunt", { op: "list", [field]: "synthetic-forgery" });
         assert.equal(result.isError, true);
-        assert.equal(result.structuredContent, undefined);
+        assert.equal(result.structuredContent.error.code, "invalid-input");
       }
     } else if (lane === 4) {
       const result = await call("scoat_card", { op: "act", hunt: "fixture-hunt", grant: "synthetic-untrusted", requestKey: "fixture-click", action: { kind: "stop" } });
       assert.equal(result.isError,true);
-      assert.equal(result.structuredContent,undefined);
+      assert.equal(result.structuredContent.error.code, "invalid-input");
     } else if (lane === 5) {
       const resource = await client.readResource({ uri: appUri });
       assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");

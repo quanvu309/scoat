@@ -1,3 +1,4 @@
+import { refusal, repairFor } from "./results.js";
 import type { ControlLinksFor } from "../controls/codec.js";
 import { Memory } from "../memory/index.js";
 import { watchEntry } from "../memory/watches.js";
@@ -23,20 +24,15 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
   const now = () =>
     z.string().brand<"UtcInstant">().parse(new Date().toISOString());
   return async (call: ToolCall): Promise<CallToolResult> => {
+    if ("requestKey" in call.input && !principal.scopes.has("scoat:write")) return refusal("scope-required", "This connection was approved without write access.", "Reconnect Scoat and approve write access, then repeat the call.", { kind: "reconnect-with-write-access" });
     if (call.name === "scoat_memory") {
-      if (["profile","save","watch","unwatch"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
       const result = await new Memory(store.pool,issuer,watches).run({ ...principal.agent, session: principal.session },call.input);
-      return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+      return { content: [{ type: "text", text: "Account memory result" }], structuredContent: result };
     }
     if (call.name === "scoat_guide")
       return dispatchParsed(call);
     if (call.name === "scoat_hunt") {
       const request = toHuntRequest(call.input);
-      if (
-        !["list", "read"].includes(request.op) &&
-        !principal.scopes.has("scoat:write")
-      )
-        throw new Error("Write scope required");
       const reply = await hunts.run({
         agent: principal.agent,
         request,
@@ -54,7 +50,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
                 : JSON.stringify(reply),
           },
         ],
-        structuredContent: {...reply,...(controls ? {controls} : {})},
+        structuredContent: {...reply,...(!reply.ok ? { error: { ...reply.error, repair: repairFor(call, reply.error) } } : {}),...(controls ? {controls} : {})},
       };
     }
     try {

@@ -106,8 +106,9 @@ export type Agent = Readonly<{
     client: string;
     kind: "agent";
 }>;
+export const failureCodes = ["invalid", "forbidden", "missing", "conflict", "key-reused", "incomplete", "unproven"] as const;
 export type Failure = Readonly<{
-    code: "invalid" | "forbidden" | "missing" | "conflict" | "key-reused" | "incomplete" | "unproven";
+    code: (typeof failureCodes)[number];
     message: string;
     next: string;
 }>;

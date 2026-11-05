@@ -31,7 +31,7 @@ test("registration selector is optional and rejects ambiguous or different clien
 });
 
 test("registration returns stable public metadata and ignores bounded display fields", () => {
-  const expected = { ...client, scope: "openid scoat:read scoat:write" };
+  const expected = { ...client, scope: "openid offline_access scoat:read scoat:write" };
   assert.deepEqual(registrationMetadata(minimal, client), expected);
   assert.deepEqual(registrationMetadata(minimal, client), expected);
   assert.deepEqual(registrationMetadata({ ...minimal, token_endpoint_auth_method: "none", response_types: ["code"], grant_types: ["authorization_code"], application_type: "web", subject_type: "public", client_name: "Untrusted display name", client_uri: "https://unreachable.invalid", contacts: ["display@example.invalid"], software_id: "test", harmless_extension: "ignored", extension_list: ["bounded"] }, client), expected);
@@ -47,7 +47,7 @@ test("registration rejects callback variations and security metadata", () => {
     { token_endpoint_auth_method: "client_secret_basic" }, { token_endpoint_auth_method: "private_key_jwt" },
     { grant_types: ["refresh_token"] }, { grant_types: ["client_credentials"] },
     { response_types: ["token"] }, { application_type: "native" }, { subject_type: "pairwise" },
-    { scope: "offline_access" }, { scope: "scoat:read unknown" }, { scope: "scoat:read scoat:read" }, { scope: "" },
+    { scope: "unsupported" }, { scope: "scoat:read unknown" }, { scope: "scoat:read scoat:read" }, { scope: "" },
     { client_id: "codex" }, { client_secret: "secret" }, { software_statement: "unsigned" }, { jwks: {} }, { jwks_uri: "https://attacker.example/keys" },
     { request_uris: ["https://attacker.example"] }, { client_name: "x".repeat(1025) }, { contacts: [1] }, { unknown_extension: {} }, { unknown_extension: "x".repeat(1025) }, { request_object_signing_alg: "none" }, { dpop_bound_access_tokens: true },
   ]) assert.equal(registrationMetadata({ ...minimal, ...extra }, client).error, "invalid_client_metadata", JSON.stringify(extra));
@@ -75,7 +75,7 @@ test("real HTTP registration has bounded JSON, precise refusals and no managemen
     for (const response of registered) {
       assert.equal(response.status, 201);
       assert.equal(response.headers.get("cache-control"), "no-store");
-      assert.deepEqual(await response.json(), { ...client, scope: "openid scoat:read scoat:write" });
+      assert.deepEqual(await response.json(), { ...client, scope: "openid offline_access scoat:read scoat:write" });
     }
     for (const method of ["GET", "PUT", "DELETE"]) {
       const response = await fetch(endpoint, { method });
@@ -86,7 +86,7 @@ test("real HTTP registration has bounded JSON, precise refusals and no managemen
     assert.equal((await post(JSON.stringify(minimal), { "content-type": "application/json; charset=UTF-8" })).status, 201);
     assert.equal((await post("{}", { "content-type": "text/plain" })).status, 415);
     assert.equal((await post("{}", { "content-type": "application/json", "content-encoding": "gzip" })).status, 415);
-    for (const body of ["", "{", "null", "[]", JSON.stringify({ ...minimal, scope: "offline_access" })]) {
+    for (const body of ["", "{", "null", "[]", JSON.stringify({ ...minimal, scope: "unsupported" })]) {
       const response = await post(body);
       assert.equal(response.status, 400);
       assert.equal(response.headers.get("cache-control"), "no-store");
@@ -140,7 +140,7 @@ test("callback-bound clients are deterministic, issuer-bound and immutable acros
   const raw = { redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"] };
   const result = clients.metadata(raw);
   assert.equal(result.error, undefined);
-  assert.deepEqual(result.grant_types, ["authorization_code"]);
+  assert.deepEqual(result.grant_types, ["authorization_code", "refresh_token"]);
   assert.equal(result.token_endpoint_auth_method, "none");
   assert.deepEqual(clients.metadata(raw), result);
   assert.ok(result.client_id.length <= 200);

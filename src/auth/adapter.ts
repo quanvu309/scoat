@@ -65,7 +65,7 @@ export function postgresAdapter(pool: pg.Pool) {
      const owners = await fence(client,payload);
      const oldOwners = await client.query<{account:string}>("SELECT account FROM oauth_artifact_owners WHERE model=$1 AND id=$2",[model,id]);
      if (oldOwners.rows.some(row => !owners.includes(row.account))) throw new InactiveArtifact("OAuth ownership cannot be removed");
-     await client.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(model,id) DO UPDATE SET payload=EXCLUDED.payload,expires_at=EXCLUDED.expires_at", [model,id,payload,Math.min(expiresIn,owners.length ? 3600 : model === "Interaction" ? 300 : 3600)]);
+     await client.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(model,id) DO UPDATE SET payload=EXCLUDED.payload,expires_at=EXCLUDED.expires_at", [model,id,payload,Math.min(expiresIn,["RefreshToken","Grant","Session"].includes(model) ? 2592000 : model === "Interaction" ? 300 : 3600)]);
      await client.query("DELETE FROM oauth_artifact_owners WHERE model=$1 AND id=$2", [model,id]);
      for (const owner of owners) await client.query("INSERT INTO oauth_artifact_owners(model,id,account) VALUES($1,$2,$3)", [model,id,owner]);
     });

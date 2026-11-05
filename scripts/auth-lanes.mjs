@@ -41,7 +41,7 @@ export async function authLanes(databaseUrl) {
     });
     assert.equal(scopedResponse.status, 201);
     const scoped = await scopedResponse.json();
-    assert.deepEqual(scoped.grant_types, ["authorization_code"]);
+    assert.deepEqual(scoped.grant_types, ["authorization_code", "refresh_token"]);
     const scopedLogin = await f.login(scoped.client_id, undefined, undefined, false, callback);
     for (const wrong of ["https://chatgpt.com/connector/oauth/another_connection", "https://attacker.example/cb", "https://chatgpt.com/connector_platform_oauth_redirect"]) {
       const params = new URLSearchParams({ client_id: scoped.client_id, redirect_uri: wrong, response_type: "code", scope: "openid scoat:read scoat:write", state: "binding-negative", resource: f.issuer + "/mcp", code_challenge: createHash("sha256").update("verifier".repeat(8)).digest("base64url"), code_challenge_method: "S256" });
@@ -184,7 +184,7 @@ export async function authLanes(databaseUrl) {
     assert.match(wrongResource.headers.get("location") ?? await wrongResource.text(), /invalid_target/);
     const metadata = await (await fetch(f.issuer + "/.well-known/openid-configuration")).json();
     assert.deepEqual(metadata.response_types_supported, ["code"]);
-    assert.deepEqual(metadata.grant_types_supported, ["authorization_code"]);
+    assert.deepEqual(metadata.grant_types_supported, ["authorization_code", "refresh_token"]);
     for (const key of ["userinfo_endpoint", "end_session_endpoint", "pushed_authorization_request_endpoint", "dpop_signing_alg_values_supported"]) assert.equal(metadata[key], undefined);
     const substituted = await fetch(
       f.issuer +

@@ -9,7 +9,7 @@ export function publicClient(client: AuthConfig["clients"][number]) {
   return {
     ...client,
     response_types: ["code"],
-    grant_types: ["authorization_code"],
+    grant_types: ["authorization_code", "refresh_token"],
     token_endpoint_auth_method: "none",
     subject_type: "public",
   } satisfies ClientMetadata;
@@ -39,7 +39,7 @@ const metadata = z.strictObject({
   subject_type: z.literal("public").optional(),
   scope: z.string().min(1).max(128).refine(value => {
     const scopes = value.split(" ");
-    return new Set(scopes).size === scopes.length && scopes.every(scope => ["openid", "scoat:read", "scoat:write"].includes(scope));
+    return new Set(scopes).size === scopes.length && scopes.every(scope => ["openid", "offline_access", "scoat:read", "scoat:write"].includes(scope));
   }).optional(),
   client_name: display.optional(),
   client_uri: display.optional(),
@@ -86,7 +86,7 @@ export class RegisteredClients {
     if (!parsed.success) return parsed.error.issues.some(issue => issue.path[0] === "redirect_uris")
       ? { error: "invalid_redirect_uri", error_description: "Only an exact supported ChatGPT callback is accepted" }
       : { error: "invalid_client_metadata", error_description: "Unsupported OAuth client metadata" };
-    return { ...this.#clientFor(parsed.data.redirect_uris[0]), scope: parsed.data.scope ?? "openid scoat:read scoat:write" };
+    return { ...this.#clientFor(parsed.data.redirect_uris[0]), scope: parsed.data.scope ?? "openid offline_access scoat:read scoat:write" };
   }
 
   resolve(id: string) {

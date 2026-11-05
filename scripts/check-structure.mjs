@@ -170,6 +170,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
+  checkRefreshPolicy(...["src/auth/issuer.ts","src/auth/registration.ts","src/auth/adapter.ts","src/server.ts","src/auth/link.ts","src/auth/erasure.ts"].map(file => fs.readFileSync(file,"utf8")));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));
   checkAuthVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
@@ -411,7 +412,7 @@ export function checkAuthorizationPolicy(source) {
   const scopes = options.find(node => node.key?.name === "scopes")?.value;
   const features = options.find(node => node.key?.name === "features")?.value.properties ?? [];
   const disabled = ["registration", "dPoP", "pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
-  if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
+  if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid","offline_access"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
 }
 export function checkBrowserLink(source) {
   const nodes = parsedNodes(source);
@@ -777,4 +778,13 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
  checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));
  checkWatchResponses(fs.readFileSync("src/delivery/index.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"));
  checkWatchVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+}
+
+export function checkRefreshPolicy(issuer, registration, adapter, server, link, erasure) {
+ const options = parsedNodes(issuer).find(node => node.type === "NewExpression" && node.callee?.name === "Provider")?.arguments[1]?.properties;
+ const ttl = options?.find(node => node.key?.name === "ttl")?.value.properties;
+ if (!options?.some(node => node.key?.name === "rotateRefreshToken" && node.value.value === true) || !["RefreshToken","Grant","Session"].every(name => ttl?.some(node => node.key?.name === name && node.value.value === 2592000))) throw new Error("Rotate refresh tokens with 30-day refresh, grant and session lifetimes");
+ if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('scope: "scoat:read scoat:write offline_access"') || !registration.includes('"offline_access"') || !issuer.includes('["scoat:read", "scoat:write", "offline_access"].includes(value)')) throw new Error("Support offline access and refresh for static and registered clients");
+ if (!adapter.includes('["RefreshToken","Grant","Session"].includes(model) ? 2592000') || !server.includes('Bearer scope="scoat:read scoat:write"')) throw new Error("Persist refresh artifacts for 30 days and advertise resource scope");
+ if (!link.includes('await deleteAuthentication(client,') || !erasure.includes('DELETE FROM oauth_artifacts WHERE (model,id) IN (SELECT model,id FROM oauth_artifact_owners WHERE account=$1)')) throw new Error("Revoke owned refresh artifacts under link and erasure fences");
 }

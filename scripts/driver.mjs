@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export async function launch() {
-  const child = fork(new URL("../dist/server.js", import.meta.url), [], { execArgv: [], env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  const child = fork(new URL("../test/fixtures/legacy-server.mjs", import.meta.url), [], { execArgv: [], env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "pipe", "ipc"] });
   const logs = [];
   child.stdout.on("data", data => logs.push(data.toString()));
   child.stderr.on("data", data => logs.push(data.toString()));

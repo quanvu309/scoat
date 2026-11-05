@@ -82,3 +82,13 @@ test("refresh-grant consent discloses renewal even when offline_access is droppe
   assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("renew access"));
  }
 });
+
+test("shared headers preserve the configured OAuth callback form action", async () => {
+ const server = createServer((req, res) => { pageHead(res, 200, {"content-security-policy":"default-src 'none'; form-action 'self' https://localhost:12345; frame-ancestors 'none'"}); sendPage(res, refusalPage()); });
+ await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+ try {
+  const response = await fetch(`http://127.0.0.1:${server.address().port}`);
+  assert.ok(response.headers.get("content-security-policy").includes("form-action 'self' https://localhost:12345;"));
+  assert.ok(response.headers.get("content-security-policy").includes("style-src 'sha256-"));
+ } finally { await new Promise(resolve => server.close(resolve)); }
+});

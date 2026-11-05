@@ -20,7 +20,9 @@ export function pageHead(res: ServerResponse, status: number, headers: Readonly<
  res.setHeader("content-type", "text/html; charset=utf-8");
  res.setHeader("cache-control", "no-store");
  res.setHeader("referrer-policy", "same-origin");
- res.setHeader("content-security-policy", browserPolicy);
+ const policy = res.getHeader("content-security-policy");
+ const formAction = typeof policy === "string" ? /(?:^|; )form-action ([^;]+)/.exec(policy)?.[1] : undefined;
+ res.setHeader("content-security-policy", formAction ? browserPolicy.replace("form-action 'self'", "form-action " + formAction) : browserPolicy);
 }
 
 export function sendPage(res: ServerResponse, content: string): void {

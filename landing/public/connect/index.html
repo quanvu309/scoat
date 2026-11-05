@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connect Scoat · Your next deal starts here.</title>
+<meta name="description" content="Connect Scoat to Claude or ChatGPT. Copy the connection URL, follow the setup guide, and try your first shopping hunt.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/inter-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/connect.css">
+<script src="/connect.js" type="module"></script>
+</head>
+<body>
+<div class="connect-page">
+  <header class="connect-header">
+    <a class="brand" href="/" aria-label="Scoat home">
+      <svg class="brand-mark" viewBox="0 0 78.37 78.6" aria-hidden="true" focusable="false"><path fill="currentColor" d="M75.06667 39.63334c0-10.26666 3.3-16.46667 3.3-23.03334 0-11.06666-8.23334-16.6-16.43333-16.6-8.86667 0-14.46667 6.3-24.93334 6.3-8.36666 0-13.56667-2.26667-19.86667-2.26667-9.7 0-16.5 7.06667-16.49999 16.33334 0 7.06666 3 12.26667 3 19.8 0 9.23333-3.63334 15.2-3.63334 21.93333 0 10.33333 8.06667 16.5 16.73333 16.50001 7.6 0 12.96667-4.13335 21.93334-4.13335 8.93333 0 16.06667 3.56667 22.76666 3.56667 9.36667 0 16.66666-6.83333 16.66666-16.6 0-7.53333-3.03333-13.06667-3.03332-21.79999z m-13.36667-5.96667c0 0.7-0.46667 1.23334-1.13333 1.36667-2.66667 0.49999-4.53333 2.53333-4.53333 5.03333 0 2.6 1.96667 4.83334 4.63333 5.36667 0.6 0.09999 1.03333 0.56667 1.03333 1.16666l0 2.7c0 3.7-3.13333 6.63334-6.83334 6.63334l-31.69999 0c-3.7 0-6.7-3-6.7-6.56667l0-2.7c0-0.63333 0.43333-1.1 1.03333-1.23333 2.76667-0.53333 4.6-2.73334 4.6-5.3 0-2.53333-1.86667-4.63334-4.53333-5.13334-0.66666-0.13332-1.1-0.63332-1.1-1.3l0-2.76666c0-3.8 3.03333-6.66667 6.76666-6.66667l31.63333 0c3.76667 0 6.83334 2.86667 6.83334 6.63333l0 2.76667z"/></svg>
+    </a>
+    <a class="connect-home" href="/"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m7 3-5 5 5 5M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to home</a>
+  </header>
+  <main class="connect-main">
+    <div class="connect-intro">
+      <h1>Your next deal starts <span>in a chat.</span></h1>
+      <p>Welcome to Scoat. Add it to Claude or ChatGPT, then ask for help finding your next deal.</p>
+      <p class="connect-note">You’ll sign in with your Scoat email and review permissions in the app you choose. This guide stays here if you need it.</p>
+    </div>
+    <section class="connect-guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">Where do you want to use Scoat?</h2>
+      <nav class="host-picker" data-host-picker aria-label="Choose your AI app">
+        <a class="host-choice" id="choose-claude" href="#claude" data-host="claude"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="#D97757" fill-rule="evenodd" d="M3.92 13.3L7.86 11.09L7.92 10.9L7.86 10.79L7.67 10.79L7.01 10.75L4.76 10.69L2.81 10.61L0.92 10.51L0.45 10.41L0 9.82L0.05 9.53L0.45 9.26L1.02 9.31L2.28 9.4L4.18 9.53L5.56 9.61L7.6 9.82L7.92 9.82L7.97 9.69L7.86 9.61L7.77 9.53L5.81 8.2L3.68 6.79L2.57 5.98L1.96 5.57L1.66 5.19L1.53 4.35L2.08 3.74L2.81 3.79L3 3.85L3.74 4.42L5.33 5.65L7.41 7.17L7.71 7.43L7.83 7.34L7.85 7.28L7.71 7.05L6.58 5.01L5.38 2.94L4.84 2.08L4.7 1.56C4.65 1.36 4.61 1.17 4.61 0.96L5.24 0.11L5.58 0L6.41 0.11L6.76 0.42L7.28 1.59L8.11 3.45L9.41 5.98L9.79 6.72L9.99 7.42L10.07 7.63L10.2 7.63L10.2 7.51L10.3 6.09L10.5 4.34L10.69 2.1L10.76 1.46L11.07 0.7L11.7 0.29L12.18 0.53L12.58 1.1L12.53 1.47L12.29 3.01L11.82 5.43L11.52 7.05L11.7 7.05L11.9 6.85L12.72 5.76L14.1 4.04L14.7 3.35L15.41 2.6L15.87 2.24L16.73 2.24L17.36 3.18L17.08 4.15L16.19 5.28L15.46 6.23L14.41 7.65L13.75 8.78L13.81 8.87L13.96 8.85L16.34 8.35L17.63 8.12L19.16 7.85L19.86 8.18L19.93 8.51L19.66 9.18L18.02 9.58L16.1 9.97L13.23 10.65L13.2 10.67L13.24 10.72L14.53 10.84L15.08 10.87L16.43 10.87L18.95 11.06L19.61 11.5L20 12.03L19.93 12.43L18.92 12.95L17.56 12.62L14.36 11.87L13.27 11.59L13.12 11.59L13.12 11.68L14.03 12.57L15.7 14.08L17.79 16.02L17.9 16.5L17.63 16.88L17.35 16.84L15.51 15.46L14.8 14.84L13.2 13.49L13.09 13.49L13.09 13.63L13.46 14.17L15.41 17.11L15.51 18.01L15.37 18.3L14.87 18.48L14.31 18.38L13.16 16.77L11.99 14.97L11.03 13.35L10.92 13.41L10.35 19.46L10.09 19.77L9.48 20L8.98 19.62L8.71 18.99L8.98 17.76L9.3 16.16L9.56 14.89L9.8 13.3L9.94 12.78L9.93 12.74L9.82 12.76L8.62 14.39L6.81 16.85L5.37 18.39L5.02 18.52L4.43 18.21L4.48 17.66L4.82 17.17L6.81 14.64L8.01 13.07L8.78 12.17L8.78 12.04L8.73 12.04L3.44 15.47L2.5 15.59L2.1 15.21L2.15 14.59L2.34 14.38L3.92 13.3Z"/></svg>Claude</a>
+        <a class="host-choice" id="choose-chatgpt" href="#chatgpt" data-host="chatgpt"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M7.67 7.22L7.67 5.33C7.67 5.17 7.73 5.06 7.87 4.98L11.66 2.8C12.18 2.5 12.79 2.36 13.42 2.36C15.8 2.36 17.3 4.2 17.3 6.16C17.3 6.3 17.3 6.46 17.28 6.62L13.36 4.32C13.14 4.18 12.87 4.18 12.65 4.32L7.67 7.22ZM16.51 14.55L16.51 10.05C16.51 9.77 16.39 9.58 16.15 9.44L11.18 6.54L12.8 5.61C12.92 5.53 13.08 5.53 13.2 5.61L16.99 7.79C18.08 8.42 18.81 9.77 18.81 11.08C18.81 12.59 17.92 13.97 16.51 14.55ZM6.5 10.59L4.88 9.63C4.74 9.55 4.68 9.44 4.68 9.28L4.68 4.92C4.68 2.8 6.3 1.19 8.5 1.19C9.33 1.19 10.11 1.46 10.76 1.96L6.86 4.22C6.62 4.36 6.5 4.56 6.5 4.84L6.5 10.59ZM10 12.61L7.67 11.3L7.67 8.52L10 7.22L12.33 8.52L12.33 11.3L10 12.61ZM11.5 18.63C10.67 18.63 9.89 18.36 9.24 17.86L13.14 15.6C13.38 15.46 13.5 15.27 13.5 14.99L13.5 9.24L15.14 10.19C15.28 10.27 15.34 10.39 15.34 10.55L15.34 14.91C15.34 17.03 13.7 18.63 11.5 18.63ZM6.8 14.21L3.01 12.03C1.92 11.4 1.19 10.05 1.19 8.74C1.18 7.22 2.1 5.85 3.51 5.27L3.51 9.79C3.51 10.07 3.63 10.27 3.87 10.41L8.82 13.28L7.2 14.21C7.08 14.29 6.92 14.29 6.8 14.21ZM6.58 17.46C4.34 17.46 2.7 15.78 2.7 13.7C2.7 13.54 2.72 13.38 2.74 13.22L6.64 15.48C6.88 15.62 7.11 15.62 7.35 15.48L12.33 12.61L12.33 14.49C12.33 14.65 12.27 14.77 12.13 14.85L8.35 17.03C7.83 17.33 7.21 17.46 6.58 17.46ZM16.35 15.86C15.88 18.17 13.85 19.82 11.5 19.82C10.2 19.82 8.96 19.31 8.03 18.4C7.51 18.58 7 18.65 6.46 18.65C3.8 18.65 1.51 16.53 1.51 13.7C1.51 13.28 1.57 12.87 1.67 12.45C0.6 11.48 0 10.13 0 8.74C0 6.62 1.43 4.54 3.65 3.96C4.12 1.65 6.15 0 8.5 0C9.8 0 11.04 0.52 11.97 1.43C12.49 1.25 13 1.17 13.54 1.17C16.2 1.17 18.49 3.3 18.49 6.13C18.49 6.55 18.44 6.95 18.34 7.37C19.41 8.34 20 9.69 20 11.08C20 13.2 18.57 15.29 16.35 15.86Z"/></svg>ChatGPT</a>
+      </nav>
+      <div class="connection-address">
+        <label for="server-url">Scoat connection URL</label>
+        <div class="copy-field">
+          <input id="server-url" type="text" value="https://mcp.scoat.net/mcp" readonly spellcheck="false" autocapitalize="none">
+          <button class="copy-button" type="button" data-copy="server-url" hidden>Copy URL</button>
+        </div>
+        <p class="copy-status" id="server-url-status" role="status" aria-live="polite"></p>
+      </div>
+      <section class="host-instructions" id="claude" data-host-panel>
+        <h3>Connect to Claude</h3>
+        <ol class="connect-steps">
+          <li><div><h4>Open your connectors</h4><p><a href="https://claude.ai/" target="_blank" rel="noopener noreferrer">Open Claude in a new tab</a>, then go to <strong>Customize → Connectors</strong>. Choose <strong>+ Add → Add custom connector</strong>.</p></div></li>
+          <li><div><h4>Add Scoat</h4><p>Name it <strong>Scoat</strong> and paste the connection URL above. Continue with sign-in enabled. If asked for an OAuth client, choose <strong>Register automatically</strong>.</p></div></li>
+          <li><div><h4>Sign in, then start a chat</h4><p>Use your Scoat email and review the permissions. Finish adding the connector, then enable <strong>Scoat</strong> from the chat’s <strong>+ → Connectors</strong> menu.</p></div></li>
+        </ol>
+        <p class="connect-support">Using a team account? Your workspace owner may need to add Scoat first. <a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" target="_blank" rel="noopener noreferrer">Claude’s setup guide<span class="sr-only"> (opens in a new tab)</span></a></p>
+      </section>
+      <section class="host-instructions" id="chatgpt" data-host-panel>
+        <h3>Connect to ChatGPT</h3>
+        <ol class="connect-steps">
+          <li><div><h4>Open Plugins</h4><p><a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT in a new tab</a> and go to <strong>Plugins</strong>. Select <strong>+ → Add custom MCP server</strong>.</p></div></li>
+          <li><div><h4>Add Scoat</h4><p>Name it <strong>Scoat</strong>, choose a public connection and paste the connection URL above. Use <strong>OAuth</strong> authentication and review the permissions before continuing.</p></div></li>
+          <li><div><h4>Sign in, then start a chat</h4><p>Sign in with your Scoat email and finish creating the plugin. Install it, start a new chat, then type <strong>@</strong> and choose <strong>Scoat</strong>.</p></div></li>
+        </ol>
+        <p class="connect-support">Custom MCP access depends on your ChatGPT account and workspace settings. If the option is missing, check <a href="https://developers.openai.com/plugins/deploy/connect-chatgpt" target="_blank" rel="noopener noreferrer">OpenAI’s setup guide<span class="sr-only"> (opens in a new tab)</span></a> or ask your workspace admin.</p>
+      </section>
+      <div class="first-hunt">
+        <label for="first-prompt">Then, try your first hunt</label>
+        <textarea id="first-prompt" rows="3" readonly spellcheck="false">Use Scoat to find the best deal on Nike trainers in UK size 6. My budget is £80.</textarea>
+        <button class="copy-button" type="button" data-copy="first-prompt" hidden>Copy first prompt</button>
+        <p class="copy-status" id="first-prompt-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+  <footer class="connect-footer"><span>Scoat 2026</span><a href="https://accounts.scoat.net/sign-in?redirect_url=https%3A%2F%2Fscoat.net%2Fconnect%2F">Sign in with email</a></footer>
+</div>
+</body>
+</html>

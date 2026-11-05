@@ -341,7 +341,7 @@ export async function authFixture(databaseUrl, options = {}) {
     });
     const tokens = await response.json();
     assert.equal(response.status, 200, JSON.stringify(tokens));
-    return { token: tokens.access_token, refresh: tokens.refresh_token, steps, client };
+    return { token: tokens.access_token, refresh: tokens.refresh_token, refreshToken: tokens.refresh_token, expiresIn: tokens.expires_in, steps, client };
   }
   async function link(current, candidate, pauseAtCandidate = false, beforeCandidate) {
     identity = current;
@@ -453,6 +453,13 @@ export async function authFixture(databaseUrl, options = {}) {
     setIdentity(value) {
       jar.delete(upstreamIssuer);
       identity = value;
+    },
+    async advanceClock(seconds) {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Clock acknowledgement timeout")), 5000);
+        child.once("message", () => { clearTimeout(timeout); resolve(); });
+        child.send({ advanceSeconds: seconds });
+      });
     },
     async restart() {
       await stopService();

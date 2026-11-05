@@ -170,6 +170,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
+  checkRefreshPolicy(...["src/auth/issuer.ts","src/auth/registration.ts","src/auth/adapter.ts","src/server.ts","src/auth/link.ts","src/auth/erasure.ts"].map(file => fs.readFileSync(file,"utf8")));
   checkConnectionPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/auth/registration.ts", "utf8"), fs.readFileSync("src/auth/adapter.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));
@@ -841,4 +842,13 @@ export function checkConnectionPolicy(issuer, registration, adapter, server) {
   if (options.find(node => node.key?.name === "rotateRefreshToken")?.value.value !== true || ["RefreshToken", "Grant", "Session"].some(name => ttl.find(node => node.key?.name === name)?.value.value !== 2592000)) throw new Error("Rotate refresh tokens with 30-day parent lifetimes");
   if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('["openid", "offline_access"].includes(value)') || !issuer.includes('issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token")') || !adapter.includes('["Grant", "Session", "RefreshToken"].includes(model) ? 2592000') || !server.includes('scope="scoat:read scoat:write offline_access"')) throw new Error("Ship refresh scopes, grants, persistence and bearer challenge together");
   for (const text of ['https://claude.ai/api/mcp/auth_callback', 'localhost|127', '"native"', 'scoat-host-client-v2', 'scoat-chatgpt-client-v1', 'timingSafeEqual']) if (!registration.includes(text)) throw new Error("Keep signed ChatGPT and Claude callback registration and v1 compatibility");
+}
+
+export function checkRefreshPolicy(issuer, registration, adapter, server, link, erasure) {
+ const options = parsedNodes(issuer).find(node => node.type === "NewExpression" && node.callee?.name === "Provider")?.arguments[1]?.properties;
+ const ttl = options?.find(node => node.key?.name === "ttl")?.value.properties;
+ if (!options?.some(node => node.key?.name === "rotateRefreshToken" && node.value.value === true) || !["RefreshToken","Grant","Session"].every(name => ttl?.some(node => node.key?.name === name && node.value.value === 2592000))) throw new Error("Rotate refresh tokens with 30-day refresh, grant and session lifetimes");
+ if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('scope: "scoat:read scoat:write offline_access"') || !registration.includes('"offline_access"') || !issuer.includes('["scoat:read", "scoat:write", "offline_access"].includes(value)')) throw new Error("Support offline access and refresh for static and registered clients");
+ if (!adapter.includes('["Grant", "Session", "RefreshToken"].includes(model) ? 2592000') || !server.includes('Bearer scope="scoat:read scoat:write offline_access"')) throw new Error("Persist refresh artifacts for 30 days and advertise resource scope");
+ if (!link.includes('await deleteAuthentication(client,') || !erasure.includes('DELETE FROM oauth_artifacts WHERE (model,id) IN (SELECT model,id FROM oauth_artifact_owners WHERE account=$1)')) throw new Error("Revoke owned refresh artifacts under link and erasure fences");
 }

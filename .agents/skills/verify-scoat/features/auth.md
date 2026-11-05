@@ -11,3 +11,6 @@ For identity linking changes, also run [P06 memory and erasure](memory.md). Its 
 5. Record external upstream/host, ten model-agent lanes, actual screenshots/video, fixed two-vCPU and independent review as UNTESTED/PENDING unless actual evidence exists. Synthetic OAuth clients are never evidence of ChatGPT/Claude/Codex host support. Production launch/configuration and linking constraints are in `docs/host-support.md`.
 
 Automatic registration must cover ChatGPT stable and connection-specific callbacks, Claude hosted and native loopback callbacks, exact client/callback binding with RFC 8252 port matching only for loopback, retained v1 IDs and dedicated registration-key overlap. P05 drives these modes through PKCE exchange with offline_access, refresh rotation, reuse rejection and link retirement, and checks no-store responses and zero persisted Client artifacts. P06 verifies refresh rejection after actual erasure. HTTP probes do not establish actual ChatGPT or Claude interoperability.
+
+P05 also runs refresh-lanes against a fixture-only IPC clock: exchange, expired access, refresh, replay invalid_grant, 30-day expiry, link and erasure revocation. Existing capability-fence assertions remain required. Real host sessions remain UNTESTED.
+

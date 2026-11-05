@@ -2,7 +2,7 @@ import { withDatabase } from "./durable-database.mjs";
 import { authLanes } from "./auth-lanes.mjs";
 import { evidence } from "./auth-evidence.mjs";
 const report = await evidence("verify");
-const result = await withDatabase(authLanes);
+const result = await withDatabase(async url => ({ ...await authLanes(url), refresh: await (await import("./refresh-lanes.mjs")).refreshLanes(url) }));
 await report.save("receipt.json", {
   ...report.identity,
   ...result,

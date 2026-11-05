@@ -146,7 +146,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         getResourceServerInfo: (_ctx, value) => {
           if (value !== resource) throw new errors.InvalidTarget("Invalid resource");
           return {
-            scope: "scoat:read scoat:write",
+            scope: "scoat:read scoat:write offline_access",
             audience: resource,
             accessTokenFormat: "opaque",
             accessTokenTTL: 900,
@@ -497,7 +497,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         grant.addOIDCScope(String(details.params.scope ?? "").split(" ").filter(value => ["openid", "offline_access"].includes(value)).join(" "));
         const requested = String(details.params.scope ?? "")
           .split(" ")
-          .filter((value) => ["scoat:read", "scoat:write"].includes(value));
+          .filter((value) => ["scoat:read", "scoat:write", "offline_access"].includes(value));
         grant.addResourceScope(resource, requested);
         await provider.interactionFinished(
           req,

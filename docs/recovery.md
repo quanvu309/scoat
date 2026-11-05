@@ -4,7 +4,7 @@ Recovery moves Scoat from one PostgreSQL database to a fresh one. Only a survivi
 
 ## Supported sequence
 
-1. Stop nothing. Run `status`, then `seal` against live. Every server request returns 503 `sealed` and every worker exits 78 at its next transaction. Record the printed `sealId`.
+1. Run `status`, then `seal` against live. New feature transactions refuse and requests return 503 `sealed`. Stop the worker before taking the dump so pg-boss supervision cannot change the queue during backup. An idle worker may continue queue supervision until stopped; a feature transaction refusal exits it with 78. Record the printed `sealId`.
 2. Create an empty database for the target, owned by the application role.
 3. Run `restore --archive <absolute path>`. It refuses before running any tool when the source and target are the same database, the source is not sealed or already consumed, the target is not empty, or the archive path exists. It then runs `pg_dump --format=custom` of the whole source database and `pg_restore --single-transaction` into the target, and checks that the target carries the same seal. The restored target stays quarantined: no runtime admits it.
 4. Run `admit`. It migrates the target in one transaction under its exclusive lineage lock, consumes the source once for this target, then binds the target as admitted. Start the server and worker on the target.
@@ -33,8 +33,10 @@ Success prints one JSON line. Refusals print `{"event":"recovery_refused","reaso
 | After consumption, before bind | Resumes the same target, recognised by its pre-bind physical identity |
 | After bind | Returns `already-admitted`, confirmed against the source's consumption record |
 
-A failing migration returns `migration-failed` with its SQLSTATE and leaves the target unchanged and the source unconsumed. A second target, a copy of an admitted target, or a target restored before a reseal is refused.
+A failing migration returns `migration-failed` with its SQLSTATE and leaves the target unchanged and the source unconsumed. A second logical target, a logical copy of an admitted target, or a target restored before a reseal is refused.
 
 ## Not supported
 
 Total loss of live, rolling live back to a snapshot, restoring only some tables, restoring over live, and recovery without the post-backup erasure and mail history. These are not detectable in every case; do not attempt them.
+
+A cold physical clone, storage snapshot or pg_basebackup copy can preserve all checked identity fields. Starting one in parallel with live is forbidden: both can be admitted. Detection is limited to the tested logical restore and identity-changing copy paths.

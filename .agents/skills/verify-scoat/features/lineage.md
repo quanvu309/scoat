@@ -24,3 +24,5 @@ This branch covers S1 admission and fences. The sealed two-database handoff and 
 ## Labeled limits
 
 These are FORBIDDEN and undetectable, never passes: selective data-only restore that excludes lineage, snapshot rollback of live, and owner-role recomputation of the bind expression. In-place `pg_restore --clean` fails closed and strands live. Managed PostgreSQL permissions and failover are UNTESTED; a permission failure refuses with `identity-unavailable`.
+
+A cold physical clone, storage snapshot or pg_basebackup copy can preserve all checked identity fields. Starting one in parallel with live is forbidden: both can be admitted. Detection is limited to the tested logical restore and identity-changing copy paths.

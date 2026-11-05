@@ -6,7 +6,7 @@ import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification } from "./check-acceptance.mjs";
 import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
-import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification } from "./check-lineage.mjs";
+import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -148,6 +148,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkRuntimeAdmission({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), queue: fs.readFileSync("src/queue/index.ts", "utf8"), watches: fs.readFileSync("src/memory/watches.ts", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
   checkRecoveryAuthority({ handoff: fs.readFileSync("src/recovery/handoff.ts", "utf8"), recovery: fs.readFileSync("src/recovery.ts", "utf8"), tools: fs.readFileSync("src/recovery/tools.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
   checkRecoveryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+  checkLineageVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+  checkRecoveryDocumentation({ readme: fs.readFileSync("README.md", "utf8"), index: fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), recovery: fs.readFileSync("docs/recovery.md", "utf8"), operations: fs.readFileSync("docs/operations.md", "utf8"), lineage: fs.readFileSync(".agents/skills/verify-scoat/features/lineage.md", "utf8") });
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));

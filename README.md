@@ -7,7 +7,7 @@ Scoat is a kit for Claude and ChatGPT. It teaches the agent to hunt every benefi
 Status: P09 platform draft, not deployed. It has durable PostgreSQL hunts, saved Memory, browser-approved commands, the live card, public Pi Hut price watches and coordinated erasure. It also has database lineage admission, sealed-source recovery, a release artifact digest, truthful `/healthz` readiness and systemd units. Every capability has local fixture evidence only.
 
 Not yet done or not yet tried:
-- The linked public P09 acceptance story and its independent reviews are still pending.
+- The linked public P09 acceptance story passes locally. Independent reviews found corrections in progress; hosted and external acceptance remain open.
 - Real hosts, a real IdP, Resend, DKIM, live sellers, checkout and production deployment are UNTESTED.
 
 See:

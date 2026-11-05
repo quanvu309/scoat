@@ -152,3 +152,16 @@ export function checkRecoveryVerification(skill, index, runner) {
  const selector = skill.split("## Completion")[0];
  if (!skill.split("---")[1]?.includes("P09 S2") || !selector.includes("features/recovery.md") || !index.includes("[recovery](recovery.md)") || !runner.includes('process.argv[2] === "p09-recovery"')) throw new Error("Route P09 recovery changes to features/recovery.md and the runnable p09-recovery branch");
 }
+
+export function checkLineageVerification(skill, index, runner) {
+ const selector = skill.split("## Completion")[0];
+ const route = selector.split("\n").find(line => /^\d+\. For P09 lineage,/.test(line));
+ if (!skill.split("---")[1]?.includes("P09 S1") || !route?.includes("[lineage](features/lineage.md)") || !index.includes("[lineage](lineage.md)") || !runner.includes('process.argv[2] === "p09-lineage"') || !runner.includes('import("./verify-lineage.mjs")')) throw new Error("Route P09 lineage changes to features/lineage.md and the runnable p09-lineage branch");
+}
+
+export function checkRecoveryDocumentation({ readme, index, recovery, operations, lineage }) {
+ if (/story is not implemented yet|story and its independent reviews are still pending/.test(readme + index)) throw new Error("Document the implemented P09 linked story and keep external acceptance separate");
+ for (const source of [recovery, operations, lineage]) if (!/cold physical clone/.test(source) || !/pg_basebackup/.test(source) || !/parallel/.test(source)) throw new Error("Document undetectable parallel cold physical clones and pg_basebackup copies as forbidden");
+ if (/Stop nothing|every worker exits 78 at its next transaction/.test(recovery)) throw new Error("Stop workers before the sealed dump and distinguish feature fences from queue supervision");
+ if (!operations.includes("## Release rollback")) throw new Error("Document release rollback against the installed migration head");
+}

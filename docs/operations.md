@@ -53,7 +53,7 @@ Otherwise it returns 503, with bounded, non-secret reasons:
 | `schema-absent` | Lineage table missing; the database is behind |
 | `schema-drift` | The schema head differs from this release's `0004_lineage` |
 | `lineage-sealed`, `lineage-consumed` | Sealed for recovery |
-| `lineage-identity-mismatch` | Copied or restored database |
+| `lineage-identity-mismatch` | Identity-changing copy or logical restore |
 | `lineage-absent`, `lineage-populated-without-lineage`, `lineage-schema-ahead` | Not admitted |
 | `auth-unconfigured` | No issuer configuration |
 | `transport-unencrypted` | The node is not terminating TLS |
@@ -124,7 +124,19 @@ Forbidden, and not reliably detectable:
 - `pg_restore` over live;
 - restoring without the post-backup erasure and mail history.
 
+A cold physical clone, storage snapshot or pg_basebackup copy can preserve all checked identity fields. Starting one in parallel with live is forbidden: both can be admitted. Detection is limited to the tested logical restore and identity-changing copy paths.
+
 Never treat schema-head equality as admission.
+
+## Release rollback
+
+Stop the server and worker before switching the release directory. Retain the current release and its manifest until the replacement is healthy.
+
+If the previous release expects the same installed migration head, point `/opt/scoat/release` back to that retained release, verify its manifest, and start the migration unit followed by the server and worker. Confirm `/healthz` is ready and both processes report that release digest before restoring traffic.
+
+If the database has newer migrations than the previous release understands, keep the services stopped. Use a forward fix compatible with that database. Restoring an older database to roll back code can resurrect erased accounts and repeat mail; it is forbidden. Use the sealed-source recovery procedure only for a database handoff with the genuine surviving source.
+
+This is an operator procedure; an actual systemd rollback remains UNTESTED.
 
 ## Key rotation
 

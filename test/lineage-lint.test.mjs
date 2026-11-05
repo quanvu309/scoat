@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission } from "../scripts/check-lineage.mjs";
+import { execFileSync } from "node:child_process";
+import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkLineageVerification, checkRecoveryDocumentation } from "../scripts/check-lineage.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const sources = [];
@@ -11,6 +12,27 @@ const swap = (file, from, to) => { const original = sources.find(item => item.fi
 const lineage = read("src/db/lineage.ts"), transaction = read("src/db/transaction.ts"), migration = read("db/migrations/0004_lineage.sql"), schema = read("src/db/schema.ts"), journal = read("db/migrations/meta/_journal.json");
 const runtime = { server: read("src/server.ts"), worker: read("src/worker.ts"), queue: read("src/queue/index.ts"), watches: read("src/memory/watches.ts"), lineage, index: read("src/index.ts") };
 const replaced = (source, from, to) => { assert.ok(source.includes(from), "missing " + from); return source.replace(from, to); };
+
+test("lineage verification routes from every entry point", () => {
+ const skill = read(".agents/skills/verify-scoat/SKILL.md"), index = read(".agents/skills/verify-scoat/features/README.md"), runner = read("scripts/verify.mjs");
+ const message = /Route P09 lineage/;
+ assert.doesNotThrow(() => checkLineageVerification(skill, index, runner));
+ assert.throws(() => checkLineageVerification(replaced(skill, "P09 S1", "P09 foundation"), index, runner), message);
+ assert.throws(() => checkLineageVerification(replaced(skill, "features/lineage.md", "features/omitted.md"), index, runner), message);
+ assert.throws(() => checkLineageVerification(skill, replaced(index, "[lineage](lineage.md)", "lineage"), runner), message);
+ assert.throws(() => checkLineageVerification(skill, index, replaced(runner, 'process.argv[2] === "p09-lineage"', 'process.argv[2] === "omitted"')), message);
+ assert.throws(() => checkLineageVerification(skill, index, replaced(runner, 'import("./verify-lineage.mjs")', 'import("./omitted.mjs")')), message);
+});
+
+test("recovery docs distinguish the implemented story and undetectable physical copies", () => {
+ const docs = { readme: read("README.md"), index: read(".agents/skills/verify-scoat/features/README.md"), recovery: read("docs/recovery.md"), operations: read("docs/operations.md"), lineage: read(".agents/skills/verify-scoat/features/lineage.md") };
+ const original = file => execFileSync("git", ["show", "9705fec:" + file], { encoding: "utf8" });
+ assert.doesNotThrow(() => checkRecoveryDocumentation(docs));
+ assert.throws(() => checkRecoveryDocumentation({ ...docs, readme: original("README.md") }), /implemented P09 linked story/);
+ assert.throws(() => checkRecoveryDocumentation({ ...docs, index: original(".agents/skills/verify-scoat/features/README.md") }), /implemented P09 linked story/);
+ for (const [key, file] of [["recovery", "docs/recovery.md"], ["operations", "docs/operations.md"], ["lineage", ".agents/skills/verify-scoat/features/lineage.md"]]) assert.throws(() => checkRecoveryDocumentation({ ...docs, [key]: original(file) }), /parallel cold physical clones/);
+ assert.throws(() => checkRecoveryDocumentation({ ...docs, operations: replaced(docs.operations, "## Release rollback", "## Previous release") }), /release rollback/);
+});
 
 test("every transaction and write in src passes the shared lineage fence; original bypass shapes fail", () => {
  assert.doesNotThrow(() => checkLineageFence(sources));

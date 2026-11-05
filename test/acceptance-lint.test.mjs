@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification } from "../scripts/check-acceptance.mjs";
+import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "../scripts/check-acceptance.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const original = (revision, file) => execFileSync("git", ["show", revision + ":" + file], { cwd: new URL("..", import.meta.url), encoding: "utf8", maxBuffer: 1 << 24 });
@@ -10,6 +10,14 @@ const replaced = (source, from, to) => { assert.ok(source.includes(from), "missi
 const story = read("scripts/story-lanes.mjs"), conditions = read("scripts/story-conditions.mjs");
 const swap = (from, to) => ({ story: replaced(story, from, to), conditions });
 const anchor = "  conditions.seller.setPence(5620);\n  const accepted";
+
+test("card link capture awaits the asynchronous host message instead of the prior link", () => {
+ assert.doesNotThrow(() => checkAcceptanceLinkCapture(story));
+ assert.throws(() => checkAcceptanceLinkCapture(original("655c490", "scripts/story-lanes.mjs")), /Await the new card host link/);
+ assert.throws(() => checkAcceptanceLinkCapture(replaced(story, "await page.waitForFunction", "void page.waitForFunction")), /Await the new card host link/);
+ assert.throws(() => checkAcceptanceLinkCapture(replaced(story, "window.harness.opened.length > count", "window.harness.opened.length >= count")), /Await the new card host link/);
+ assert.throws(() => checkAcceptanceLinkCapture(replaced(story, "window.harness.opened[count]", "window.harness.opened.at(-1)")), /Await the new card host link/);
+});
 
 test("the linked story reaches user state only through public clients and logged conditions", () => {
  assert.doesNotThrow(() => checkAcceptanceAuthority({ story, conditions }));

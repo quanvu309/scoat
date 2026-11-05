@@ -60,6 +60,21 @@ export function checkFixtureWorker(source) {
  if (!verify || !start || !ready || verify.start > start.start || ready.start < start.end) throw new Error("Fixture worker verifies the shipped release and announces its digest only after startWorker");
 }
 
+export function checkAcceptanceLinkCapture(source) {
+ const nodes = parsed(source);
+ const capture = nodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "openCardLink");
+ const body = capture && source.slice(capture.start, capture.end);
+ const required = [
+  "const before = await page.evaluate(() => window.harness.opened.length)",
+  "await button.click()",
+  "await page.waitForFunction(count => window.harness.opened.length > count, before)",
+  "return page.evaluate(count => window.harness.opened[count], before)",
+ ];
+ const positions = required.map(text => body?.indexOf(text) ?? -1);
+ const calls = nodes.filter(node => node.type === "CallExpression" && node.callee.name === "openCardLink");
+ if (positions.some((position, index) => position < 0 || (index > 0 && position <= positions[index - 1])) || calls.length !== 3 || nodes.some(node => node.type === "CallExpression" && node.callee.name === "opened")) throw new Error("Await the new card host link after each click with openCardLink before navigating");
+}
+
 export function checkAcceptanceVerification(skill, index, runner, workflow) {
  const selector = skill.split("## Completion")[0];
  const runs = Object.values(yaml(workflow).jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? "")).flatMap(run => run.split("\n").map(line => line.trim()));

@@ -4,7 +4,7 @@ import { parse as yaml } from "yaml";
 import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
-import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification } from "./check-acceptance.mjs";
+import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
 import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
@@ -199,6 +199,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkDeployUnits({ migrate: fs.readFileSync("deploy/systemd/scoat-migrate.service", "utf8"), server: fs.readFileSync("deploy/systemd/scoat-server.service", "utf8"), worker: fs.readFileSync("deploy/systemd/scoat-worker.service", "utf8"), env: fs.readFileSync("deploy/scoat.env.example", "utf8") });
   checkOperationsVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync("scripts/perf.mjs", "utf8"));
   checkAcceptanceAuthority({ story: fs.readFileSync("scripts/story-lanes.mjs", "utf8"), conditions: fs.readFileSync("scripts/story-conditions.mjs", "utf8") });
+  checkAcceptanceLinkCapture(fs.readFileSync("scripts/story-lanes.mjs", "utf8"));
   checkFixtureWorker(fs.readFileSync("scripts/watch-worker.mjs", "utf8"));
   checkAcceptanceVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));

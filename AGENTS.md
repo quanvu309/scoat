@@ -4,6 +4,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Risk | Required fix | Enforcement and negative proof |
 | --- | --- | --- |
+| Native story reads a link before its asynchronous host message arrives | Capture the current link count before clicking and await the new host entry before navigating | checkAcceptanceLinkCapture; original 655c490 and missing-wait fixtures; delayed-message capture regression |
 | Parallel fixtures delete each other’s live queue tables | Derive a queue namespace from the isolated application schema for setup, erasure and teardown | checkWatchQueueIsolation; original shared-schema fixtures; two live fixtures preserve queued jobs after one closes; checkCardRouting enforces the table header delimiter |
 | Watch activation succeeds without mail or invalid browser targets escape to a generic error | Gate starts and links on a worker mail key and catch typed target refusals before consuming confirmation | checkWatchActivation; original availability and parse-placement mutations; native rendered correction form retaining the confirmation and unconfigured HTTPS/MCP refusal with cancellation preserved |
 | Watch responses accept undeclared mail fields or permit activation caching | Strictly parse provider acceptance and serve activation with no-store | checkWatchResponses; original loose-schema and missing-header fixtures; real HTTP mail-response regression |

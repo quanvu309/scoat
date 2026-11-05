@@ -12,6 +12,13 @@ const maskStatus = () => {
 };
 const day = offset => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
 
+export async function openCardLink(page, button) {
+ const before = await page.evaluate(() => window.harness.opened.length);
+ await button.click();
+ await page.waitForFunction(count => window.harness.opened.length > count, before);
+ return page.evaluate(count => window.harness.opened[count], before);
+}
+
 export async function linkedStory({ fixture, conditions, page, evidence, log, secrets, visible, dwell }) {
  const issuer = fixture.f.issuer;
  const steps = [];
@@ -60,7 +67,6 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   assert.equal(result.status, 200, result.body);
   return JSON.parse(result.body).value.status;
  };
- const opened = async () => (await page.evaluate(() => window.harness.opened)).at(-1);
 
  const startup = await step("0-release-identity", async () => {
   const health = await (await fetch(issuer + "/healthz")).json();
@@ -177,15 +183,13 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    const frame = page.frameLocator("iframe");
    await frame.getByText("Current hunt", { exact: true }).waitFor();
    await frame.getByText("Skipped by you", { exact: true }).waitFor();
-   await frame.getByRole("button", { name: "Skip " + rows[2].row.label, exact: true }).click();
-   const skipLink = await opened();
+   const skipLink = await openCardLink(page, frame.getByRole("button", { name: "Skip " + rows[2].row.label, exact: true }));
    const cardSkip = await control(skipLink, "Skip row " + rows[2].row.id);
    assert.equal(cardSkip, "applied");
    await page.goto(card.url);
    await frame.getByText("Current hunt", { exact: true }).waitFor();
    await page.waitForFunction(() => document.querySelector("iframe")?.contentDocument?.body?.innerText.split("Skipped by you").length === 3);
-   await frame.getByRole("button", { name: "Stop new discovery", exact: true }).click();
-   const stopLink = await opened();
+   const stopLink = await openCardLink(page, frame.getByRole("button", { name: "Stop new discovery", exact: true }));
    const cardStop = await control(stopLink, "Stop accepting new discoveries");
    assert.equal(cardStop, "applied");
    const stamp = async () => (await conditions.read("SELECT data->>'stopRequestedAt' AS stamp FROM durable_hunts WHERE account=$1 AND id=$2", [account, hunt]))[0].stamp;
@@ -236,8 +240,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    await frame.getByRole("region", { name: "Finished quote", exact: true }).scrollIntoViewIfNeeded();
    await capture("card");
    conditions.identity.setEmail({ email, email_verified: true });
-   await frame.getByRole("button", { name: "Watch price", exact: true }).click();
-   watched = await opened();
+   watched = await openCardLink(page, frame.getByRole("button", { name: "Watch price", exact: true }));
    assert.equal(watched, huntA.watchUrl);
   } finally { await card.close(); }
   await page.goto(watched);

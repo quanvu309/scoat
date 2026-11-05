@@ -5,7 +5,8 @@ import { createServer } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { getRequestListener } from "@hono/node-server";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
 import { createIssuer, InvalidCredential } from "./auth/issuer.js";
@@ -17,8 +18,36 @@ import { PostgresHuntStore } from "./hunt/postgres.js";
 import { watchSchema } from "./memory/watch-schema.js";
 import { Watches, watchConfigSchema } from "./memory/watches.js";
 import { Delivery } from "./delivery/index.js";
+import { admit, begin, inspect, LineageRefused, type RefusalReason } from "./db/lineage.js";
+import { verifyRelease } from "./release.js";
+import { health } from "./readiness.js";
+import { z } from "zod";
+
+const listenHostSchema = z.union([z.ipv4(), z.ipv6()]);
+
+export function listenHost(value: string | undefined): string | null {
+  const parsed = listenHostSchema.safeParse(value ?? "127.0.0.1");
+  return parsed.success ? parsed.data : null;
+}
+
+async function lineageStatus(pool: import("pg").Pool): Promise<string> {
+  try {
+    const state = await inspect(pool);
+    return state.kind === "unadmitted" ? state.reason : state.kind;
+  } catch {
+    process.stderr.write(JSON.stringify({ event: "lineage_unavailable" }) + "\n");
+    return "database-unavailable";
+  }
+}
+
+function refuseLineage(res: import("node:http").ServerResponse, reason: RefusalReason): void {
+  process.stderr.write(JSON.stringify({ event: "lineage_refused", reason }) + "\n");
+  if (!res.headersSent) res.writeHead(503, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "service_unavailable", lineage: reason }));
+}
 
 export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
+  const release = await verifyRelease();
   const configPath = process.env.SCOAT_AUTH_CONFIG;
   const store =
     configPath && process.env.DATABASE_URL
@@ -28,10 +57,11 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
   let auth: Awaited<ReturnType<typeof createIssuer>> | null = null;
   let watches: Watches | undefined;
   try {
-    if (store && configPath) {
+    if (store && configPath && release.kind === "verified") {
+      const admitted = await admit(store.pool, "server");
       const installation = await store.pool.connect();
       try {
-        await installation.query("BEGIN");
+        await begin(installation);
         await installation.query("SELECT pg_advisory_xact_lock(80106)");
         await installation.query(authSchema + memorySchema + lifecycleSchema + watchSchema);
         await installation.query("COMMIT");
@@ -40,7 +70,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       const controlPath=process.env.SCOAT_CONTROL_CONFIG;
       if(controlPath) codec=new ControlCodec(JSON.parse(await readFile(controlPath,"utf8")));
       const hunts=new Hunts({store,knowledge:new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY)});
-      watches = process.env.SCOAT_WATCH_CONFIG ? new Watches({ pool: store.pool, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined;
+      watches = process.env.SCOAT_WATCH_CONFIG ? new Watches({ admitted, delivery: options.delivery ?? Delivery.production(null), config: watchConfigSchema.parse(JSON.parse(await readFile(process.env.SCOAT_WATCH_CONFIG, "utf8"))), enqueue: null }) : undefined;
       auth = await createIssuer(
         JSON.parse(await readFile(configPath, "utf8")),
         store.pool,
@@ -82,14 +112,14 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     }
     res.setHeader("cache-control", "no-store");
     if (req.url === "/healthz" && req.method === "GET") {
-      res.writeHead(auth ? 200 : 503, { "content-type": "application/json" });
-      res.end(
-        JSON.stringify({
-          ready: !!auth,
-          phase: "P08",
-          auth: auth ? "configured" : "unavailable",
-        }),
-      );
+      const report = await health(release, store?.pool ?? null, auth !== null, tls !== null);
+      res.writeHead(report.ready ? 200 : 503, { "content-type": "application/json" });
+      res.end(JSON.stringify(report));
+      return;
+    }
+    if (release.kind !== "verified") {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "service_unavailable", artifact: release.reason }));
       return;
     }
     if (auth && !("encrypted" in req.socket && req.socket.encrypted)) {
@@ -102,6 +132,12 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       res.end("Authentication is not configured");
       return;
     }
+    const lineage = await lineageStatus(store.pool);
+    if (lineage !== "admitted") {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "service_unavailable", lineage }));
+      return;
+    }
     if (Number(req.headers["content-length"] ?? 0) > 65536) {
       res.writeHead(413);
       res.end();
@@ -110,7 +146,11 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     if (req.url !== "/mcp") {
       try {
         await auth.route(req, res);
-      } catch {
+      } catch (error) {
+        if (error instanceof LineageRefused) {
+          refuseLineage(res, error.reason);
+          return;
+        }
         process.stderr.write(JSON.stringify({ event: "authentication_request_refused" }) + "\n");
         if (!res.headersSent) res.writeHead(400);
         res.end("Authentication request refused");
@@ -122,6 +162,10 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     try {
       principal = await auth.authenticate(req);
     } catch (error) {
+      if (error instanceof LineageRefused) {
+        refuseLineage(res, error.reason);
+        return;
+      }
       if (!(error instanceof InvalidCredential)) {
         process.stderr.write(JSON.stringify({ event: "authentication_unavailable" }) + "\n");
         res.writeHead(503);
@@ -136,10 +180,14 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     }
     const validationMs = performance.now() - authStart;
     const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec), watches?.available === true);
+    let invocationRefusal: RefusalReason | undefined;
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {
         return await invoke(call);
+      } catch (error) {
+        if (error instanceof LineageRefused) invocationRefusal = error.reason;
+        throw error;
       } finally {
         if (!res.headersSent)
           res.setHeader(
@@ -148,7 +196,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
           );
       }
     });
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new WebStandardStreamableHTTPServerTransport({
       enableJsonResponse: true,
       enableDnsRebindingProtection: true,
       allowedHosts,
@@ -175,8 +223,20 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       }
       await server.connect(transport);
-      await transport.handleRequest(req, res, body);
-    } catch {
+      const handleRequest = getRequestListener(async (request) => {
+        const response = await transport.handleRequest(request, { parsedBody: body });
+        if (invocationRefusal !== undefined) {
+          process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: invocationRefusal }) + "\n");
+          return Response.json({ error: "service_unavailable", lineage: invocationRefusal }, { status: 503 });
+        }
+        return response;
+      }, { overrideGlobalObjects: false });
+      await handleRequest(req, res);
+    } catch (error) {
+      if (error instanceof LineageRefused) {
+        refuseLineage(res, error.reason);
+        return;
+      }
       process.stderr.write(JSON.stringify({ event: "mcp_request_refused" }) + "\n");
       if (!res.headersSent) res.writeHead(400);
       res.end();
@@ -193,14 +253,26 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  const host = listenHost(process.env.SCOAT_LISTEN_HOST);
+  if (host === null) {
+    process.stderr.write(JSON.stringify({ event: "configuration_refused", reason: "listen-host-not-ip-literal" }) + "\n");
+    process.exit(78);
+  }
   const port = Number(process.env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error("PORT must be an integer from 0 to 65535");
-  const server = await createHttpServer();
-  server.listen(port, "127.0.0.1", () => {
+  let server: Awaited<ReturnType<typeof createHttpServer>>;
+  try {
+    server = await createHttpServer();
+  } catch (error) {
+    if (!(error instanceof LineageRefused)) throw error;
+    process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: error.reason }) + "\n");
+    process.exit(78);
+  }
+  server.listen(port, host, () => {
     const address = server.address();
     if (address && typeof address !== "string" && process.send)
-      process.send({ port: address.port });
+      process.send({ port: address.port, host: address.address });
   });
   for (const signal of ["SIGINT", "SIGTERM"])
     process.on(signal, () => {

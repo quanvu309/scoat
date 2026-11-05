@@ -4,6 +4,11 @@ import { parse as yaml } from "yaml";
 import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
+import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
+import { checkPerfStory } from "./check-perf.mjs";
+import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage, checkFixtureJournal } from "./check-runtime-lineage.mjs";
+import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
+import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -31,6 +36,7 @@ export function checkWorkflow(source) {
       if (checkout?.with?.["fetch-depth"] !== 0) throw new Error("Fetch full history with checkout fetch-depth: 0 so P05 evidence can inspect origin/main");
     }
   }
+  checkHostedCoverage(source);
 }
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -135,6 +141,22 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+  const runtimeLineage = { database: fs.readFileSync("scripts/database.mjs", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), journal: fs.readFileSync("src/db/journal.ts", "utf8") };
+  checkMigrationAdmission(runtimeLineage);
+  checkFixtureJournal({ fixture: fs.readFileSync("scripts/auth-fixture.mjs", "utf8"), journal: fs.readFileSync("scripts/fixture-journal.mjs", "utf8") });
+  checkJournalReadiness({ readiness: fs.readFileSync("src/readiness.ts", "utf8"), lineage: runtimeLineage.lineage, journal: runtimeLineage.journal });
+  checkRequestLineage(fs.readFileSync("src/server.ts", "utf8"));
+  const lineageSources = [];
+  const collectSources = directory => { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const file = directory + "/" + entry.name; if (entry.isDirectory()) collectSources(file); else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts")) lineageSources.push({ file, source: fs.readFileSync(file, "utf8") }); } };
+  collectSources("src");
+  checkLineageFence(lineageSources);
+  checkLineageBegin(fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/transaction.ts", "utf8"));
+  checkLineageIdentity(fs.readFileSync("db/migrations/0004_lineage.sql", "utf8"), fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/schema.ts", "utf8"), fs.readFileSync("db/migrations/meta/_journal.json", "utf8"));
+  checkRuntimeAdmission({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), queue: fs.readFileSync("src/queue/index.ts", "utf8"), watches: fs.readFileSync("src/memory/watches.ts", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
+  checkRecoveryAuthority({ handoff: fs.readFileSync("src/recovery/handoff.ts", "utf8"), recovery: fs.readFileSync("src/recovery.ts", "utf8"), tools: fs.readFileSync("src/recovery/tools.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
+  checkRecoveryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+  checkLineageVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+  checkRecoveryDocumentation({ readme: fs.readFileSync("README.md", "utf8"), index: fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), recovery: fs.readFileSync("docs/recovery.md", "utf8"), operations: fs.readFileSync("docs/operations.md", "utf8"), lineage: fs.readFileSync(".agents/skills/verify-scoat/features/lineage.md", "utf8") });
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
@@ -176,6 +198,18 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkBrowserControls(fs.readFileSync("src/controls/codec.ts","utf8"),fs.readFileSync("src/hunt/index.ts","utf8"));
   checkRegistryAdapter(adapter);
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
+  checkListenHost(fs.readFileSync("src/server.ts", "utf8"));
+  checkReadiness({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), readiness: fs.readFileSync("src/readiness.ts", "utf8"), database: fs.readFileSync("scripts/database.mjs", "utf8") });
+  checkReleaseOwner({ release: fs.readFileSync("src/release.ts", "utf8"), build: fs.readFileSync("scripts/build.mjs", "utf8"), sources: lineageSources });
+  checkPoolOwner(lineageSources);
+  checkLaneTools(["scripts/verify-lineage.mjs", "scripts/verify-recovery.mjs", "scripts/perf-lineage.mjs", "scripts/verify-operations.mjs", "scripts/lane-tools.mjs"].map(file => ({ file, source: fs.readFileSync(file, "utf8") })));
+  checkDeployUnits({ migrate: fs.readFileSync("deploy/systemd/scoat-migrate.service", "utf8"), server: fs.readFileSync("deploy/systemd/scoat-server.service", "utf8"), worker: fs.readFileSync("deploy/systemd/scoat-worker.service", "utf8"), env: fs.readFileSync("deploy/scoat.env.example", "utf8") });
+  checkOperationsVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync("scripts/perf.mjs", "utf8"));
+  checkAcceptanceAuthority({ story: fs.readFileSync("scripts/story-lanes.mjs", "utf8"), conditions: fs.readFileSync("scripts/story-conditions.mjs", "utf8") });
+  checkAcceptanceLinkCapture(fs.readFileSync("scripts/story-lanes.mjs", "utf8"));
+  checkPerfStory({ entry: fs.readFileSync("scripts/perf.mjs", "utf8"), p09: fs.readFileSync("scripts/perf-p09.mjs", "utf8"), story: fs.readFileSync("scripts/perf-story.mjs", "utf8"), lineage: fs.readFileSync("scripts/perf-lineage.mjs", "utf8") });
+  checkFixtureWorker(fs.readFileSync("scripts/watch-worker.mjs", "utf8"));
+  checkAcceptanceVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
   checkDriver(fs.readFileSync("scripts/driver.mjs", "utf8"));
 }
@@ -260,7 +294,7 @@ export function checkScenarioProjection(domain, hunt) {
 
 export function checkDurableFences(source) {
   if (/lockAll|ISOLATION LEVEL SERIALIZABLE/.test(source)) throw new Error("Use named READ COMMITTED account/hunt fences and addressed rows");
-  if (!source.includes("BEGIN ISOLATION LEVEL READ COMMITTED") || !source.includes("Inactive account incarnation")) throw new Error("Fence every transaction on the persisted account incarnation");
+  if (!source.includes("await begin(client);") || !source.includes("Inactive account incarnation")) throw new Error("Fence every transaction on the persisted account incarnation");
 }
 
 export function checkStartReplay(source) {
@@ -383,7 +417,7 @@ export function checkBrowserLink(source) {
   const link = nodes.find(node => node.type === "IfStatement" && node.test.type === "BinaryExpression" && node.test.right?.value === "/account/link");
   const body = link?.consequent.body ?? [];
   const entry = body.find(node => node.type === "IfStatement" && node.test.right?.value === "GET" && astNodes(node.consequent).some(call => call.type === "CallExpression" && call.callee?.name === "upstreamRedirect" && call.arguments[1]?.properties?.some(property => property.value?.value === "link-current")));
-  const consumed = astNodes(link).find(node => node.type === "CallExpression" && member(node.callee,"pool","query") && node.arguments[0]?.value === "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data");
+  const consumed = astNodes(link).find(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data");
   const bound = body.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "BinaryExpression" && test.operator === "!==" && test.right?.value === "link-confirm") && node.consequent.type === "ThrowStatement");
   const candidate = astNodes(link).find(node => node.type === "CallExpression" && node.callee?.name === "upstreamRedirect" && node.arguments[1]?.properties?.some(property => property.value?.value === "link-candidate"));
   const cookie = bound && astNodes(bound.test).some(node => node.type === "BinaryExpression" && node.operator === "!==" && node.left?.callee?.name === "digest" && node.left.arguments[0]?.name === "browser" && member(node.right,"flow","browser"));
@@ -458,7 +492,7 @@ export function checkLinkSuppression(issuer,link) {
  const body = root.body.find(node => node.type === "ExportNamedDeclaration" && node.declaration?.id?.name === "linkIdentity")?.declaration?.body?.body.find(node => node.type === "TryStatement")?.block.body ?? [];
  const message = "Reject pre-erasure link flows under the subject lock using the original database-stamped start";
  requireOrderedStatements(body,`
- await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+ await begin(client);
  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([issuer,subject])]);
  const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([issuer,subject])).digest("hex");
  const suppressed = await client.query("SELECT 1 FROM account_suppression WHERE subject_digest=$1 AND erased_at>=to_timestamp($2/1000.0) AND purge_after>now() LIMIT 1",[pseudonym,startedAt]);
@@ -731,7 +765,7 @@ export function checkWatchVerification(skill, index, runner) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
- checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
+ checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
  checkWatchLockOrder(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchRecipient(fs.readFileSync("src/memory/watches.ts", "utf8"));

@@ -1,3 +1,4 @@
+import { begin } from "../db/lineage.js";
 import { ControlCodec, intentSchema, actionSchema } from "../controls/codec.js";
 import { Hunts } from "../hunt/index.js";
 import { retryTransaction } from "../db/transaction.js";
@@ -247,7 +248,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       let uid: string;
       let account: string;
       try {
-        await client.query("BEGIN");
+        await begin(client);
         const row = (await client.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>now()",[digest(confirmation)])).rows[0];
         const flow = flowSchema.parse(row?.data), browser = browserCookie(req);
         if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "enroll-confirm") throw new Error("Invalid enrollment confirmation");
@@ -388,7 +389,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       if (!confirmation || submitted.get("decision") !== "allow") throw new Error("Explicit allow required");
       const client = await pool.connect();
       try {
-        await client.query("BEGIN");
+        await begin(client);
         const pending = (await client.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>now()", [digest(confirmation)])).rows[0];
         const flow = flowSchema.parse(pending?.data);
         const browser = browserCookie(req);
@@ -417,10 +418,10 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       const submitted = await form(req);
       const confirmation = submitted.get("confirmation");
       if (!confirmation) throw new Error("Missing confirmation");
-      const rows = await pool.query(
+      const rows = await retryTransaction(pool, client => client.query(
         "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data",
         [digest(confirmation)],
-      );
+      ));
       const flow = flowSchema.parse(rows.rows[0]?.data);
       const browser = browserCookie(req);
       if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "link-confirm")
@@ -509,10 +510,10 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     if (url.pathname === "/upstream/callback" && req.method === "GET") {
       const state = url.searchParams.get("state");
       if (!state) throw new Error("Missing state");
-      const flows = await pool.query(
+      const flows = await retryTransaction(pool, client => client.query(
         "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data",
         [digest(state)],
-      );
+      ));
       const flow = flowSchema.parse(flows.rows[0]?.data);
       const browser = browserCookie(req);
       if (!browser || digest(browser) !== flow.browser)
@@ -557,7 +558,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
         const client = await pool.connect();
         try {
-          await client.query("BEGIN");
+          await begin(client);
           const active = await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",[target.account,target.incarnation]);
           if (!active.rowCount) throw new Error("Inactive account incarnation");
           const confirmation = randomBytes(32).toString("base64url"), status = randomBytes(32).toString("base64url");
@@ -614,7 +615,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         if (target.account !== flow.context.account) throw new Error("Same account required");
         const client = await pool.connect();
         try {
-          await client.query("BEGIN");
+          await begin(client);
           const active = await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE", [target.account,target.incarnation]);
           if (!active.rowCount) throw new Error("Inactive account incarnation");
           const command = (await client.query("SELECT command FROM memory_commands WHERE account=$1 AND incarnation=$2 AND key=$3 AND expires_at>now() AND command IS NOT NULL", [target.account,target.incarnation,flow.context.key])).rows[0];
@@ -670,7 +671,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         const confirmation = randomBytes(32).toString("base64url");
         const client = await pool.connect();
         try {
-          await client.query("BEGIN");
+          await begin(client);
           await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([upstream.serverMetadata().issuer,claims.sub])]);
           const existing = await client.query("SELECT 1 FROM oauth_identities WHERE issuer=$1 AND subject=$2",[upstream.serverMetadata().issuer,claims.sub]);
           if (existing.rowCount) throw new Error("Identity changed; start a fresh login");

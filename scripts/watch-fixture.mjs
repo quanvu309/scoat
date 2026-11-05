@@ -13,6 +13,7 @@ import { scratchDirectory } from "./scratch.mjs";
 import { fixtureDelivery } from "./watch-delivery.mjs";
 import { Watches, watchConfigSchema } from "../dist/memory/watches.js";
 import { WatchQueue, queueSchemaFor } from "../dist/queue/index.js";
+import { admit } from "../dist/db/lineage.js";
 import { basisDigest } from "../dist/delivery/index.js";
 import { resolveWatchTarget } from "../dist/memory/watches.js";
 
@@ -61,8 +62,8 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
  const capture = await child(new URL("./mail-capture.mjs", import.meta.url), { ...process.env, CAPTURE_DIRECTORY: root, CAPTURE_KEY: root + "/seller-key.pem", CAPTURE_CERT: root + "/seller-cert.pem", CAPTURE_API_KEY: mailKey }, value => value.port);
  const mailOrigin = "https://localhost:" + capture.message.port;
  const accepted = [];
- const waiters = [];
- capture.process.on("message", value => { if (value.accepted) { accepted.push(value); for (const waiter of waiters.filter(item => item.key === value.accepted)) { waiters.splice(waiters.indexOf(waiter), 1); waiter.resolve(value); } } });
+ const waiters = [], next = [];
+ capture.process.on("message", value => { if (value.accepted) { accepted.push(value); for (const resolve of next.splice(0)) resolve(value); for (const waiter of waiters.filter(item => item.key === value.accepted)) { waiters.splice(waiters.indexOf(waiter), 1); waiter.resolve(value); } } });
  let config, bundle, isolatedUrl;
  const serverEnv = {};
  const f = await authFixture(databaseUrl, {
@@ -84,13 +85,17 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
  const delivery = fixtureDelivery(env);
  const queueSchema = await queueSchemaFor(f.store.pool);
  if (!/^scoat_jobs_[0-9a-f]{32}$/.test(queueSchema)) throw new Error("Watch fixtures require an isolated queue schema");
- const producer = await WatchQueue.open(isolatedUrl, "producer");
+ const admitted = await admit(f.store.pool, "server");
+ const producer = await WatchQueue.open(admitted, isolatedUrl, "producer");
  let worker = null;
  const fixture = {
   f, root, state, config, env, delivery, producer, queueSchema, sellerPort, mailOrigin, accepted,
   pool: f.store.pool,
-  watches: pause => new Watches({ pool: f.store.pool, delivery, config, enqueue: producer, ...(pause ? { pause } : {}) }),
+  admitted,
+  watches: pause => new Watches({ admitted, delivery, config, enqueue: producer, ...(pause ? { pause } : {}) }),
   waitAccepted: key => new Promise(resolve => { const found = accepted.find(item => item.accepted === key); if (found) resolve(found); else waiters.push({ key, resolve }); }),
+  nextAccepted: () => new Promise(resolve => { next.push(resolve); }),
+  workerProcess: () => worker?.process ?? null,
   async hold(milliseconds) { await fetch(mailOrigin + "/control", { method: "POST", body: JSON.stringify({ holdMilliseconds: milliseconds }) }); },
   async deliveries() { return (await (await fetch(mailOrigin + "/deliveries")).text()).split("\n").filter(Boolean).map(line => JSON.parse(line)); },
   async requests() { return (await readFile(path.join(root, "requests.jsonl"), "utf8").catch(() => "")).split("\n").filter(Boolean).map(line => JSON.parse(line)); },

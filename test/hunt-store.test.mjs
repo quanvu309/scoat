@@ -8,7 +8,7 @@ test("durable fences reject original lockAll shape and serializable prescription
  const actual=fs.readFileSync("src/hunt/postgres.ts","utf8");
  checkDurableFences(actual);
  assert.throws(()=>checkDurableFences("transact(args: { hunt: HuntId | null; lockAll: boolean })"));
- assert.throws(()=>checkDurableFences(actual.replace("READ COMMITTED","SERIALIZABLE")));
+ assert.throws(()=>checkDurableFences(actual.replace("await begin(client);","await client.query(\"BEGIN ISOLATION LEVEL SERIALIZABLE\");")));
 });
 test("canonical payload binds object keys independently of input insertion order",()=>{
  assert.equal(canonical({b:1,a:[2,3]}),canonical({a:[2,3],b:1}));

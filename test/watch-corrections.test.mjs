@@ -15,6 +15,7 @@ import { retryTransaction } from "../dist/db/transaction.js";
 import { deleteScopedJobs, queueNames, queueSchemaFor } from "../dist/queue/index.js";
 import { Watches, deleteWatches, signUnsubscribe } from "../dist/memory/watches.js";
 import { startWorker } from "../dist/worker.js";
+import { admit } from "../dist/db/lineage.js";
 
 const job = (seeded, day) => ({ account: seeded.account, incarnation: seeded.incarnation, watch: seeded.watch, day });
 const send = (seeded, alert) => ({ account: seeded.account, incarnation: seeded.incarnation, watch: seeded.watch, alert });
@@ -39,7 +40,8 @@ test("PostgreSQL watch corrections: lock order, all-state queue erasure, absent 
    const fence = await w.pool.connect();
    let connects = 0;
    const counted = { connect: () => { connects++; return w.pool.connect(); } };
-   const planner = new Watches({ pool: counted, delivery: w.delivery, config: w.config, enqueue: w.producer });
+   const planner = new Watches({ admitted: await admit(counted, "worker"), delivery: w.delivery, config: w.config, enqueue: w.producer });
+   connects = 0;
    let planning = null;
    try {
     await fence.query("BEGIN");
@@ -90,7 +92,7 @@ test("PostgreSQL watch corrections: lock order, all-state queue erasure, absent 
    w.state.pence = 5400;
    const pending = await w.watches().check(job(quiet, "2027-03-02"));
    assert.ok(pending.alert);
-   const mailless = new Watches({ pool: w.pool, delivery: fixtureDelivery({ SCOAT_FIXTURE_SELLER_PORT: String(w.sellerPort) }), config: w.config, enqueue: w.producer });
+   const mailless = new Watches({ admitted: w.admitted, delivery: fixtureDelivery({ SCOAT_FIXTURE_SELLER_PORT: String(w.sellerPort) }), config: w.config, enqueue: w.producer });
    await assert.rejects(mailless.send(send(quiet, pending.alert)), /Mail transport unavailable/);
    const untouched = (await w.pool.query("SELECT state,attempts,marked_at FROM watch_alerts WHERE id=$1", [pending.alert])).rows[0];
    assert.deepEqual({ state: untouched.state, attempts: untouched.attempts, marked: untouched.marked_at }, { state: "pending", attempts: 0, marked: null });
@@ -144,7 +146,7 @@ test("planning reaches every account beyond 1000 and every due watch beyond 5000
    assert.ok(alert.alert);
    await w.pool.query("UPDATE watch_alerts SET deadline=now()-interval '1 minute' WHERE id=$1", [alert.alert]);
    const checks = new Set(), sends = new Set();
-   const planner = new Watches({ pool: w.pool, delivery: w.delivery, config: w.config, enqueue: { check: async (_client, value) => { checks.add(value.watch); }, send: async (_client, value) => { sends.add(value.alert); } } });
+   const planner = new Watches({ admitted: w.admitted, delivery: w.delivery, config: w.config, enqueue: { check: async (_client, value) => { checks.add(value.watch); }, send: async (_client, value) => { sends.add(value.alert); } } });
    const planned = await planner.plan();
    const expected = (await w.pool.query("SELECT id FROM watches WHERE status='active'")).rows.map(row => row.id);
    assert.equal(checks.has(tail.watch), true);

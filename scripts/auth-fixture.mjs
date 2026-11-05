@@ -13,6 +13,7 @@ import * as jose from "jose";
 import assert from "node:assert/strict";
 import { scratchDirectory } from "./scratch.mjs";
 import { durableSchema } from "../dist/db/schema.js";
+import { migrateFixtureDatabase } from "./fixture-journal.mjs";
 import { createIssuer } from "../dist/auth/issuer.js";
 import { authSchema } from "../dist/auth/schema.js";
 import { PostgresHuntStore } from "../dist/hunt/postgres.js";
@@ -50,6 +51,7 @@ export async function authFixture(databaseUrl, options = {}) {
   const originalCAs = getCACertificates("default");
   setDefaultCACertificates([...originalCAs, cert]);
   const admin = new pg.Pool({ connectionString: databaseUrl });
+  await migrateFixtureDatabase(admin);
   const schema = "auth_" + randomBytes(16).toString("hex");
   await admin.query("CREATE SCHEMA " + schema);
   const isolated = new URL(databaseUrl);

@@ -1,6 +1,9 @@
+import { begin } from "../db/lineage.js";
+import { retryTransaction } from "../db/transaction.js";
 import { readDeclaredProfile } from "../memory/storage.js";
 import { releaseSchema } from "../knowledge/index.js";
-import pg from "pg";
+import type pg from "pg";
+import { openPool } from "../db/pool.js";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import type { AccountId, AccountScope, Compatibility, HuntId, Offer, RequestKey, RowId } from "../domain.js";
@@ -63,12 +66,12 @@ export type Hooks = { beforeAccountFence?: (scope: Scope, client: pg.PoolClient)
 export class PostgresHuntStore {
   readonly pool: pg.Pool;
   retries = 0;
-  constructor(args: { databaseUrl: string; hooks?: Hooks }) { this.pool = new pg.Pool({ connectionString: args.databaseUrl, max: 16, connectionTimeoutMillis: 5000 }); this.hooks = args.hooks; }
+  constructor(args: { databaseUrl: string; hooks?: Hooks }) { this.pool = openPool({ connectionString: args.databaseUrl, max: 16, connectionTimeoutMillis: 5000 }); this.hooks = args.hooks; }
   readonly hooks: Hooks | undefined;
   async createAccount(account: AccountId): Promise<AccountScope> {
     z.string().trim().min(1).max(128).parse(account);
     const incarnation = z.uuid().brand<"Incarnation">().parse(randomUUID());
-    await this.pool.query("INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)", [account,incarnation]);
+    await retryTransaction(this.pool, client => client.query("INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)", [account,incarnation]));
     return { account,incarnation };
   }
   async close() { await this.pool.end(); }
@@ -76,7 +79,7 @@ export class PostgresHuntStore {
     for (let attempt=0; ;attempt++) {
       const client = await this.pool.connect();
       try {
-        await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+        await begin(client);
         await this.hooks?.beforeAccountFence?.(scope,client);
         const account = await client.query("SELECT erased FROM hunt_accounts WHERE account=$1 AND incarnation=$2 FOR " + (scope.accountFence === "exclusive" ? "UPDATE" : "SHARE"), [scope.account,scope.incarnation]);
         if (!account.rows[0] || account.rows[0].erased) throw new StoreFailure("forbidden", "Inactive account incarnation");

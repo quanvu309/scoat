@@ -52,4 +52,16 @@ export function checkCardProjection(source) {
  });
  for(const path of ["slot.completion.proof","view.final.quote","value.steps","value.reason"]) if(!paths.has(path)) throw new Error("Render slot proofs, the finished quote, and status steps and reasons from the canonical view: "+path);
 }
-if(import.meta.url===pathToFileURL(process.argv[1]).href) { checkCardBuild(readFileSync("vite.config.ts","utf8"),readFileSync("src/card/adapter.ts","utf8"),JSON.parse(readFileSync("package.json","utf8"))); checkCardRenewal(readFileSync("src/card/index.ts","utf8")); checkCardProjection(readFileSync("src/card/renderer.tsx","utf8")); checkCardRouting(readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),readFileSync("scripts/verify.mjs","utf8"),{host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")}); }
+if(import.meta.url===pathToFileURL(process.argv[1]).href) { checkCardBuild(readFileSync("vite.config.ts","utf8"),readFileSync("src/card/adapter.ts","utf8"),JSON.parse(readFileSync("package.json","utf8"))); checkCardRenewal(readFileSync("src/card/index.ts","utf8")); checkCardInitialState(readFileSync("src/card/index.ts","utf8"),readFileSync("src/card/renderer.tsx","utf8")); checkCardProjection(readFileSync("src/card/renderer.tsx","utf8")); checkCardRouting(readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),readFileSync("scripts/verify.mjs","utf8"),{host:readFileSync("docs/host-support.md","utf8"),notes:readFileSync("docs/implementation-notes.md","utf8"),agents:readFileSync("AGENTS.md","utf8")}); }
+export function checkCardInitialState(controller, renderer) {
+ const nodes=[];walk(parse(controller,{sourceType:"module",plugins:["typescript"]}),node=>nodes.push(node));
+ const owner=nodes.find(node=>node.type==="FunctionDeclaration" && node.id?.name==="initialState");
+ const ownerText=owner?controller.slice(owner.start,owner.end):"";
+ if(!owner || !/final\.kind==="finished"/.test(ownerText) || ownerText.indexOf("finished")>ownerText.indexOf("Connecting")) throw new Error("One initialState owner states a finished snapshot before any connecting message");
+ const states=nodes.filter(node=>node.type==="VariableDeclarator" && node.id?.name==="state");
+ if(states.length!==1 || states[0].init?.type!=="CallExpression" || states[0].init.callee.name!=="initialState") throw new Error("The controller starts from initialState");
+ const renderNodes=[];walk(parse(renderer,{sourceType:"module",plugins:["typescript","jsx"]}),node=>renderNodes.push(node));
+ if(renderNodes.some(node=>node.type==="StringLiteral" && node.value==="Connecting…")) throw new Error("The renderer derives its first state from initialState, not its own connecting literal");
+ const initial=renderNodes.find(node=>node.type==="CallExpression" && node.callee.name==="useState" && renderer.slice(node.start,node.end).includes("initialState(initial,bridge)"));
+ if(!initial) throw new Error("The renderer derives its first state from initialState");
+}

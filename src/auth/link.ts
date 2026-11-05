@@ -1,3 +1,4 @@
+import { begin } from "../db/lineage.js";
 import { deleteAuthentication } from "./erasure.js";
 import { createHmac } from "node:crypto";
 import type pg from "pg";
@@ -13,7 +14,7 @@ export async function linkIdentity(
 ) {
   const client = await pool.connect();
   try {
-    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    await begin(client);
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       JSON.stringify([issuer, subject]),
     ]);

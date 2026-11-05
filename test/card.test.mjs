@@ -1,4 +1,5 @@
-import { checkCardBuild, checkCardRouting, checkCardRenewal, checkCardProjection } from "../scripts/check-card.mjs";
+import { checkCardBuild, checkCardRouting, checkCardRenewal, checkCardProjection, checkCardInitialState } from "../scripts/check-card.mjs";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -148,4 +149,24 @@ test("card projection retains slot proofs, finished quote and status details",()
  const source=readFileSync("src/card/renderer.tsx","utf8");
  checkCardProjection(source);
  for(const path of ["slot.completion.proof","view.final.quote","value.steps","value.reason"]) assert.throws(()=>checkCardProjection(source.replaceAll(path,path+"Missing")),/Render slot proofs/);
+});
+test("a card opened on a finished hunt states the final result instead of connecting forever; the original shape fails", async () => {
+ const calls=[];
+ const bridge={capability:async op=>{calls.push(op);throw new Error("unexpected");},read:async()=>{calls.push("read");throw new Error("unexpected");},openLink:async()=>{}};
+ const finished=cardSnapshot();finished.value.view.final={kind:"finished",quote:null};
+ const changes=[];
+ const controller=createController(finished,bridge,state=>changes.push(state));
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.deepEqual(calls,[]);
+ assert.equal(controller.getState().message,"Finished result. It no longer changes, so the card does not poll.");
+ assert.ok(changes.every(state=>state.message!=="Connecting…"));
+ controller.dispose();
+ const open=createController(cardSnapshot(),undefined,()=>{});
+ assert.match(open.getState().message,/Live updates unavailable/);
+ const index=readFileSync(new URL("../src/card/index.ts",import.meta.url),"utf8"),renderer=readFileSync(new URL("../src/card/renderer.tsx",import.meta.url),"utf8");
+ const original=file=>execFileSync("git",["show","4a5f31a:"+file],{cwd:new URL("..",import.meta.url),encoding:"utf8"});
+ assert.doesNotThrow(()=>checkCardInitialState(index,renderer));
+ assert.throws(()=>checkCardInitialState(original("src/card/index.ts"),renderer),/initialState owner/);
+ assert.throws(()=>checkCardInitialState(index,original("src/card/renderer.tsx")),/renderer derives/);
+ assert.throws(()=>checkCardInitialState(index.replace('if(initial.value.view.final.kind==="finished") return','if(false) return'),renderer),/initialState owner/);
 });

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "../scripts/check-operations.mjs";
+import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkLaneTools, checkDeployUnits, checkOperationsVerification, checkRailwayRuntime } from "../scripts/check-operations.mjs";
 import { checkWorkflow } from "../scripts/check-structure.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
@@ -105,4 +105,41 @@ test("P09 operations route from the skill header, selector, feature index, verif
  assert.throws(() => checkOperationsVerification(replaced(skill, "end-to-end hunt and watch-notification performance", "lineage overhead"), index, runner, perf), /Route P09 story performance/);
  assert.throws(() => checkOperationsVerification(replaced(skill, "features/story-performance.md", "features/operations.md"), index, runner, perf), /Route P09 story performance/);
  assert.throws(() => checkOperationsVerification(skill, replaced(index, "[story performance](story-performance.md)", "story performance"), runner, perf), /Route P09 story performance/);
+});
+
+test("Railway runtime pins its image, re-originates pinned TLS to Node and keeps secrets in sealed runtime variables", () => {
+ const railway = { dockerfile: read("Dockerfile"), dockerignore: read(".dockerignore"), manifest: read("deploy/railway/services.json"), runtime: read("src/railway.ts") };
+ assert.doesNotThrow(() => checkRailwayRuntime(railway));
+ const edited = (key, from, to) => ({ ...railway, [key]: replaced(railway[key], from, to) });
+ const manifest = change => { const parsed = JSON.parse(railway.manifest); change(parsed); return { ...railway, manifest: JSON.stringify(parsed) }; };
+ for (const [mutated, pattern] of [
+  [edited("dockerfile", "bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime", "bookworm-slim AS runtime"), /digest-pinned/],
+  [edited("dockerfile", "RUN printf '%s' \"$RAILWAY_GIT_COMMIT_SHA\" | grep -Eqx '[0-9a-f]{40}'\n", ""), /40-hex source commit/],
+  [edited("dockerfile", " | sha256sum -c -", ""), /PGDG key digest/],
+  [edited("dockerfile", "postgresql-client-18=18.6-1.pgdg12+2", "postgresql-client-18"), /pinned PGDG/],
+  [edited("dockerfile", "verifyRelease()", "recordRelease()"), /re-recording/],
+  [edited("dockerfile", "COPY src src", "COPY . ."), /whole context/],
+  [edited("dockerfile", "ENV SCOAT_SOURCE_REVISION=", "ENV SCOAT_AUTH_CONFIG_JSON=inline SCOAT_SOURCE_REVISION="), /runtime variables/],
+  [edited("dockerfile", "USER node\n", ""), /under tini/],
+  [edited("dockerfile", "ENTRYPOINT [\"/usr/bin/tini\", \"--\"]\n", ""), /under tini/],
+  [edited("dockerfile", "FROM node", "# pinned\nFROM node"), /no comments/],
+  [edited("dockerignore", ".env\n", ""), /Exclude \.env /],
+  [edited("runtime", "rejectUnauthorized: true", "rejectUnauthorized: false"), /pinned to the configured certificate/],
+  [edited("runtime", "setHost: false, ", ""), /pinned to the configured certificate/],
+  [edited("runtime", "checkServerIdentity: verifyIssuer, ", ""), /pinned to the configured certificate/],
+  [edited("runtime", "checkServerIdentity(identity, peer)", "undefined"), /pinned to the configured certificate/],
+  [edited("runtime", "\"x-forwarded-proto\", ", ""), /forwarded headers/],
+  [edited("runtime", "req.headers[\"x-forwarded-proto\"] !== \"https\"", "req.headers[\"x-forwarded-proto\"] === \"never\""), /over HTTPS/],
+  [edited("runtime", "execArgv: [], ", ""), /empty execArgv/],
+  [edited("runtime", "const env: NodeJS.ProcessEnv = {};", "const env: NodeJS.ProcessEnv = { ...process.env };"), /whole environment/],
+  [edited("runtime", "mode: 0o600, flag: \"wx\"", "mode: 0o644"), /private 0600/],
+  [edited("runtime", "import { authConfigSchema } from \"./auth/config.js\";", "const authConfigSchema = { safeParse: (value: unknown) => ({ success: true, data: value }) };"), /missing authConfigSchema/],
+  [manifest(m => { m.services.worker.preDeployCommand = null; }), /railway worker: migrate/],
+  [manifest(m => { m.services.server.restartPolicyType = "ALWAYS"; }), /restart only on failure/],
+  [manifest(m => { m.services.server.drainingSeconds = 10; }), /drain longer/],
+  [manifest(m => { m.services.server.startCommand = "node dist/server.js"; }), /tini entrypoint/],
+  [manifest(m => { m.services.server.variables.SCOAT_TLS_KEY_PEM = { source: "value", value: "-----BEGIN PRIVATE KEY-----" }; }), /sealed runtime secret/],
+  [manifest(m => { delete m.services.server.variables.SCOAT_TLS_CERT_PEM; }), /match the supervisor/],
+  [manifest(m => { m.services.worker.variables.DATABASE_URL = { source: "value", value: "postgres://u:p@h/d" }; }), /carries no committed value/],
+ ]) assert.throws(() => checkRailwayRuntime(mutated), pattern);
 });

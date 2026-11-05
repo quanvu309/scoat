@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile, fork } from "node:child_process";
 import { promisify } from "node:util";
-import { appendFile, cp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
 import { withDatabase } from "./durable-database.mjs";
 import { scratchDirectory } from "./scratch.mjs";
@@ -437,6 +437,118 @@ await withDatabase(async adminUrl => {
    return { genesis: genesis.stdout, repeat: repeat.stdout, sealId, refusals: outcomes, recoveredUpgrade: { code: upgraded.code, journal: after.journal } };
   });
   await server.stop();
+  await gate("O12 Railway supervisor refuses missing or invalid runtime secrets with 78, re-originates pinned TLS to the Node HTTPS server, gates worker health on its ready digest and drains on SIGTERM", async () => {
+   const rail = await database("s3_rail");
+   await migrate(rail.url);
+   const entry = path.join(checkout, "dist/railway.js");
+   const revision = (await git(["rev-parse", "HEAD"])).trim();
+   const tmp = path.join(root, "railway-tmp");
+   await mkdir(tmp, { recursive: true });
+   const authJson = await readFile(f.root + "/auth.json", "utf8");
+   const secrets = { SCOAT_AUTH_CONFIG_JSON: authJson, SCOAT_CONTROL_CONFIG_JSON: await readFile(f.root + "/control.json", "utf8"), SCOAT_WATCH_CONFIG_JSON: await readFile(watchConfig, "utf8"), SCOAT_TLS_KEY_PEM: await readFile(f.root + "/key.pem", "utf8"), SCOAT_TLS_CERT_PEM: await readFile(f.root + "/cert.pem", "utf8") };
+   const workerSecrets = { SCOAT_WATCH_CONFIG_JSON: secrets.SCOAT_WATCH_CONFIG_JSON };
+   const base = role => ({ SCOAT_RUNTIME_ROLE: role, DATABASE_URL: rail.url, PORT: "0", SCOAT_EDGE_LISTEN_HOST: "127.0.0.1", SCOAT_SOURCE_REVISION: revision, TMPDIR: tmp, NODE_EXTRA_CA_CERTS: f.root + "/cert.pem", SCOAT_KNOWLEDGE_DIRECTORY: f.root + "/releases" });
+   const password = new URL(rail.url).password;
+   const upstreamSecret = JSON.parse(authJson).upstreamClientSecret;
+   const refused = async env => {
+    const run = start(entry, env, 90000);
+    const outcome = await run.first;
+    const output = run.output.stdout + run.output.stderr;
+    assert.equal(outcome.kind, "exit", output.slice(0, 2000));
+    assert.equal(outcome.code, 78, output.slice(0, 2000));
+    for (const secret of [password, upstreamSecret, "PRIVATE KEY"]) assert.ok(!output.includes(secret), "refusal output leaked secret material");
+    return run.output.stderr.trim().split("\n").map(line => { try { return JSON.parse(line); } catch { return { raw: line.slice(0, 200) }; } });
+   };
+   const last = events => events.findLast(item => item.event === "runtime_configuration_refused" || item.event === "lineage_refused");
+   const missing = last(await refused({ SCOAT_RUNTIME_ROLE: "server", DATABASE_URL: rail.url, PORT: "0" }));
+   assert.deepEqual(missing.missing, ["SCOAT_EDGE_LISTEN_HOST", "SCOAT_SOURCE_REVISION", "SCOAT_AUTH_CONFIG_JSON", "SCOAT_CONTROL_CONFIG_JSON", "SCOAT_WATCH_CONFIG_JSON", "SCOAT_TLS_KEY_PEM", "SCOAT_TLS_CERT_PEM"]);
+   const workerMissing = last(await refused({ ...base("worker") }));
+   assert.deepEqual(workerMissing.missing, ["SCOAT_WATCH_CONFIG_JSON"]);
+   const role = last(await refused({ ...base("both"), ...secrets }));
+   assert.equal(role.reason, "SCOAT_RUNTIME_ROLE-not-server-or-worker");
+   const otherKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "pem" });
+   const mismatched = last(await refused({ ...base("server"), ...secrets, SCOAT_TLS_KEY_PEM: otherKey }));
+   assert.deepEqual(mismatched.invalid, ["SCOAT_TLS_KEY_PEM"]);
+   const placeholder = last(await refused({ ...base("server"), ...secrets, SCOAT_AUTH_CONFIG_JSON: JSON.stringify({ ...JSON.parse(authJson), issuer: "https://scoat.example.invalid/" }) }));
+   assert.ok(placeholder.invalid.includes("SCOAT_AUTH_CONFIG_JSON") && placeholder.invalid.includes("SCOAT_TLS_CERT_PEM"), JSON.stringify(placeholder));
+   const loose = last(await refused({ ...base("server"), ...secrets, SCOAT_AUTH_CONFIG_JSON: JSON.stringify({ ...JSON.parse(authJson), fixtureBypass: true }) }));
+   assert.deepEqual(loose.invalid, ["SCOAT_AUTH_CONFIG_JSON"]);
+   const unrecorded = last(await refused({ ...base("server"), ...secrets, SCOAT_SOURCE_REVISION: "main" }));
+   assert.deepEqual(unrecorded.invalid, ["SCOAT_SOURCE_REVISION"]);
+   const wideHost = last(await refused({ ...base("server"), ...secrets, SCOAT_EDGE_LISTEN_HOST: "localhost" }));
+   assert.deepEqual(wideHost.invalid, ["SCOAT_EDGE_LISTEN_HOST"]);
+   const call = (port, headers, { method = "GET", pathname = "/healthz", body } = {}) => new Promise((resolve, reject) => {
+    const outgoing = request({ host: "127.0.0.1", port, path: pathname, method, headers, setHost: false, timeout: 10000 }, response => {
+     let text = "";
+     response.on("data", chunk => { text += chunk; });
+     response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body: text }));
+    });
+    outgoing.on("error", reject);
+    outgoing.on("timeout", () => outgoing.destroy(new Error("edge request timeout")));
+    outgoing.end(body);
+   });
+   const server = start(entry, { ...base("server"), ...secrets }, 90000);
+   const up = await server.first;
+   assert.equal(up.kind, "message", server.output.stderr.slice(0, 2000));
+   assert.equal(up.message.role, "server");
+   const port = up.message.port;
+   const leftover = await readdir(tmp);
+   const inner = (await exec("pgrep", ["-P", String(server.child.pid)])).stdout.trim().split("\n")[0];
+   const environ = await readFile(`/proc/${inner}/environ`, "utf8");
+   const childNames = environ.split("\0").map(item => item.split("=")[0]).filter(Boolean).sort();
+   const issuerHost = new URL(f.issuer).host;
+   const health = await call(port, { host: "healthcheck.railway.app" });
+   const report = JSON.parse(health.body);
+   const mcpHeaders = { host: issuerHost, "x-forwarded-proto": "https", "content-type": "application/json", accept: "application/json, text/event-stream" };
+   const post = { method: "POST", pathname: "/mcp", body: "{}" };
+   const mcp = await call(port, mcpHeaders, post);
+   const plaintext = await call(port, { ...mcpHeaders, "x-forwarded-proto": "http" }, post);
+   const unmarked = await call(port, { host: issuerHost, "content-type": "application/json" }, post);
+   const edgeHost = await call(port, { ...mcpHeaders, host: "127.0.0.1:" + port }, post);
+   const forwardedHost = await call(port, { ...mcpHeaders, host: "healthcheck.railway.app", "x-forwarded-host": issuerHost }, post);
+   const foreignOrigin = await call(port, { ...mcpHeaders, origin: "https://attacker.invalid" }, post);
+   const hostless = await call(port, { "x-forwarded-proto": "https", "content-type": "application/json" }, post);
+   const discovery = await call(port, { host: issuerHost, "x-forwarded-proto": "https" }, { pathname: "/.well-known/openid-configuration" });
+   server.child.kill("SIGTERM");
+   const stopped = await server.exited;
+   const innerGone = await readFile(`/proc/${inner}/status`, "utf8").then(() => false, () => true);
+   assert.deepEqual(leftover, [], "runtime secret files survived readiness");
+   assert.ok(!childNames.some(name => /_JSON$|_PEM$/.test(name)) && !environ.includes("PRIVATE KEY") && !environ.includes(upstreamSecret), "server child inherited secret material");
+   assert.equal(health.status, 200, health.body);
+   assert.equal(health.headers["cache-control"], "no-store");
+   assert.deepEqual({ ready: report.ready, reasons: report.reasons, transport: report.transport, auth: report.auth, lineage: report.lineage, digest: report.artifact.digest }, { ready: true, reasons: [], transport: "https", auth: "configured", lineage: "admitted", digest: shipped });
+   assert.equal(mcp.status, 401);
+   assert.match(String(mcp.headers["www-authenticate"]), /resource_metadata=/);
+   assert.deepEqual([plaintext.status, unmarked.status, edgeHost.status, forwardedHost.status, foreignOrigin.status, hostless.status], [400, 400, 403, 403, 403, 400]);
+   assert.equal(discovery.status, 200, discovery.body.slice(0, 500));
+   assert.equal(JSON.parse(discovery.body).issuer, JSON.parse(authJson).issuer);
+   assert.deepEqual({ code: stopped.code, signal: stopped.signal, innerGone }, { code: 0, signal: null, innerGone: true });
+   const worker = start(entry, { ...base("worker"), ...workerSecrets }, 90000);
+   const workerUp = await worker.first;
+   assert.equal(workerUp.kind, "message", worker.output.stderr.slice(0, 2000));
+   const workerHealth = await call(workerUp.message.port, { host: "healthcheck.railway.app" });
+   const workerOther = await call(workerUp.message.port, { host: "healthcheck.railway.app" }, { pathname: "/mcp" });
+   worker.child.kill("SIGTERM");
+   const workerStopped = await worker.exited;
+   assert.equal(workerUp.message.artifact, shipped);
+   assert.equal(workerHealth.status, 200);
+   assert.deepEqual(JSON.parse(workerHealth.body), { ready: true, role: "worker", artifact: shipped, revision });
+   assert.equal(workerOther.status, 404);
+   assert.deepEqual({ code: workerStopped.code, signal: workerStopped.signal }, { code: 0, signal: null });
+   const railPool = open(rail.url);
+   const { sealId } = await seal(railPool);
+   let sealedServer, sealedWorker, sealedMigrate;
+   try {
+    sealedServer = last(await refused({ ...base("server"), ...secrets }));
+    sealedWorker = last(await refused({ ...base("worker"), ...workerSecrets }));
+    sealedMigrate = await migrate(rail.url).then(() => 0, error => error.code);
+   } finally {
+    await unseal(railPool, sealId);
+   }
+   assert.deepEqual([sealedServer.event, sealedServer.reason, sealedWorker.event, sealedWorker.reason, sealedMigrate], ["lineage_refused", "sealed", "lineage_refused", "sealed", 78]);
+   assert.deepEqual(await readdir(tmp), [], "runtime secret files survived a refused start");
+   return { revision, refusals: { missing: missing.missing, workerMissing: workerMissing.missing, mismatched: mismatched.invalid, placeholder: placeholder.invalid, loose: loose.invalid, unrecorded: unrecorded.invalid, wideHost: wideHost.invalid }, serverChildEnvironmentNames: childNames, health: { status: health.status, transport: report.transport, digest: report.artifact.digest }, edge: { mcpWithoutCredential: mcp.status, plaintext: plaintext.status, unmarked: unmarked.status, edgeHost: edgeHost.status, forwardedHost: forwardedHost.status, foreignOrigin: foreignOrigin.status, hostless: hostless.status, discovery: discovery.status }, sigterm: { server: stopped.code, worker: workerStopped.code, innerGone }, worker: JSON.parse(workerHealth.body), sealed: { server: sealedServer.reason, worker: sealedWorker.reason, migrateExit: sealedMigrate }, topology: "fixture upstream IdP on localhost; Railway edge emulated by sending Host and X-Forwarded-Proto directly; no Railway, real IdP or container runtime involved" };
+  });
  } finally {
   for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   if (fixture) await fixture.close().catch(error => gates.push({ name: "auth fixture cleanup", status: "FAIL", error: String(error) }));
@@ -470,7 +582,7 @@ const receipt = {
  trackedPatchSha256: sha(await git(["diff", "HEAD"])),
  environment,
  gates,
- untested: ["managed PostgreSQL permissions and failover", "real hosts, IdP, Resend and DKIM", "actual systemd deployment", "fixed two-CPU runner"],
+ untested: ["managed PostgreSQL permissions and failover", "real hosts, IdP, Resend and DKIM", "actual systemd deployment", "Railway container build, edge ingress, sealed variables and pre-deploy", "fixed two-CPU runner"],
 };
 await writeFile(path.join(root, "receipt.json"), JSON.stringify(receipt, null, 1) + "\n");
 process.stdout.write(JSON.stringify({ receipt: path.join(root, "receipt.json"), gates: gates.map(item => item.name + ": " + item.status) }, null, 1) + "\n");

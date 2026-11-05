@@ -1,0 +1,105 @@
+{
+ "format": "scoat-railway/1",
+ "project": "f2c04a6b-1e91-47f6-8fed-309f0b702b12",
+ "environment": "24e7569b-c063-4c46-95f9-b0bbc67b70ea",
+ "postgres": {
+  "service": "46e3ea48-6c5b-4c3e-8977-c42a2985d80f",
+  "version": "18.6"
+ },
+ "services": {
+  "server": {
+   "service": "18b38a0d-0773-438e-8f88-b181992cba18",
+   "builder": "DOCKERFILE",
+   "dockerfilePath": "Dockerfile",
+   "preDeployCommand": "node scripts/database.mjs migrate",
+   "startCommand": null,
+   "healthcheckPath": "/healthz",
+   "healthcheckTimeout": 300,
+   "restartPolicyType": "ON_FAILURE",
+   "restartPolicyMaxRetries": 3,
+   "drainingSeconds": 30,
+   "numReplicas": 1,
+   "publicNetworking": {
+    "kind": "railway-https-domain",
+    "host": "issuer host of SCOAT_AUTH_CONFIG_JSON",
+    "targetPort": "PORT"
+   },
+   "variables": {
+    "SCOAT_RUNTIME_ROLE": {
+     "source": "value",
+     "value": "server"
+    },
+    "DATABASE_URL": {
+     "source": "reference",
+     "service": "46e3ea48-6c5b-4c3e-8977-c42a2985d80f",
+     "variable": "DATABASE_URL"
+    },
+    "PORT": {
+     "source": "railway-injected"
+    },
+    "SCOAT_EDGE_LISTEN_HOST": {
+     "source": "value",
+     "value": "::"
+    },
+    "SCOAT_SOURCE_REVISION": {
+     "source": "image",
+     "from": "RAILWAY_GIT_COMMIT_SHA"
+    },
+    "SCOAT_AUTH_CONFIG_JSON": {
+     "source": "sealed-runtime-variable"
+    },
+    "SCOAT_CONTROL_CONFIG_JSON": {
+     "source": "sealed-runtime-variable"
+    },
+    "SCOAT_WATCH_CONFIG_JSON": {
+     "source": "sealed-runtime-variable"
+    },
+    "SCOAT_TLS_KEY_PEM": {
+     "source": "sealed-runtime-variable"
+    },
+    "SCOAT_TLS_CERT_PEM": {
+     "source": "sealed-runtime-variable"
+    }
+   }
+  },
+  "worker": {
+   "service": "5837753c-7810-4093-97eb-0b84d105c699",
+   "builder": "DOCKERFILE",
+   "dockerfilePath": "Dockerfile",
+   "preDeployCommand": "node scripts/database.mjs migrate",
+   "startCommand": null,
+   "healthcheckPath": "/healthz",
+   "healthcheckTimeout": 300,
+   "restartPolicyType": "ON_FAILURE",
+   "restartPolicyMaxRetries": 3,
+   "drainingSeconds": 30,
+   "numReplicas": 1,
+   "publicNetworking": null,
+   "variables": {
+    "SCOAT_RUNTIME_ROLE": {
+     "source": "value",
+     "value": "worker"
+    },
+    "DATABASE_URL": {
+     "source": "reference",
+     "service": "46e3ea48-6c5b-4c3e-8977-c42a2985d80f",
+     "variable": "DATABASE_URL"
+    },
+    "PORT": {
+     "source": "railway-injected"
+    },
+    "SCOAT_EDGE_LISTEN_HOST": {
+     "source": "value",
+     "value": "::"
+    },
+    "SCOAT_SOURCE_REVISION": {
+     "source": "image",
+     "from": "RAILWAY_GIT_COMMIT_SHA"
+    },
+    "SCOAT_WATCH_CONFIG_JSON": {
+     "source": "sealed-runtime-variable"
+    }
+   }
+  }
+ }
+}

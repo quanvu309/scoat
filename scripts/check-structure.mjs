@@ -7,7 +7,7 @@ import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
 import { checkPerfStory } from "./check-perf.mjs";
 import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage, checkFixtureJournal } from "./check-runtime-lineage.mjs";
-import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
+import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification, checkRailwayRuntime } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
@@ -204,6 +204,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkPoolOwner(lineageSources);
   checkLaneTools(["scripts/verify-lineage.mjs", "scripts/verify-recovery.mjs", "scripts/perf-lineage.mjs", "scripts/verify-operations.mjs", "scripts/lane-tools.mjs"].map(file => ({ file, source: fs.readFileSync(file, "utf8") })));
   checkDeployUnits({ migrate: fs.readFileSync("deploy/systemd/scoat-migrate.service", "utf8"), server: fs.readFileSync("deploy/systemd/scoat-server.service", "utf8"), worker: fs.readFileSync("deploy/systemd/scoat-worker.service", "utf8"), env: fs.readFileSync("deploy/scoat.env.example", "utf8") });
+  checkRailwayRuntime({ dockerfile: fs.readFileSync("Dockerfile", "utf8"), dockerignore: fs.readFileSync(".dockerignore", "utf8"), manifest: fs.readFileSync("deploy/railway/services.json", "utf8"), runtime: fs.readFileSync("src/railway.ts", "utf8") });
   checkOperationsVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync("scripts/perf.mjs", "utf8"));
   checkAcceptanceAuthority({ story: fs.readFileSync("scripts/story-lanes.mjs", "utf8"), conditions: fs.readFileSync("scripts/story-conditions.mjs", "utf8") });
   checkAcceptanceLinkCapture(fs.readFileSync("scripts/story-lanes.mjs", "utf8"));

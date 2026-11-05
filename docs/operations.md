@@ -106,6 +106,41 @@ All three share `WorkingDirectory=/opt/scoat/release` and `EnvironmentFile=/etc/
 
 O8 runs `systemd-analyze verify` on the units. They have not been installed or started on any host (UNTESTED).
 
+## Railway
+
+`Dockerfile` and `deploy/railway/services.json` describe one image for two Railway services, server and worker, plus the Railway PostgreSQL 18.6 service. Railway has not built or run this image yet (UNTESTED). No container runtime was available where it was written, so the container build and startup are UNTESTED too.
+
+**Ingress topology.** Railway's public HTTP domain terminates TLS at its edge and forwards plain HTTP to the container `PORT`, with `X-Forwarded-Proto: https`. Its TCP proxy would pass TLS through to Node, but it serves only a random port on a proxy domain, behind DNS-only Cloudflare records. An OAuth issuer such as `https://host:15140/` is not a usable public MCP endpoint, so the image uses the HTTP domain instead:
+
+1. Railway edge (public TLS) sends plain HTTP to `dist/railway.js` on `PORT`, bound to `SCOAT_EDGE_LISTEN_HOST` (`::`).
+2. The supervisor opens a new TLS 1.3 connection to the real `dist/server.js` HTTPS listener on `127.0.0.1` and an ephemeral port. It trusts only `SCOAT_TLS_CERT_PEM` and verifies the issuer host name against it.
+3. `dist/server.js` keeps every gate: it reads its own TLS socket, matches Host and Origin exactly, and computes readiness itself.
+
+The supervisor never trusts a forwarded header. It drops `Forwarded`, `X-Forwarded-*` and `X-Real-IP` before the HTTPS hop. It refuses any non-health request without `X-Forwarded-Proto: https` (400) and any request without a Host. Node rejects an HTTP/1.1 request with no Host as 400, and the edge refuses any other with 403. It forwards Host unchanged, so the issuer host is still the only public Host that passes. Railway healthchecks use Host `healthcheck.railway.app`. Only `GET /healthz` is rewritten to the inner loopback Host, and its Origin is dropped. The body and status still come from the readiness owner. Health is `transport: https` because the inner hop really is TLS. That says nothing about the edge. Edge TLS belongs to Railway, and anything on the project private network can reach `PORT` directly with a forged `X-Forwarded-Proto`.
+
+**Secrets.** Railway variables carry the JSON and PEM material: `SCOAT_AUTH_CONFIG_JSON`, `SCOAT_CONTROL_CONFIG_JSON`, `SCOAT_WATCH_CONFIG_JSON`, `SCOAT_TLS_KEY_PEM` and `SCOAT_TLS_CERT_PEM`. Seal them. The supervisor validates them:
+- the auth config passes the strict auth schema;
+- the watch config passes its schema, names a Resend key and shares the issuer origin;
+- the certificate is unexpired, covers the issuer host and pairs with the key;
+- `DATABASE_URL` is PostgreSQL;
+- `SCOAT_SOURCE_REVISION` is 40 hex characters;
+- no host is an `.invalid`, `.example`, `.test` or `example.*` placeholder.
+
+It then writes the secrets into a fresh `0700` temporary directory as `0600` files. It starts the child with only `PATH`, `NODE_EXTRA_CA_CERTS`, `SCOAT_KNOWLEDGE_DIRECTORY`, `SCOAT_PG_BIN`, `DATABASE_URL` and the file paths. It deletes the directory once the child is ready and again on exit. A missing or invalid name exits 78 with `runtime_configuration_refused`, which lists the names but never the values. The inner certificate is an operator-generated origin certificate for the issuer host (for example a P-256 self-signed certificate with that `subjectAltName`). It is never baked into the image or generated at boot.
+
+**Order and outcomes.**
+- Both services run `node scripts/database.mjs migrate` as the Railway pre-deploy command, so the shared `migrateAdmitted` journal runs under the exclusive lineage lock before either starts. A typed refusal (exit 78) fails the deploy without retry.
+- `/healthz` gates activation. Server health is the readiness owner's report. Worker health is 503 until `dist/worker.js` announces `{ ready, artifact }` after `startWorker`, then 200 with that digest and the revision.
+- Server or worker exit codes pass through unchanged, including 78. Railway cannot express `RestartPreventExitStatus`, so `ON_FAILURE` with three retries repeats a typed refusal at most three times. Each repeat refuses before any work.
+- `tini` is PID 1. SIGTERM goes to the child, and the child is killed after 25 seconds. `drainingSeconds` is 30.
+- Child output is limited to 100 lines per second and 4,096 characters per line. A `log_suppressed` count replaces the excess.
+
+**Artifact.** Both stages use `node:24.21.0-bookworm-slim` pinned by digest. The build stage runs `npm ci` and `scripts/build.mjs`. The runtime stage installs the lockfile's production dependencies, the PGDG `postgresql-client-18`/`libpq5` 18.6 (key checked by SHA-256) and `tini`. It copies the built release and runs `verifyRelease` before it runs as `node`. The image refuses to build unless Railway supplies the 40-hex `RAILWAY_GIT_COMMIT_SHA`. That commit becomes the `org.opencontainers.image.revision` label and `SCOAT_SOURCE_REVISION`, and the supervisor logs it in `runtime_start` and `runtime_ready`. Recovery uses the image's `SCOAT_PG_BIN=/usr/lib/postgresql/18/bin` through `railway ssh`.
+
+**Rollback.** Redeploy the retained previous Railway deployment, or the image for the previous commit, only if its release expects the installed migration head. Its pre-deploy migrate then applies nothing, and `/healthz` must report its digest before it takes traffic. If the database is ahead, use a forward fix as above. Never restore an older database to roll back code. Cold physical copies, snapshot rollback, PITR and total live-database-loss recovery remain unsupported.
+
+Railway Config as Code is deprecated, and new services cannot opt into it, so `services.json` is a checked manifest of settings applied in the Railway dashboard, CLI or Infrastructure as Code. It is not read by Railway. O12 runs the supervisor locally against real PostgreSQL and the fixture IdP, sending Railway's Host and `X-Forwarded-Proto` directly. Real Railway ingress, sealed variables, pre-deploy, healthchecks, restarts and a real IdP are UNTESTED.
+
 ## Recovery
 
 Follow [recovery](recovery.md) exactly. Commands come from the release directory: `npm run recovery -- status | seal | unseal --seal <id> | restore --archive <path> | admit`.

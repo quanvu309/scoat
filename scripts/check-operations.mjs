@@ -174,3 +174,66 @@ export function checkOperationsVerification(skill, index, runner, perf) {
  const description = skill.split("---")[1] ?? "";
  if (!description.includes("end-to-end hunt and watch-notification performance") || description.includes("`perf -- p09` lineage overhead") || !selector.includes("features/story-performance.md") || !index.includes("[story performance](story-performance.md)")) throw new Error("Route P09 story performance through its current skill description, selector and feature index");
 }
+
+const pinnedNode = /^FROM node:24\.\d+\.\d+-bookworm-slim@sha256:[0-9a-f]{64} AS (build|runtime)$/;
+const runtimeTail = 'USER node\nENTRYPOINT ["/usr/bin/tini", "--"]\nCMD ["node", "dist/railway.js"]';
+
+function stringArrays(nodes, name) {
+ const declaration = nodes.find(node => node.type === "VariableDeclarator" && node.id?.name === name);
+ let object = declaration?.init;
+ while (object && object.type !== "ObjectExpression" && object.type !== "ArrayExpression") object = object.expression;
+ if (object?.type === "ArrayExpression") return object.elements.map(element => element.value);
+ return Object.fromEntries((object?.properties ?? []).map(property => [property.key.name, property.value.elements.map(element => element.value)]));
+}
+
+export function checkRailwayRuntime({ dockerfile, dockerignore, manifest, runtime }) {
+ const lines = dockerfile.split("\n").filter(line => line.trim());
+ if (lines.some(line => line.trimStart().startsWith("#"))) throw new Error("Dockerfile carries no comments");
+ const froms = lines.filter(line => line.startsWith("FROM "));
+ if (froms.length !== 2 || froms.some(line => !pinnedNode.test(line))) throw new Error("Build and runtime stages use the digest-pinned Node 24 bookworm-slim image");
+ const stage = dockerfile.slice(dockerfile.lastIndexOf("\nFROM "));
+ if (!/^ARG RAILWAY_GIT_COMMIT_SHA$/m.test(stage) || !stage.includes("grep -Eqx '[0-9a-f]{40}'")) throw new Error("Refuse an image build without the exact 40-hex source commit");
+ if (!/sha256sum -c -/.test(stage) || !/postgresql-client-18=18\.\d+-\S+/.test(stage) || !/libpq5=18\.\d+-\S+/.test(stage) || !/tini=\S+/.test(stage)) throw new Error("Install pinned PGDG PostgreSQL 18 client tools and tini after checking the PGDG key digest");
+ if (!/verifyRelease\(\)/.test(stage) || /recordRelease|createHash/.test(dockerfile)) throw new Error("Verify the copied release through its owner without re-recording or re-hashing it");
+ if (/^COPY (--\S+ )*\.\s/m.test(dockerfile) || /^COPY .*(\.env|\.pem|deploy)/m.test(dockerfile)) throw new Error("Copy only release inputs, never the whole context, env files or keys");
+ if (/^(ENV|ARG) .*(_JSON|_PEM|DATABASE_URL|PASSWORD|SECRET)/m.test(dockerfile)) throw new Error("Secrets enter only as runtime variables, never as image ENV or ARG");
+ if (!/^ENV SCOAT_SOURCE_REVISION=\$\{RAILWAY_GIT_COMMIT_SHA\}/m.test(stage) || !stage.includes('org.opencontainers.image.revision="${RAILWAY_GIT_COMMIT_SHA}"')) throw new Error("Label and expose the exact source commit");
+ if (lines.slice(-3).join("\n") !== runtimeTail) throw new Error("Run the unprivileged runtime under tini through dist/railway.js");
+ const ignored = dockerignore.split("\n").map(line => line.trim());
+ for (const entry of [".git", ".env", ".env.*", "**/node_modules", "dist", "*.pem"]) if (!ignored.includes(entry)) throw new Error("Exclude " + entry + " from the image build context");
+ const nodes = parsed(runtime);
+ const variables = stringArrays(nodes, "runtimeVariables");
+ const inherited = stringArrays(nodes, "inheritedVariables");
+ const stripped = nodes.find(node => node.type === "VariableDeclarator" && node.id?.name === "stripped");
+ if (!["server", "worker"].every(role => Array.isArray(variables[role]) && variables[role].includes("DATABASE_URL") && variables[role].includes("SCOAT_SOURCE_REVISION"))) throw new Error("Declare the required runtime variables for server and worker");
+ if (!Array.isArray(inherited) || inherited.some(name => /_JSON$|_PEM$|DATABASE_URL/.test(name)) || /\.\.\.process\.env|env: process\.env/.test(runtime)) throw new Error("Children inherit only the named non-secret variables, never the whole environment");
+ const forks = calls(nodes, "fork");
+ if (!forks.length || forks.some(call => !/execArgv: \[\]/.test(textOf(runtime, call)))) throw new Error("Fork runtime children with an empty execArgv array");
+ if (!/mode: 0o600, flag: "wx"/.test(runtime) || !/mkdtempSync\(/.test(runtime)) throw new Error("Materialize runtime secrets into fresh private 0600 files");
+ const strippedText = stripped ? textOf(runtime, stripped.init) : "";
+ if (!["forwarded", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-for"].every(name => strippedText.includes('"' + name + '"'))) throw new Error("Never pass forwarded headers to the HTTPS server");
+ if (/rejectUnauthorized: false/.test(runtime) || !/rejectUnauthorized: true/.test(runtime) || !/setHost: false/.test(runtime) || !/servername, ca, checkServerIdentity: verifyIssuer,/.test(runtime) || !/checkServerIdentity\(identity, peer\)/.test(runtime)) throw new Error("Re-originate TLS to the Node HTTPS server pinned to the configured certificate and issuer name");
+ if (!/req\.headers\["x-forwarded-proto"\] !== "https"/.test(runtime)) throw new Error("Refuse non-health requests that did not arrive at the edge over HTTPS");
+ if (/release\.json|createHash/.test(runtime)) throw new Error("The runtime supervisor never reads or hashes release metadata");
+ for (const name of ["authConfigSchema", "watchConfigSchema", "listenHost"]) if (!nodes.some(node => node.type === "ImportSpecifier" && node.imported?.name === name)) throw new Error("Validate configuration through its owner: missing " + name);
+ if (calls(nodes, "exit").filter(call => member(call.callee, "process", "exit") && call.arguments[0]?.value === 78).length < 2) throw new Error("Refuse missing or invalid runtime configuration with exit 78");
+ const deadline = Number(/export const stopDeadlineMs = (\d+);/.exec(runtime)?.[1]);
+ const parsedManifest = JSON.parse(manifest);
+ if (parsedManifest.format !== "scoat-railway/1" || Object.keys(parsedManifest.services ?? {}).join() !== "server,worker") throw new Error("Railway manifest declares exactly the server and worker services");
+ for (const role of ["server", "worker"]) {
+  const service = parsedManifest.services[role];
+  if (service.builder !== "DOCKERFILE" || service.dockerfilePath !== "Dockerfile" || service.startCommand !== null) throw new Error(`railway ${role}: build the Dockerfile and keep its tini entrypoint`);
+  if (service.preDeployCommand !== "node scripts/database.mjs migrate") throw new Error(`railway ${role}: migrate through the shared release migrate before start`);
+  if (service.healthcheckPath !== "/healthz") throw new Error(`railway ${role}: gate activation on /healthz`);
+  if (service.restartPolicyType !== "ON_FAILURE" || !Number.isInteger(service.restartPolicyMaxRetries) || service.restartPolicyMaxRetries > 5) throw new Error(`railway ${role}: restart only on failure with a small retry bound`);
+  if (!Number.isInteger(service.drainingSeconds) || !(service.drainingSeconds * 1000 > deadline)) throw new Error(`railway ${role}: drain longer than the supervisor stop deadline`);
+  const names = Object.keys(service.variables ?? {});
+  if (names.slice().sort().join() !== ["SCOAT_RUNTIME_ROLE", ...variables[role]].sort().join()) throw new Error(`railway ${role}: variables match the supervisor's required names`);
+  if (service.variables.SCOAT_RUNTIME_ROLE.value !== role) throw new Error(`railway ${role}: select the role by SCOAT_RUNTIME_ROLE`);
+  for (const [name, variable] of Object.entries(service.variables)) {
+   if (/_JSON$|_PEM$/.test(name) && (variable.source !== "sealed-runtime-variable" || "value" in variable)) throw new Error(`railway ${role}: ${name} is a sealed runtime secret without a committed value`);
+   if ("value" in variable && !["SCOAT_RUNTIME_ROLE", "SCOAT_EDGE_LISTEN_HOST"].includes(name)) throw new Error(`railway ${role}: ${name} carries no committed value`);
+  }
+  if (service.variables.DATABASE_URL.source !== "reference" || service.variables.DATABASE_URL.service !== parsedManifest.postgres?.service) throw new Error(`railway ${role}: DATABASE_URL references the PostgreSQL service`);
+ }
+}

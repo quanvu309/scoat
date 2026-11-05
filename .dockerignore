@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.env
+.env.*
+**/node_modules
+dist
+landing
+arch
+design
+docs
+test
+fixtures
+deploy
+*.pem
+*.key
+*.tsbuildinfo

@@ -10,6 +10,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { withDatabase } from "./durable-database.mjs";
 import { scratchDirectory } from "./scratch.mjs";
+import { postgresClientTools } from "./lane-tools.mjs";
 import { watchFixture } from "./watch-fixture.mjs";
 import { fixture as durableFixture } from "./durable-fixture.mjs";
 import { admit, begin, inspect, seal, unseal, LineageRefused } from "../dist/db/lineage.js";
@@ -20,8 +21,7 @@ import { WatchQueue } from "../dist/queue/index.js";
 
 const exec = promisify(execFile);
 const checkout = new URL("..", import.meta.url).pathname;
-const pgBin = process.env.SCOAT_PG_BIN ?? path.join(os.homedir(), ".local/pg/root/usr/lib/postgresql/18/bin");
-const pgLib = process.env.SCOAT_PG_LIB ?? path.join(os.homedir(), ".local/pg/root/usr/lib/aarch64-linux-gnu");
+const clientTools = postgresClientTools();
 const root = await scratchDirectory("lineage-", path.join(os.homedir(), "tmp/scoat-delivery/p09/s1"));
 const gates = [];
 const bind = "scoat_lineage_identity(pg_current_xact_id()::text::numeric % 4294967296)";
@@ -35,7 +35,7 @@ async function gate(name, run) {
   process.exitCode = 1;
  }
 }
-const tool = (name, args) => exec(path.join(pgBin, name), args, { env: { PATH: process.env.PATH, LD_LIBRARY_PATH: pgLib }, maxBuffer: 1 << 26 });
+const tool = (name, args) => exec(path.join(clientTools.bin, name), args, { env: clientTools.env, maxBuffer: 1 << 26 });
 const inSchema = (url, schema) => { const value = new URL(url); value.searchParams.set("options", "-c search_path=" + schema); return value.href; };
 const plain = url => { const value = new URL(url); value.search = ""; return value.href; };
 

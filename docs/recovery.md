@@ -1,6 +1,6 @@
 # Sealed-source recovery
 
-Recovery moves Scoat from one PostgreSQL database to a fresh one. Only a surviving, genuine live database can authorize it. Run `node dist/recovery.js <command>` (or `npm run recovery -- <command>`) from the release directory.
+Recovery moves Scoat from one PostgreSQL database to a fresh one. Only a surviving, genuine live database can authorize it. Run `node dist/recovery.js <command>` (or `npm run recovery -- <command>`) from the release directory. Release readiness, the systemd units and key rotation are in [operations](operations.md).
 
 ## Supported sequence
 

@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile, fork } from "node:child_process";
 import { promisify } from "node:util";
-import { access, cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, cp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
 import { withDatabase } from "./durable-database.mjs";
 import { scratchDirectory } from "./scratch.mjs";
+import { baseArtifact, postgresClientTools } from "./lane-tools.mjs";
 import { watchFixture } from "./watch-fixture.mjs";
 import { confirm } from "./memory-lanes.mjs";
 import { admit, inspect, unseal, locateTarget, consumeSource, LineageRefused } from "../dist/db/lineage.js";
@@ -19,9 +20,7 @@ import { WatchQueue } from "../dist/queue/index.js";
 
 const exec = promisify(execFile);
 const checkout = new URL("..", import.meta.url).pathname;
-const pgBin = process.env.SCOAT_PG_BIN ?? path.join(os.homedir(), ".local/pg/root/usr/lib/postgresql/18/bin");
-const pgLib = process.env.SCOAT_PG_LIB ?? path.join(os.homedir(), ".local/pg/root/usr/lib/aarch64-linux-gnu");
-const baseApp = process.env.SCOAT_BASE_APP ?? path.join(os.homedir(), "tmp/scoat-delivery/p09/s0/app");
+const clientTools = postgresClientTools();
 const root = await scratchDirectory("recovery-", path.join(os.homedir(), "tmp/scoat-delivery/p09/s2"));
 const migrations = path.join(checkout, "db/migrations");
 const gates = [];
@@ -39,14 +38,14 @@ async function gate(name, run) {
 const inSchema = (url, schema) => { const value = new URL(url); value.searchParams.set("options", "-c search_path=" + schema); return value.href; };
 const plain = url => { const value = new URL(url); value.search = ""; return value.href; };
 const withoutPassword = url => { const value = new URL(plain(url)); const password = decodeURIComponent(value.password); value.password = ""; return { dbname: value.href, password }; };
-const rawTool = (name, args, url) => { const { dbname, password } = withoutPassword(url); return exec(path.join(pgBin, name), [...args, "--dbname=" + dbname], { env: { PATH: process.env.PATH, LD_LIBRARY_PATH: pgLib, PGPASSWORD: password }, maxBuffer: 1 << 26 }); };
+const rawTool = (name, args, url) => { const { dbname, password } = withoutPassword(url); return exec(path.join(clientTools.bin, name), [...args, "--dbname=" + dbname], { env: { ...clientTools.env, PGPASSWORD: password }, maxBuffer: 1 << 26 }); };
 const sha = text => createHash("sha256").update(text).digest("hex");
 const until = async (label, check, timeout = 60000) => { const started = Date.now(); for (;;) { const value = await check(); if (value) return value; if (Date.now() - started > timeout) throw new Error("Timed out waiting for " + label); await new Promise(resolve => setTimeout(resolve, 200)); } };
 
 async function cli(args, env, secrets) {
  let result;
  try {
-  const { stdout, stderr } = await exec(process.execPath, [path.join(checkout, "dist/recovery.js"), ...args], { cwd: checkout, env: { PATH: process.env.PATH, SCOAT_PG_BIN: pgBin, SCOAT_PG_LIB: pgLib, ...env }, maxBuffer: 1 << 22 });
+  const { stdout, stderr } = await exec(process.execPath, [path.join(checkout, "dist/recovery.js"), ...args], { cwd: checkout, env: { PATH: process.env.PATH, ...clientTools.cliEnv, ...env }, maxBuffer: 1 << 22 });
   result = { code: 0, out: JSON.parse(stdout.trim()), stderr };
  } catch (error) {
   if (typeof error.code !== "number") throw error;
@@ -135,7 +134,7 @@ await withDatabase(async adminUrl => {
  try {
   await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`);
   Object.assign(environment, (await admin.query("SELECT current_setting('server_version') AS server, (SELECT rolsuper FROM pg_roles WHERE rolname = $1) AS owner_superuser", [role])).rows[0]);
-  environment.clientTools = (await exec(path.join(pgBin, "pg_dump"), ["--version"], { env: { LD_LIBRARY_PATH: pgLib } })).stdout.trim();
+  environment.clientTools = (await exec(path.join(clientTools.bin, "pg_dump"), ["--version"], { env: clientTools.env })).stdout.trim();
   environment.node = process.version;
   environment.cpu = { model: os.cpus()[0]?.model ?? "unknown", count: os.cpus().length, arch: os.arch() };
   const live = await database("s2_live");
@@ -209,14 +208,9 @@ await withDatabase(async adminUrl => {
   });
 
   await gate("R2 original-shape reproduction: base 6ec8b75 worker on the same pre-seal restore sends a second identity and mails the erased account", async () => {
-   const base = path.join(root, "base-6ec8b75");
+   let base, baseLabel;
    try {
-    await mkdir(base);
-    await exec("git", ["archive", "--output=" + base + ".tar", "6ec8b75"], { cwd: checkout });
-    await exec("tar", ["-xf", base + ".tar", "-C", base]);
-    assert.equal(sha(await readFile(path.join(base, "package-lock.json"))), sha(await readFile(path.join(baseApp, "package-lock.json"))));
-    await symlink(path.join(baseApp, "node_modules"), path.join(base, "node_modules"));
-    await exec(process.execPath, ["node_modules/typescript/bin/tsc", "-p", "tsconfig.server.json"], { cwd: base, timeout: 300000, maxBuffer: 1 << 24 });
+    ({ path: base, label: baseLabel } = await baseArtifact(checkout, root, "6ec8b75"));
    } catch (error) {
     throw new Blocked("Base artifact unavailable: " + String(error?.message ?? error).slice(0, 600));
    }
@@ -235,7 +229,7 @@ await withDatabase(async adminUrl => {
    const afterR = (await mailTo(r.address)).map(item => item.key);
    const second = afterR.filter(key => key !== k1);
    assert.ok(afterR.includes(k1) && second.length >= 1);
-   return { label: "original unsafe restore on base artifact 6ec8b75 against a disposable pre-seal restore", liveKey: k1, baseKeys: second, deliveriesToR: afterR.length, deliveriesToErasedX: (await mailTo(x.address)).length - before.x };
+   return { label: "original unsafe restore on base artifact 6ec8b75 against a disposable pre-seal restore", artifact: baseLabel, liveKey: k1, baseKeys: second, deliveriesToR: afterR.length, deliveriesToErasedX: (await mailTo(x.address)).length - before.x };
   });
 
   w.state.pence = 5000;

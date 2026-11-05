@@ -102,7 +102,6 @@ export function checkRuntimeAdmission({ server, worker, queue, watches, lineage,
  const routes = [...calls(inner, "route"), ...calls(inner, "authenticate")];
  const refusal = inner.find(node => node.type === "IfStatement" && statementText(server, node.test) === 'lineage !== "admitted"' && /res\.writeHead\(503/.test(statementText(server, node.consequent)));
  if (!gateCall || !refusal || !routes.length || routes.some(route => route.start < refusal.end)) throw new Error("Each request reports 503 before auth routes and MCP while unadmitted or sealed");
- if (!server.includes('const ready = !!auth && lineage === "admitted";')) throw new Error("Health is ready only while admitted");
  const start = named(parsed(worker), "startWorker");
  const workerNodes = nodesOf(start);
  const workerAdmit = calls(workerNodes, "admit")[0];

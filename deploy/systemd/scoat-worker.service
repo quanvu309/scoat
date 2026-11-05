@@ -1,0 +1,24 @@
+[Unit]
+Description=Scoat price-watch worker
+Documentation=file:///opt/scoat/release/docs/operations.md
+Requires=scoat-migrate.service
+After=scoat-migrate.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scoat
+Group=scoat
+WorkingDirectory=/opt/scoat/release
+EnvironmentFile=/etc/scoat/scoat.env
+ExecStart=/usr/bin/node /opt/scoat/release/dist/worker.js
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=78
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

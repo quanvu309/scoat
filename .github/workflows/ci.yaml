@@ -5,7 +5,7 @@ permissions:
 jobs:
   foundation:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -17,6 +17,7 @@ jobs:
         options: --health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30
     env:
       DATABASE_URL: postgres://scoat:fixture-only@localhost:5432/scoat
+      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,5 +47,19 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run verify -- p06
       - run: npm run perf -- p06
+      - run: npm run verify -- p07-controls
+      - run: npm run verify -- p07-card
       - run: npm run verify -- p08
       - run: npm run perf -- p08
+      - name: Install official PGDG PostgreSQL 18 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          /usr/lib/postgresql/18/bin/pg_dump --version
+      - run: npm run verify -- p09-lineage
+      - run: npm run verify -- p09-recovery
+      - run: npm run verify -- p09-operations
+      - run: npm run perf -- p09

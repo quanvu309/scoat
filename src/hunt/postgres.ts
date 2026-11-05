@@ -2,7 +2,8 @@ import { begin } from "../db/lineage.js";
 import { retryTransaction } from "../db/transaction.js";
 import { readDeclaredProfile } from "../memory/storage.js";
 import { releaseSchema } from "../knowledge/index.js";
-import pg from "pg";
+import type pg from "pg";
+import { openPool } from "../db/pool.js";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import type { AccountId, AccountScope, Compatibility, HuntId, Offer, RequestKey, RowId } from "../domain.js";
@@ -65,7 +66,7 @@ export type Hooks = { beforeAccountFence?: (scope: Scope, client: pg.PoolClient)
 export class PostgresHuntStore {
   readonly pool: pg.Pool;
   retries = 0;
-  constructor(args: { databaseUrl: string; hooks?: Hooks }) { this.pool = new pg.Pool({ connectionString: args.databaseUrl, max: 16, connectionTimeoutMillis: 5000 }); this.hooks = args.hooks; }
+  constructor(args: { databaseUrl: string; hooks?: Hooks }) { this.pool = openPool({ connectionString: args.databaseUrl, max: 16, connectionTimeoutMillis: 5000 }); this.hooks = args.hooks; }
   readonly hooks: Hooks | undefined;
   async createAccount(account: AccountId): Promise<AccountScope> {
     z.string().trim().min(1).max(128).parse(account);

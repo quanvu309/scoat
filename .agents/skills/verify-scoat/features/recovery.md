@@ -2,7 +2,7 @@
 
 Read [lineage](lineage.md) first; recovery extends its owner and fence. The operator contract is [docs/recovery.md](../../../../docs/recovery.md).
 
-Run `npm run build`, then `pstack-run run --timeout 1200 -- npm run verify -- p09-recovery`. It needs the shared PostgreSQL 17.6 binaries used by P04 (or `DATABASE_URL` with a role that may create roles and databases), client tools at least as new as the server in `SCOAT_PG_BIN` with `SCOAT_PG_LIB` (default `~/.local/pg/root`), and, for the base-artifact reproduction, `SCOAT_BASE_APP` pointing at an install of base `6ec8b75` whose `package-lock.json` matches (default `~/tmp/scoat-delivery/p09/s0/app`). The lane creates a non-superuser owner role and disposable databases, removes them, and writes `receipt.json` under `~/tmp/scoat-delivery/p09/s2/recovery-*`. Also run `npm run verify -- p09-lineage` for R5, R6 and R7.
+Run `npm run build`, then `pstack-run run --timeout 1200 -- npm run verify -- p09-recovery`. It needs the shared PostgreSQL 17.6 binaries used by P04 (or `DATABASE_URL` with a role that may create roles and databases), client tools at least as new as the server in the required absolute `SCOAT_PG_BIN` (with optional `SCOAT_PG_LIB`). For the base-artifact reproduction it `git archive`s `6ec8b75` into the lane scratch and compiles it there, labelled in the receipt; dependencies come from the checkout when the lockfiles are identical, otherwise from `npm ci` inside that scratch. `SCOAT_BASE_APP` is an optional override whose lockfile must match. The lane creates a non-superuser owner role and disposable databases, removes them, and writes `receipt.json` under `~/tmp/scoat-delivery/p09/s2/recovery-*`. Also run `npm run verify -- p09-lineage` for R5, R6 and R7.
 
 ## Gates
 

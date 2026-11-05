@@ -79,6 +79,32 @@ export async function inspect(client: Pick<pg.PoolClient, "query">): Promise<Lin
  return { kind: "sealed", sealId: row.seal_id, consumedBy: row.consumed_by, identity: row.current, schema: row.schema };
 }
 
+export type Observation =
+ | Readonly<{ database: "unavailable" }>
+ | Readonly<{ database: "available"; schemaHead: string | null; lineage: "admitted" | "sealed" | "consumed" | UnadmittedReason }>;
+const headSchema = z.strictObject({ schema_head: z.string().min(1).max(64) });
+
+export async function observe(pool: pg.Pool): Promise<Observation> {
+ let client: pg.PoolClient;
+ try {
+  client = await pool.connect();
+ } catch {
+  return { database: "unavailable" };
+ }
+ try {
+  const state = await inspect(client);
+  if (state.kind === "admitted") return { database: "available", schemaHead: lineageSchemaHead, lineage: "admitted" };
+  if (state.kind === "sealed") return { database: "available", schemaHead: lineageSchemaHead, lineage: state.consumedBy === null ? "sealed" : "consumed" };
+  if (state.reason !== "schema-ahead" && state.reason !== "identity-mismatch") return { database: "available", schemaHead: null, lineage: state.reason };
+  const [row] = (await client.query("SELECT schema_head FROM scoat_lineage")).rows;
+  return { database: "available", schemaHead: row === undefined ? null : headSchema.parse(row).schema_head, lineage: state.reason };
+ } catch {
+  return { database: "unavailable" };
+ } finally {
+  client.release();
+ }
+}
+
 function refusalOf(state: LineageState): RefusalReason {
  if (state.kind === "unadmitted") return state.reason;
  if (state.kind === "sealed") return state.consumedBy === null ? "sealed" : "consumed";

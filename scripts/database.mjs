@@ -2,6 +2,14 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 
+if (process.argv[2] === "migrate") {
+  const { verifyRelease } = await import("../dist/release.js");
+  const verified = await verifyRelease();
+  if (verified.kind !== "verified") {
+    process.stderr.write(JSON.stringify({ event: "artifact_refused", reason: verified.reason }) + "\n");
+    process.exit(78);
+  }
+}
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL required; use the lane's disposable Postgres DSN");
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000, max: 1 });
 const client = await pool.connect();

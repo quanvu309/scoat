@@ -18,6 +18,16 @@ import { watchSchema } from "./memory/watch-schema.js";
 import { Watches, watchConfigSchema } from "./memory/watches.js";
 import { Delivery } from "./delivery/index.js";
 import { admit, begin, inspect, LineageRefused } from "./db/lineage.js";
+import { verifyRelease } from "./release.js";
+import { health } from "./readiness.js";
+import { z } from "zod";
+
+const listenHostSchema = z.union([z.ipv4(), z.ipv6()]);
+
+export function listenHost(value: string | undefined): string | null {
+  const parsed = listenHostSchema.safeParse(value ?? "127.0.0.1");
+  return parsed.success ? parsed.data : null;
+}
 
 async function lineageStatus(pool: import("pg").Pool): Promise<string> {
   try {
@@ -30,6 +40,7 @@ async function lineageStatus(pool: import("pg").Pool): Promise<string> {
 }
 
 export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
+  const release = await verifyRelease();
   const configPath = process.env.SCOAT_AUTH_CONFIG;
   const store =
     configPath && process.env.DATABASE_URL
@@ -39,7 +50,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
   let auth: Awaited<ReturnType<typeof createIssuer>> | null = null;
   let watches: Watches | undefined;
   try {
-    if (store && configPath) {
+    if (store && configPath && release.kind === "verified") {
       const admitted = await admit(store.pool, "server");
       const installation = await store.pool.connect();
       try {
@@ -94,17 +105,14 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     }
     res.setHeader("cache-control", "no-store");
     if (req.url === "/healthz" && req.method === "GET") {
-      const lineage = store ? await lineageStatus(store.pool) : "unavailable";
-      const ready = !!auth && lineage === "admitted";
-      res.writeHead(ready ? 200 : 503, { "content-type": "application/json" });
-      res.end(
-        JSON.stringify({
-          ready,
-          phase: "P08",
-          auth: auth ? "configured" : "unavailable",
-          lineage,
-        }),
-      );
+      const report = await health(release, store?.pool ?? null, auth !== null, tls !== null);
+      res.writeHead(report.ready ? 200 : 503, { "content-type": "application/json" });
+      res.end(JSON.stringify(report));
+      return;
+    }
+    if (release.kind !== "verified") {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "service_unavailable", artifact: release.reason }));
       return;
     }
     if (auth && !("encrypted" in req.socket && req.socket.encrypted)) {
@@ -214,6 +222,11 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  const host = listenHost(process.env.SCOAT_LISTEN_HOST);
+  if (host === null) {
+    process.stderr.write(JSON.stringify({ event: "configuration_refused", reason: "listen-host-not-ip-literal" }) + "\n");
+    process.exit(78);
+  }
   const port = Number(process.env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error("PORT must be an integer from 0 to 65535");
@@ -225,10 +238,10 @@ if (
     process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: error.reason }) + "\n");
     process.exit(78);
   }
-  server.listen(port, "127.0.0.1", () => {
+  server.listen(port, host, () => {
     const address = server.address();
     if (address && typeof address !== "string" && process.send)
-      process.send({ port: address.port });
+      process.send({ port: address.port, host: address.address });
   });
   for (const signal of ["SIGINT", "SIGTERM"])
     process.on(signal, () => {

@@ -1,6 +1,7 @@
 import { PgBoss } from "pg-boss";
 import type { Job } from "pg-boss";
-import pg from "pg";
+import type pg from "pg";
+import { openPool } from "../db/pool.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { confirm } from "../db/lineage.js";
@@ -43,7 +44,7 @@ export class WatchQueue implements Enqueue {
  private constructor(private readonly boss: PgBoss) {}
 
  static async open(admitted: Admitted, connectionString: string, role: "worker" | "producer"): Promise<WatchQueue> {
-  const pool = new pg.Pool({ connectionString, max: 1 });
+  const pool = openPool({ connectionString, max: 1 });
   let queueSchema: string;
   try {
    await confirm(pool, admitted);

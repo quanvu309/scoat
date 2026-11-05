@@ -1,0 +1,22 @@
+[Unit]
+Description=Scoat schema migration for the installed release
+Documentation=file:///opt/scoat/release/docs/operations.md
+Wants=network-online.target
+After=network-online.target
+Before=scoat-server.service scoat-worker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=scoat
+Group=scoat
+WorkingDirectory=/opt/scoat/release
+EnvironmentFile=/etc/scoat/scoat.env
+ExecStart=/usr/bin/node /opt/scoat/release/scripts/database.mjs migrate
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

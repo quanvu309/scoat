@@ -1,4 +1,5 @@
-import pg from "pg";
+import type pg from "pg";
+import { openPool } from "./db/pool.js";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -39,8 +40,7 @@ function required(environment: Environment, name: "DATABASE_URL" | "SCOAT_SOURCE
 }
 
 function connect(connectionString: string): pg.Pool {
- const pool = new pg.Pool({ connectionString, max: 2, connectionTimeoutMillis: 10000 });
- pool.on("error", () => undefined);
+ const pool = openPool({ connectionString, max: 2, connectionTimeoutMillis: 10000 });
  return pool;
 }
 

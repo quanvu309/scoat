@@ -1,4 +1,5 @@
-import pg from "pg";
+import type pg from "pg";
+import { openPool } from "./db/pool.js";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { Delivery } from "./delivery/index.js";
@@ -7,12 +8,13 @@ import { Watches, watchConfigSchema } from "./memory/watches.js";
 import type { WatchConfig, WatchPause } from "./memory/watches.js";
 import { admit, LineageRefused } from "./db/lineage.js";
 import type { Admitted } from "./db/lineage.js";
+import { verifyRelease } from "./release.js";
 
 export type WorkerOptions = Readonly<{ databaseUrl: string; config: WatchConfig; delivery: Delivery; concurrency: number; initialPlan: boolean; pause?: WatchPause; refused: (error: LineageRefused) => void }>;
 
 export async function startWorker(options: WorkerOptions) {
  if (!options.delivery.canSubmit) throw new Error("Watch worker requires a mail transport; refusing before queue work or submission markers");
- const pool = new pg.Pool({ connectionString: options.databaseUrl, max: options.concurrency + 2 });
+ const pool = openPool({ connectionString: options.databaseUrl, max: options.concurrency + 2 });
  let admitted: Admitted;
  let queue: WatchQueue;
  try {
@@ -44,6 +46,11 @@ export async function startWorker(options: WorkerOptions) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+ const verified = await verifyRelease();
+ if (verified.kind !== "verified") {
+  process.stderr.write(JSON.stringify({ event: "artifact_refused", reason: verified.reason }) + "\n");
+  process.exit(78);
+ }
  const databaseUrl = process.env.DATABASE_URL, configPath = process.env.SCOAT_WATCH_CONFIG;
  if (!databaseUrl || !configPath) throw new Error("DATABASE_URL and SCOAT_WATCH_CONFIG are required");
  const config = watchConfigSchema.parse(JSON.parse(await readFile(configPath, "utf8")));
@@ -59,6 +66,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!(error instanceof LineageRefused)) throw error;
   refuse(error);
  }
- if (process.send) process.send({ ready: true });
+ const ready = { event: "worker_ready", artifact: verified.release.digest };
+ process.stdout.write(JSON.stringify(ready) + "\n");
+ if (process.send) process.send({ ready: true, artifact: ready.artifact });
  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void worker.stop(); });
 }

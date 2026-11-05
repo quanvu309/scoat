@@ -4,6 +4,7 @@ import { parse as yaml } from "yaml";
 import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
+import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
@@ -32,6 +33,7 @@ export function checkWorkflow(source) {
       if (checkout?.with?.["fetch-depth"] !== 0) throw new Error("Fetch full history with checkout fetch-depth: 0 so P05 evidence can inspect origin/main");
     }
   }
+  checkHostedCoverage(source);
 }
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -186,6 +188,13 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkBrowserControls(fs.readFileSync("src/controls/codec.ts","utf8"),fs.readFileSync("src/hunt/index.ts","utf8"));
   checkRegistryAdapter(adapter);
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
+  checkListenHost(fs.readFileSync("src/server.ts", "utf8"));
+  checkReadiness({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), readiness: fs.readFileSync("src/readiness.ts", "utf8"), database: fs.readFileSync("scripts/database.mjs", "utf8") });
+  checkReleaseOwner({ release: fs.readFileSync("src/release.ts", "utf8"), build: fs.readFileSync("scripts/build.mjs", "utf8"), sources: lineageSources });
+  checkPoolOwner(lineageSources);
+  checkLaneTools(["scripts/verify-lineage.mjs", "scripts/verify-recovery.mjs", "scripts/perf-lineage.mjs", "scripts/verify-operations.mjs", "scripts/lane-tools.mjs"].map(file => ({ file, source: fs.readFileSync(file, "utf8") })));
+  checkDeployUnits({ migrate: fs.readFileSync("deploy/systemd/scoat-migrate.service", "utf8"), server: fs.readFileSync("deploy/systemd/scoat-server.service", "utf8"), worker: fs.readFileSync("deploy/systemd/scoat-worker.service", "utf8"), env: fs.readFileSync("deploy/scoat.env.example", "utf8") });
+  checkOperationsVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"), fs.readFileSync("scripts/perf.mjs", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
   checkDriver(fs.readFileSync("scripts/driver.mjs", "utf8"));
 }

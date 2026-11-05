@@ -13,6 +13,6 @@ const started = Date.now();
 const result = await withDatabase(url => watchLanes(url, evidence, head + (dirty ? "+worktree" : "")));
 const video = path.join(evidence, "p08-review.webm");
 await rename(result.video, video);
-const receipt = { status: "PASS_LOCAL_ONLY", head, dirty, evidence, seconds: (Date.now() - started) / 1000, lanes: result.lanes, summary: result.summary, video, postgres: "real local PostgreSQL 17 with pg-boss 12.38.0 schema", https: "real local TLS issuer, upstream OIDC fixture, Pi Hut format seller fixture and durable Resend-contract capture process", browser: "Playwright Chromium native forms", externalProvider: "UNTESTED", realHosts: "UNTESTED", modelAgentLanes: "UNTESTED", fixedTwoVcpu: "UNTESTED", liveSellerCheckout: "UNTESTED" };
+const receipt = { status: "PASS_LOCAL_ONLY", head, dirty, evidence, seconds: (Date.now() - started) / 1000, lanes: result.lanes, summary: result.summary, video, postgres: "real PostgreSQL with pg-boss schema", https: "real local TLS issuer, upstream OIDC fixture, Pi Hut format seller fixture and durable Resend-contract capture process", browser: "Playwright Chromium native forms", externalProvider: "UNTESTED", realHosts: "UNTESTED", modelAgentLanes: "UNTESTED", fixedTwoVcpu: "UNTESTED", liveSellerCheckout: "UNTESTED" };
 await writeFile(path.join(evidence, "receipt.json"), JSON.stringify(receipt, null, 1));
 console.log(JSON.stringify({ status: receipt.status, evidence, head, lanes: result.lanes, maxAcceptedPerIdentity: result.summary.maxAcceptedPerIdentity }));

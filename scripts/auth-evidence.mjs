@@ -25,10 +25,10 @@ export async function evidence(kind) {
   };
   const baseline = {
     head: git("rev-parse", "origin/main"),
-    authenticatedMetric: "UNAVAILABLE",
-    reason: "Trunk has no authenticated durable HTTP flow",
+    authenticatedMetric: "UNTESTED",
+    reason: "Baseline authenticated durable HTTP behavior was not measured",
     sharedTrunkMetric:
-      "UNAVAILABLE; trunk MCP/knowledge interfaces are unimplemented stubs and have no HTTP server",
+      "UNTESTED; baseline MCP/knowledge runtime was not measured",
     ratio: null,
   };
   await fs.writeFile(

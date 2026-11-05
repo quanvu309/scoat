@@ -6,7 +6,7 @@ export async function memoryEvidence(kind) {
  const root = process.env.SCOAT_EVIDENCE_DIR ?? path.join(os.homedir(),"tmp/scoat-delivery/p06",kind+"-"+Date.now());
  await fs.mkdir(root,{recursive:true});
  const git = (...args) => execFileSync("git",args,{encoding:"utf8",maxBuffer:1000000}).trim();
- const baseline = {head:git("rev-parse","origin/main"),memory:"UNAVAILABLE: trunk has no Memory implementation or authenticated HTTP server",sharedOperation:"UNAVAILABLE: trunk is unimplemented; no like-for-like runtime",ratio:null};
+ const baseline = {head:git("rev-parse","origin/main"),memory:"UNTESTED: baseline Memory behavior was not measured",sharedOperation:"UNTESTED: baseline shared-operation runtime was not measured",ratio:null};
  await fs.writeFile(path.join(root,"trunk-memory.txt"),git("show","origin/main:src/memory/index.ts"));
  await fs.writeFile(path.join(root,"baseline.json"),JSON.stringify(baseline,null,2));
  const identity = {head:git("rev-parse","HEAD"),base:"ba11ec54ad9b6d0a4541c93451055798bbb7df47",worktreeStatus:git("status","--porcelain"),node:process.version,platform:os.platform(),release:os.release(),architecture:os.arch(),cpus:os.cpus().length,cpu:os.cpus()[0]?.model,memoryBytes:os.totalmem(),load:os.loadavg()};

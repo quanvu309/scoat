@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { installedJournal, type InstalledJournal, type ReleaseJournal } from "./journal.js";
 
 export const lineageSchemaHead = "0004_lineage";
 export type AdmissionRole = "server" | "worker";
@@ -81,10 +82,9 @@ export async function inspect(client: Pick<pg.PoolClient, "query">): Promise<Lin
 
 export type Observation =
  | Readonly<{ database: "unavailable" }>
- | Readonly<{ database: "available"; schemaHead: string | null; lineage: "admitted" | "sealed" | "consumed" | UnadmittedReason }>;
-const headSchema = z.strictObject({ schema_head: z.string().min(1).max(64) });
+ | Readonly<{ database: "available"; journal: InstalledJournal | null; lineage: "admitted" | "sealed" | "consumed" | UnadmittedReason }>;
 
-export async function observe(pool: pg.Pool): Promise<Observation> {
+export async function observe(pool: pg.Pool, release: ReleaseJournal | null): Promise<Observation> {
  let client: pg.PoolClient;
  try {
   client = await pool.connect();
@@ -93,11 +93,10 @@ export async function observe(pool: pg.Pool): Promise<Observation> {
  }
  try {
   const state = await inspect(client);
-  if (state.kind === "admitted") return { database: "available", schemaHead: lineageSchemaHead, lineage: "admitted" };
-  if (state.kind === "sealed") return { database: "available", schemaHead: lineageSchemaHead, lineage: state.consumedBy === null ? "sealed" : "consumed" };
-  if (state.reason !== "schema-ahead" && state.reason !== "identity-mismatch") return { database: "available", schemaHead: null, lineage: state.reason };
-  const [row] = (await client.query("SELECT schema_head FROM scoat_lineage")).rows;
-  return { database: "available", schemaHead: row === undefined ? null : headSchema.parse(row).schema_head, lineage: state.reason };
+  const journal = release === null ? null : await installedJournal(client, release);
+  if (state.kind === "admitted") return { database: "available", journal, lineage: "admitted" };
+  if (state.kind === "sealed") return { database: "available", journal, lineage: state.consumedBy === null ? "sealed" : "consumed" };
+  return { database: "available", journal, lineage: state.reason };
  } catch {
   return { database: "unavailable" };
  } finally {
@@ -156,6 +155,23 @@ async function exclusive<T>(pool: pg.Pool, run: (client: pg.PoolClient) => Promi
   await client.query("ROLLBACK");
   throw error;
  } finally { client.release(); }
+}
+
+const presentSchema = z.strictObject({ present: z.boolean() });
+
+async function requireAdmitted(client: pg.PoolClient): Promise<void> {
+ const state = await inspect(client);
+ if (state.kind !== "admitted") throw new LineageRefused(refusalOf(state));
+}
+
+export async function migrateAdmitted<T>(pool: pg.Pool, run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+ return exclusive(pool, async client => {
+  const { present } = presentSchema.parse((await client.query("SELECT to_regclass(quote_ident(current_schema()) || '.scoat_lineage') IS NOT NULL AS present")).rows[0]);
+  if (present) await requireAdmitted(client);
+  const result = await run(client);
+  await requireAdmitted(client);
+  return result;
+ });
 }
 
 export async function seal(pool: pg.Pool): Promise<Readonly<{ sealId: string }>> {

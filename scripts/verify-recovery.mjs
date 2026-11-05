@@ -289,7 +289,7 @@ await withDatabase(async adminUrl => {
    assert.equal(refusal.detail.sqlstate, "22012");
    const after = await digest(target.url);
    assert.deepEqual(after, before);
-   assert.ok(!after.schemas.includes("drizzle"));
+   assert.ok(after.schemas.includes("drizzle"), "the fixture source records its installed journal");
    const status = await cli(["status"], { DATABASE_URL: liveApp }, secrets);
    assert.deepEqual(status.out, { command: "status", state: "sealed", sealId: sealed.out.sealId, consumedBy: null });
    const reopened = await cli(["unseal", "--seal", sealed.out.sealId], { DATABASE_URL: liveApp }, secrets);

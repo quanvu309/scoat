@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, open, readFile } from "node:fs/promises";
 import { z } from "zod";
 import { bindTarget, confirmOrigin, consumeSource, designated, inspect, LineageRefused, locateTarget, migrateQuarantined } from "../db/lineage.js";
-import { applyPending } from "./migrate.js";
+import { applyPending, JournalRefused, releaseJournal } from "../db/journal.js";
 import { libpqConnection, RecoveryRefused, requireMajor, runTool, type PgTools } from "./tools.js";
 
 export type AdmitPoint = "migrated" | "consumed" | "binding";
@@ -65,11 +65,13 @@ export async function admitTarget(o: Readonly<{ source: pg.Pool; target: pg.Pool
  if (located.kind === "refused") throw new LineageRefused(located.reason);
  if (located.kind === "admitted") return confirmOrigin(o.source, located.origin, located.originSeal);
  const target = located.target;
+ const release = await releaseJournal(o.migrations);
  await designated(o.source, target, false);
  try {
-  await migrateQuarantined(target, client => applyPending(client, o.migrations));
+  await migrateQuarantined(target, client => applyPending(client, release));
  } catch (error) {
   if (error instanceof LineageRefused) throw error;
+  if (error instanceof JournalRefused) throw new RecoveryRefused("migration-failed", { journal: error.status });
   throw new RecoveryRefused("migration-failed", { sqlstate: sqlState(error) });
  }
  await pause("migrated");

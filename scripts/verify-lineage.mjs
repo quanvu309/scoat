@@ -358,33 +358,43 @@ await withDatabase(async adminUrl => {
    return { cloneDiffering: row.differing };
   });
 
-  await gate("Schema-behind and populated P08 data without lineage refuse server and worker without changes", async () => {
+  await gate("Schema-behind and populated P08 data without lineage refuse migrate, server and worker without changes; a pristine P08 install upgrades to admitted", async () => {
    const legacy = await database("s1_legacy");
+   const upgrade = await database("s1_upgrade");
    const folder = path.join(root, "migrations-p08");
    await mkdir(path.join(folder, "meta"), { recursive: true });
    const journal = JSON.parse(await readFile(path.join(checkout, "db/migrations/meta/_journal.json"), "utf8"));
    const p08 = journal.entries.filter(entry => entry.tag !== "0004_lineage");
    for (const entry of p08) await copyFile(path.join(checkout, "db/migrations", entry.tag + ".sql"), path.join(folder, entry.tag + ".sql"));
    await writeFile(path.join(folder, "meta/_journal.json"), JSON.stringify({ ...journal, entries: p08 }));
-   const legacyPool = open(legacy.url);
-   const client = await legacyPool.connect();
-   try { await migrate(drizzle(client), { migrationsFolder: folder }); } finally { client.release(); }
+   const legacyPool = open(legacy.url), upgradePool = open(upgrade.url);
+   for (const pool of [legacyPool, upgradePool]) {
+    const client = await pool.connect();
+    try { await migrate(drizzle(client), { migrationsFolder: folder }); } finally { client.release(); }
+   }
+   const migrateDb = url => exec(process.execPath, ["scripts/database.mjs", "migrate"], { cwd: checkout, env: { ...process.env, DATABASE_URL: url } }).then(result => ({ code: 0, stdout: result.stdout, stderr: result.stderr }), error => ({ code: error.code, stdout: String(error.stdout), stderr: String(error.stderr) }));
    const behind = await launch(new URL("../dist/server.js", import.meta.url), serverEnv(legacy.url));
    assert.equal(behind.code, 78, behind.stderr);
    assert.match(behind.stderr, /"reason":"schema-behind"/);
+   const upgraded = await migrateDb(upgrade.url);
+   assert.equal(upgraded.code, 0, upgraded.stderr);
+   assert.match(upgraded.stdout, /"event":"migrated","applied":1,"head":"0004_lineage"/);
+   assert.equal((await inspect(upgradePool)).kind, "admitted");
    await legacyPool.query("INSERT INTO hunt_accounts(account,incarnation) VALUES('p08-account',$1)", [randomUUID()]);
    await legacyPool.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES('Session','p08',$1,now()-interval '1 hour')", [{}]);
-   await exec(process.execPath, ["scripts/database.mjs", "migrate"], { cwd: checkout, env: { ...process.env, DATABASE_URL: legacy.url } });
-   assert.deepEqual(await inspect(legacyPool), { kind: "unadmitted", reason: "populated-without-lineage" });
    const before = await digest(legacy.url);
+   const refused = await migrateDb(legacy.url);
+   assert.equal(refused.code, 78, refused.stderr);
+   assert.match(refused.stderr, /"event":"migration_refused","reason":"populated-without-lineage"/);
+   assert.deepEqual(await digest(legacy.url), before);
    const server = await launch(new URL("../dist/server.js", import.meta.url), serverEnv(legacy.url));
    const worker = await launch(new URL("../dist/worker.js", import.meta.url), { DATABASE_URL: legacy.url, SCOAT_WATCH_CONFIG: w.root + "/watch.json" });
    for (const result of [server, worker]) {
     assert.equal(result.code, 78, result.stderr);
-    assert.match(result.stderr, /"reason":"populated-without-lineage"/);
+    assert.match(result.stderr, /"reason":"schema-behind"/);
    }
    assert.deepEqual(await digest(legacy.url), before);
-   return { schemaBehind: behind.code, populated: [server.code, worker.code] };
+   return { schemaBehind: behind.code, pristineUpgrade: upgraded.code, populatedMigrate: refused.code, populated: [server.code, worker.code] };
   });
  } finally {
   if (watch) await watch.close().catch(error => gates.push({ name: "watch fixture cleanup", status: "FAIL", error: String(error) }));

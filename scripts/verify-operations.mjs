@@ -5,13 +5,16 @@ import { appendFile, cp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
 import { withDatabase } from "./durable-database.mjs";
 import { scratchDirectory } from "./scratch.mjs";
 import { authFixture } from "./auth-fixture.mjs";
-import { seal, unseal } from "../dist/db/lineage.js";
-import { verifyRelease, releaseDirectories, releaseFiles, releaseManifest } from "../dist/release.js";
+import { inspect, seal, unseal } from "../dist/db/lineage.js";
+import { admitTarget } from "../dist/recovery/handoff.js";
+import { sealRace } from "./lineage-race.mjs";
+import { intent } from "../test/fixtures/hunt.mjs";
+import { recordRelease, verifyRelease, releaseDirectories, releaseFiles, releaseManifest } from "../dist/release.js";
 import { health } from "../dist/readiness.js";
 import { queueSchemaFor } from "../dist/queue/index.js";
 
@@ -71,6 +74,29 @@ async function releaseCopy(name) {
  for (const file of releaseFiles) await cp(path.join(checkout, file), path.join(target, file));
  await symlink(path.join(checkout, "node_modules"), path.join(target, "node_modules"));
  return target;
+}
+
+const migrateWith = (release, url) => exec(process.execPath, [path.join(release, "scripts/database.mjs"), "migrate"], { cwd: release, env: { PATH: process.env.PATH, DATABASE_URL: url } }).then(result => ({ code: 0, stdout: result.stdout.trim(), stderr: result.stderr.trim() }), error => ({ code: error.code, stdout: String(error.stdout).trim(), stderr: String(error.stderr).trim() }));
+
+async function probeOf(url) {
+ const pool = new pg.Pool({ connectionString: url, max: 1 });
+ pool.on("error", () => undefined);
+ try {
+  return (await pool.query("SELECT to_regclass('review_probe_0005') IS NOT NULL AS probe, (SELECT count(*)::integer FROM drizzle.__drizzle_migrations) AS journal")).rows[0];
+ } finally { await pool.end(); }
+}
+
+async function futureRelease() {
+ const copy = await releaseCopy("release-0005");
+ const journalPath = path.join(copy, "db/migrations/meta/_journal.json");
+ const journal = JSON.parse(await readFile(journalPath, "utf8"));
+ const last = journal.entries.at(-1);
+ const entry = { ...last, idx: last.idx + 1, when: last.when + 1000, tag: "0005_review_probe" };
+ await writeFile(journalPath, JSON.stringify({ ...journal, entries: [...journal.entries, entry] }));
+ await writeFile(path.join(copy, "db/migrations/0005_review_probe.sql"), "CREATE TABLE review_probe_0005 (id integer PRIMARY KEY);\n");
+ await recordRelease(copy);
+ assert.equal((await verifyRelease(copy)).kind, "verified");
+ return { copy, when: entry.when };
 }
 
 const environment = { node: process.version, cpu: os.cpus()[0]?.model ?? "unknown", logicalCpus: os.cpus().length, platform: `${os.platform()} ${os.release()} ${os.arch()}` };
@@ -300,7 +326,31 @@ await withDatabase(async adminUrl => {
    return { down: down.body, mcp: mcp.status, recovered: up.status, serverStderrEvents: [...new Set(server.output.stderr.split("\n").filter(Boolean).map(line => line.slice(0, 80)))] };
   });
 
-  await gate("O7 copied database and schema drift fail closed with bounded reasons", async () => {
+  await gate("O10 a seal committing while a request waits on the lineage lock returns 503 on issuer routes and MCP", async () => {
+   const pool = new pg.Pool({ connectionString: f.databaseUrl, max: 4 });
+   pool.on("error", () => undefined);
+   pools.push(pool);
+   const { token } = await f.login();
+   const enroll = () => fetch(f.issuer + "/account/enroll", { method: "POST", headers: { origin: f.issuer, "content-type": "application/x-www-form-urlencoded" }, body: "confirmation=race&decision=enroll" }).then(async response => ({ status: response.status, body: await response.text() }));
+   const mcp = () => f.rpc(token, "tools/call", { name: "scoat_hunt", arguments: { op: "start", requestKey: randomUUID(), intent, profile: null } }).then(reply => ({ status: reply.status, body: typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body) }));
+   const results = {};
+   for (const [label, send] of [["issuer", enroll], ["mcp", mcp]]) {
+    const raced = await sealRace(pool, send);
+    await unseal(pool, raced.sealId);
+    const healthy = await healthOf(f.issuer);
+    results[label] = { status: raced.status, body: raced.body.slice(0, 200), contention: raced.contention, healthAfterUnseal: healthy.status };
+   }
+   for (const label of ["issuer", "mcp"]) {
+    assert.equal(results[label].status, 503, label + ": " + JSON.stringify(results[label]));
+    assert.deepEqual(JSON.parse(results[label].body), { error: "service_unavailable", lineage: "sealed" });
+    assert.equal(results[label].healthAfterUnseal, 200);
+   }
+   return results;
+  });
+
+  const future = await futureRelease();
+
+  await gate("O7 copied database, an applied newer migration and an emulated lineage head fail closed with bounded reasons", async () => {
    const copied = start(path.join(checkout, "dist/server.js"), serverEnv(copy.url), 60000);
    const outcome = await copied.first;
    assert.equal(outcome.kind, "exit");
@@ -310,12 +360,62 @@ await withDatabase(async adminUrl => {
    const copyReport = await health(verified, open(copy.url), true, true);
    assert.equal(copyReport.ready, false);
    assert.deepEqual(copyReport.reasons, ["lineage-identity-mismatch"]);
+   const forward = await migrateWith(future.copy, ops.url);
+   assert.equal(forward.code, 0, forward.stderr);
+   assert.match(forward.stdout, /"event":"migrated","applied":1,"head":"0005_review_probe"/);
+   const ahead = await healthOf(base);
+   assert.equal(ahead.status, 503);
+   assert.deepEqual(ahead.body.schema, { expected: "0004_lineage", current: "unknown-" + future.when, status: "ahead" });
+   assert.deepEqual(ahead.body.reasons, ["schema-ahead"]);
+   assert.equal(ahead.body.lineage, "admitted");
+   const rollback = await migrateWith(checkout, ops.url);
+   assert.equal(rollback.code, 78, rollback.stdout);
+   assert.match(rollback.stderr, /"event":"migration_refused","reason":"schema-ahead"/);
    await opsPool.query("UPDATE scoat_lineage SET schema_head = '0005_future_release'");
    const drift = await healthOf(base);
    assert.equal(drift.status, 503);
-   assert.deepEqual(drift.body.schema, { expected: "0004_lineage", current: "0005_future_release", status: "drift" });
-   assert.deepEqual(drift.body.reasons, ["schema-drift", "lineage-schema-ahead"]);
-   return { copyServerExit: outcome.code, copyReasons: copyReport.reasons, drift: drift.body.schema, driftReasons: drift.body.reasons, label: "schema drift is emulated by an owner-role lineage write on a disposable database" };
+   assert.deepEqual(drift.body.reasons, ["schema-ahead", "lineage-schema-ahead"]);
+   return { copyServerExit: outcome.code, copyReasons: copyReport.reasons, forwardMigration: forward.stdout, ahead: ahead.body.schema, aheadReasons: ahead.body.reasons, olderReleaseMigrate: rollback.code, emulatedHeadReasons: drift.body.reasons, label: "a real scratch 0005 migration through a re-recorded release copy; the lineage head is then emulated by an owner-role write on a disposable database" };
+  });
+
+  await gate("O9 migrate refuses sealed, consumed and restored-copy databases before DDL and upgrades admitted live and recovered targets", async () => {
+   const live = await database("s3_mlive");
+   const genesis = await migrateWith(checkout, live.url);
+   assert.equal(genesis.code, 0, genesis.stderr);
+   assert.match(genesis.stdout, /"event":"migrated","applied":5,"head":"0004_lineage"/);
+   const repeat = await migrateWith(checkout, live.url);
+   assert.match(repeat.stdout, /"applied":0/);
+   const livePool = new pg.Pool({ connectionString: live.url, max: 2 });
+   let sealId;
+   try { ({ sealId } = await seal(livePool)); } finally { await livePool.end(); }
+   const outcomes = {};
+   const refused = async (label, url, reason) => {
+    const before = await probeOf(url);
+    const result = await migrateWith(future.copy, url);
+    const after = await probeOf(url);
+    assert.equal(result.code, 78, label + ": " + result.stdout + result.stderr);
+    assert.match(result.stderr, new RegExp(`"event":"migration_refused","reason":"${reason}"`));
+    assert.deepEqual(after, before);
+    assert.equal(after.probe, false);
+    outcomes[label] = { code: result.code, reason, journal: after.journal };
+   };
+   await refused("sealed source", live.url, "sealed");
+   await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()", [live.name]);
+   const target = await database("s3_mtarget", live.name);
+   const spare = await database("s3_mspare", live.name);
+   await refused("quarantined copy before admit", target.url, "identity-mismatch");
+   const source = new pg.Pool({ connectionString: live.url, max: 2 }), recovered = new pg.Pool({ connectionString: target.url, max: 2 });
+   try { assert.equal(await admitTarget({ source, target: recovered, migrations: path.join(checkout, "db/migrations") }), "admitted"); } finally { await Promise.all([source.end(), recovered.end()]); }
+   await refused("consumed source", live.url, "consumed");
+   await refused("second quarantined copy", spare.url, "identity-mismatch");
+   const upgraded = await migrateWith(future.copy, target.url);
+   assert.equal(upgraded.code, 0, upgraded.stderr);
+   assert.match(upgraded.stdout, /"applied":1/);
+   const after = await probeOf(target.url);
+   assert.equal(after.probe, true);
+   const targetPool = new pg.Pool({ connectionString: target.url, max: 1 });
+   try { assert.equal((await inspect(targetPool)).kind, "admitted"); } finally { await targetPool.end(); }
+   return { genesis: genesis.stdout, repeat: repeat.stdout, sealId, refusals: outcomes, recoveredUpgrade: { code: upgraded.code, journal: after.journal } };
   });
   await server.stop();
  } finally {

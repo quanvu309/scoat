@@ -50,13 +50,19 @@ Otherwise it returns 503, with bounded, non-secret reasons:
 | `artifact-*` | Release refused (above) |
 | `database-unavailable` | Cannot connect or read lineage |
 | `database-unconfigured` | No `DATABASE_URL` or auth configuration |
-| `schema-absent` | Lineage table missing; the database is behind |
-| `schema-drift` | The schema head differs from this release's `0004_lineage` |
+| `schema-absent` | No installed migration journal (`drizzle.__drizzle_migrations`) |
+| `schema-behind` | The installed journal is a strict prefix of this release's migrations |
+| `schema-ahead` | The installed journal has a migration newer than this release; `current` is `unknown-<millis>` |
+| `schema-drift` | The installed journal disagrees with this release's migration hashes |
 | `lineage-sealed`, `lineage-consumed` | Sealed for recovery |
 | `lineage-identity-mismatch` | Identity-changing copy or logical restore |
 | `lineage-absent`, `lineage-populated-without-lineage`, `lineage-schema-ahead` | Not admitted |
 | `auth-unconfigured` | No issuer configuration |
 | `transport-unencrypted` | The node is not terminating TLS |
+
+Migrate admission. After the release verifies, `migrate` takes the exclusive lineage lock and opens one transaction. If the lineage table exists, it must be admitted before any DDL. Otherwise only a pristine install proceeds: the pending migrations run, and genesis must admit the result before commit. A sealed, consumed, copied or restored database, a populated database without lineage, and an installed journal ahead of or different from this release all exit 78 with `{"event":"migration_refused","reason":…}` and no change. A restored copy is migrated only by recovery `admit`.
+
+Requests that start before a seal and wait on the lineage lock get 503 `{"error":"service_unavailable","lineage":"sealed"}` on custom issuer routes and MCP authentication (O10). The same mapping covers MCP tool and transport failures; those paths have no lane. Endpoints served inside the OAuth provider keep its own error page; that path has no lane.
 
 Startup and outage behaviour:
 - **Sealed or copied database at startup.** The server exits 78. At runtime, every request gets 503 while the database is sealed.
@@ -67,7 +73,9 @@ Evidence:
 - O4: admitted.
 - O5: sealed and unsealed.
 - O6: outage and recovery, with no credential in the output.
-- O7: copied database and an emulated schema drift.
+- O7: copied database, a real newer migration and an emulated lineage head.
+- O9: migrate refuses sealed, consumed and copied databases before DDL.
+- O10: a seal that commits while a request waits returns 503.
 
 ## Listening address and TLS
 

@@ -17,7 +17,7 @@ This branch covers S1 admission and fences. The sealed two-database handoff and 
 9. Unseal works before consumption. After an emulated S2 consume, unseal refuses `consumed`; the original unconditional unseal would reopen it.
 10. A top-level lineage write keeps admission; the same write inside a savepoint strands the schema on row xmin.
 11. A pristine `db:migrate` install is admitted; a template clone carrying `admitted` is refused on database oid.
-12. A 0003-only database refuses with `schema-behind`. Populated P08 data migrated to 0004 refuses with `populated-without-lineage`, and its digest stays unchanged.
+12. A 0003-only database refuses with `schema-behind`. A pristine 0003 install upgrades through `db:migrate` to admitted. On populated P08 data, `db:migrate` exits 78 `populated-without-lineage` before any DDL; its digest stays unchanged and server and worker refuse `schema-behind`.
 
 `npm test` adds parser checks in `test/lineage-lint.test.mjs` with original bypass shapes: raw `BEGIN` sites, bare pool writes, savepoints, lineage SQL outside its owner, hold order, an unscoped key, unseal without the consumption predicate, identity without xmin, and the base server and worker boot order.
 

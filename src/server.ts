@@ -17,7 +17,7 @@ import { PostgresHuntStore } from "./hunt/postgres.js";
 import { watchSchema } from "./memory/watch-schema.js";
 import { Watches, watchConfigSchema } from "./memory/watches.js";
 import { Delivery } from "./delivery/index.js";
-import { admit, begin, inspect, LineageRefused } from "./db/lineage.js";
+import { admit, begin, inspect, LineageRefused, type RefusalReason } from "./db/lineage.js";
 import { verifyRelease } from "./release.js";
 import { health } from "./readiness.js";
 import { z } from "zod";
@@ -37,6 +37,12 @@ async function lineageStatus(pool: import("pg").Pool): Promise<string> {
     process.stderr.write(JSON.stringify({ event: "lineage_unavailable" }) + "\n");
     return "database-unavailable";
   }
+}
+
+function refuseLineage(res: import("node:http").ServerResponse, reason: RefusalReason): void {
+  process.stderr.write(JSON.stringify({ event: "lineage_refused", reason }) + "\n");
+  if (!res.headersSent) res.writeHead(503, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "service_unavailable", lineage: reason }));
 }
 
 export async function createHttpServer(options: Readonly<{ delivery?: Delivery }> = {}) {
@@ -139,7 +145,11 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     if (req.url !== "/mcp") {
       try {
         await auth.route(req, res);
-      } catch {
+      } catch (error) {
+        if (error instanceof LineageRefused) {
+          refuseLineage(res, error.reason);
+          return;
+        }
         process.stderr.write(JSON.stringify({ event: "authentication_request_refused" }) + "\n");
         if (!res.headersSent) res.writeHead(400);
         res.end("Authentication request refused");
@@ -151,6 +161,10 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     try {
       principal = await auth.authenticate(req);
     } catch (error) {
+      if (error instanceof LineageRefused) {
+        refuseLineage(res, error.reason);
+        return;
+      }
       if (!(error instanceof InvalidCredential)) {
         process.stderr.write(JSON.stringify({ event: "authentication_unavailable" }) + "\n");
         res.writeHead(503);
@@ -169,6 +183,9 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       const start = performance.now();
       try {
         return await invoke(call);
+      } catch (error) {
+        if (error instanceof LineageRefused) refuseLineage(res, error.reason);
+        throw error;
       } finally {
         if (!res.headersSent)
           res.setHeader(
@@ -205,7 +222,11 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
       }
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
-    } catch {
+    } catch (error) {
+      if (error instanceof LineageRefused) {
+        refuseLineage(res, error.reason);
+        return;
+      }
       process.stderr.write(JSON.stringify({ event: "mcp_request_refused" }) + "\n");
       if (!res.headersSent) res.writeHead(400);
       res.end();

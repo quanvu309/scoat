@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CardBridge, CardState } from "./index.js";
-import { createController } from "./index.js";
+import { createController, initialState } from "./index.js";
 import type { Snapshot } from "./contracts.js";
 import type { Quote, Line, Money } from "../domain.js";
 const money=(value:Money)=>new Intl.NumberFormat("en-GB",{style:"currency",currency:value.currency}).format(value.pence/100);
@@ -26,7 +26,7 @@ function status(value:Line["status"]):string {
 function Lines({title,lines}:{title:string;lines:readonly Line[]}) {return <div><h4>{title}</h4>{lines.length?lines.map((line,i)=><p key={i}>{line.label}: {"pence" in line.value?money(line.value):"points" in line.value?`${line.value.points} points`:line.value.text} · {status(line.status)} <a href={line.proof.url} target="_blank" rel="noreferrer">Source</a></p>):<p className="muted">None confirmed</p>}</div>;}
 function QuoteDetails({quote}:{quote:Quote}) {return <article className="quote" key={quote.id}><h3>{quote.seller}</h3><p className="amount">{pay(quote.guaranteed)}</p><p>Guaranteed pay today · {budget(quote.budget)}</p><Lines title="Price evidence" lines={quote.guaranteed.lines}/><Lines title="Back later" lines={quote.backLater}/><Lines title="Perks" lines={quote.perks}/>{quote.conditional.map((scenario,i)=><div className="conditional" key={i}><h4>Conditional: {pay(scenario.payToday)}</h4><p>Requires {scenario.requires.join(", ")} · {budget(scenario.budget)}</p><Lines title="Scenario evidence" lines={scenario.payToday.lines}/><Lines title="Conditional back later" lines={scenario.backLater}/><Lines title="Conditional perks" lines={scenario.perks}/></div>)}{quote.limitations.map((gap,i)=><p key={i}>{gap}</p>)}{quote.untested.map(offer=><p key={offer.id}>Untested: {offer.kind} · {offer.seller} <a href={offer.proof.url} target="_blank" rel="noreferrer">Source</a></p>)}</article>;}
 export function Card({initial,bridge}:{initial:Snapshot;bridge:CardBridge|undefined}) {
- const [state,setState]=useState<CardState>({snapshot:initial,status:bridge?"stale":"unsupported",message:"Connecting…"});
+ const [state,setState]=useState<CardState>(()=>initialState(initial,bridge));
  useEffect(()=>{performance.mark("scoat-card-render");},[state]);
  const [notice,setNotice]=useState("");
  useEffect(()=>{const controller=createController(initial,bridge,setState,undefined,document.visibilityState==="visible");const visibility=()=>controller.setVisible(document.visibilityState==="visible");visibility();document.addEventListener("visibilitychange",visibility);return()=>{document.removeEventListener("visibilitychange",visibility);controller.dispose();};},[initial,bridge]);

@@ -223,7 +223,8 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    await page.goto(card.url);
    const frame = page.frameLocator("iframe");
    await frame.getByText("Finished", { exact: true }).waitFor();
-   await frame.getByText("Connecting…").waitFor({ state: "detached", timeout: 15000 });
+   await frame.getByText("Finished result. It no longer changes, so the card does not poll.").waitFor();
+   assert.equal(await frame.getByText("Connecting…").count(), 0);
    const finalQuote = await frame.getByRole("region", { name: "Finished quote", exact: true }).innerText();
    assert.ok(finalQuote.includes("The Pi Hut"));
    assert.ok(finalQuote.includes("£70.00"));

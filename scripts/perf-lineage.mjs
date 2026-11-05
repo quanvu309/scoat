@@ -120,7 +120,7 @@ const report = {
  exclusions: ["installation and build", "migration and database creation", "warmup pairs", "concurrent contention and exclusive seal/admit holders", "network latency to a remote database", "end-to-end hunt or story work"],
  trunk: "unavailable: trunk has no runnable hunt; no trunk ratio is recorded",
  fixedTwoCpuBudget: "UNTESTED: no independently provisioned fixed two-CPU runner",
- storyMeasurement: "pending: the parent P09 linked story adds end-to-end measurement",
+ role: "supplementary microbenchmark run by scripts/perf-p09.mjs after the end-to-end story metric in scripts/perf-story.mjs; not the P09 metric",
  releaseVerification: result.releaseVerification,
  batches: result.rows,
 };

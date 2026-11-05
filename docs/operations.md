@@ -185,4 +185,4 @@ Live seller checks, live checkout, commercial hosts, a real IdP, Resend delivery
 
 - `npm run verify -- p09-operations`: O1–O8 receipt under `~/tmp/scoat-delivery/p09/s3/operations-*/receipt.json`.
 - `npm run verify -- p09-lineage` and `npm run verify -- p09-recovery`: lineage and recovery gates.
-- `npm run perf -- p09`: per-transaction lineage overhead and release verification samples, written to `perf.json`.
+- `npm run perf -- p09`: the scripted eight-row public MCP hunt to a persisted final HuntView and a queued watch notification, with readiness and worker digest, written to `p09-perf.json`; then per-transaction lineage overhead and release verification samples, written to `perf.json`. Local fixture timings only.

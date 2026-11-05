@@ -21,6 +21,8 @@ One run reuses the IDs each step creates. Story code is `scripts/story-lanes.mjs
 
 `scripts/story-conditions.mjs` is the only place that sets synthetic state: seller price, verified-email claims, plan ticks, next-day checks and worker start, pause, resume and stop. Each call is logged in `transcript.jsonl` and `receipt.json`. Proof reads run in `BEGIN READ ONLY`. The auth and watch fixtures still create their schemas, OAuth test provider, keys, seller and mail capture; that is fixture setup, not story action. The card harness follows the card's open-link request in the same recorded tab.
 
+Browser evidence: native Chromium drives memory approval, Skip/Stop controls, watch confirmation, unsubscribe and erase pages. The `host-one` and `host-two` OAuth logins and consent run through the scripted cookie-jar client in `auth-fixture.mjs` `login()` against the real issuer endpoints with PKCE S256; they are not native-browser OAuth. Database evidence: the receipt's `boundaries.databaseRole` records the observed flags of the application role. With the embedded cluster that role is the `initdb` trust superuser; NOSUPERUSER owners are covered by the lineage, recovery and `perf-lineage` lanes, not by this story.
+
 ## Evidence
 
 The directory holds `p09-review-{memory,card,control,watch,mail,unsubscribe,erase}.png`, `p09-review.mp4` (with the `p09-review.source.webm` recording), `transcript.jsonl`, `visible.jsonl`, `projection.json` and `receipt.json`. The video is one Playwright recording of the story page, transcoded once. Its duration comes from ffprobe; the receipt states the review dwell added after each screenshot. The erase status secret is masked in the DOM before paint, and the mail recipient and one-click token are replaced before rendering.
@@ -31,4 +33,4 @@ The receipt records head, porcelain, tracked-patch digest, Node, PostgreSQL serv
 
 ## Labeled limits
 
-Step durations come from one run on the recorded hardware and include review dwell. They are not a benchmark. Real MCP hosts, external IdP, Resend and DKIM, live seller and checkout, a model agent, managed PostgreSQL, systemd deployment, key rotation, a fixed two-CPU runner and production acceptance are UNTESTED. Trunk has no runnable hunt to compare against.
+Step durations come from one run on the recorded hardware and include review dwell. They are not a benchmark. Real MCP hosts, external IdP, Resend and DKIM, live seller and checkout, a model agent, managed PostgreSQL, systemd deployment, key rotation, a fixed two-CPU runner, native-browser OAuth login and consent, a non-superuser story database role and production acceptance are UNTESTED. Trunk has no runnable hunt to compare against.

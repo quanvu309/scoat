@@ -1,4 +1,4 @@
-if (process.argv[2] === "p09") { await import("./perf-lineage.mjs"); process.exit(process.exitCode ?? 0); }
+if (process.argv[2] === "p09") { await import("./perf-p09.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p08") { await import("./perf-watch.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p07") { await import("./verify-card.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p06") { await import("./perf-memory.mjs"); process.exit(process.exitCode ?? 0); }

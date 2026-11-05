@@ -120,6 +120,7 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
   assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('registration: { enabled: false }', 'registration: { enabled: true }')), /unused issuer endpoints/);
   assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
   assert.doesNotThrow(() => checkConsentDecision(issuer));
   assert.doesNotThrow(() => checkConsentDecision(issuer.replace("!decision.success", '!z.enum(["allow","deny"]).safeParse(submitted.get("decision")).success')));

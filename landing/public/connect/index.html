@@ -56,9 +56,10 @@
         <ol class="connect-steps">
           <li><div><h4>Open Plugins</h4><p><a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT in a new tab</a> and go to <strong>Plugins</strong>. Select <strong>+ → Add custom MCP server</strong>.</p></div></li>
           <li><div><h4>Add Scoat</h4><p>Name it <strong>Scoat</strong> and paste the connection URL above. Select <strong>Server URL</strong> and use <strong>OAuth</strong> authentication.</p></div></li>
-          <li><div><h4>Enter the OAuth client ID</h4><p>Open <strong>Advanced OAuth settings</strong> and choose the option to use an existing client. Enter <code>scoat-chatgpt</code> as the <strong>Client ID</strong>. Leave the <strong>Client secret</strong> empty. If asked for scopes, enter <code>scoat:read scoat:write</code>. Review the permissions, then choose <strong>Create as a plugin</strong>.</p></div></li>
-          <li><div><h4>Sign in, then start a chat</h4><p>Sign in with your Scoat email and finish creating the plugin. Install it, start a new chat, then type <strong>@</strong> and choose <strong>Scoat</strong>.</p></div></li>
+          <li><div><h4>Connect with OAuth</h4><p>Keep automatic OAuth registration selected and choose <strong>Create as a plugin</strong>. You do not need to enter a client ID or client secret.</p></div></li>
+          <li><div><h4>Sign in and approve access</h4><p>Sign in with your email, review Scoat’s permissions and approve access. Install the plugin, start a new chat, then type <strong>@</strong> and choose <strong>Scoat</strong>.</p></div></li>
         </ol>
+        <details><summary>Advanced: use an existing OAuth client</summary><p>If you need manual setup, open <strong>Advanced OAuth settings</strong> and choose the option to use an existing client. Enter <code>scoat-chatgpt</code> as the <strong>Client ID</strong> and leave the <strong>Client secret</strong> empty. If asked for scopes, enter <code>scoat:read scoat:write</code>.</p></details>
         <p class="connect-support">Custom MCP access depends on your ChatGPT account and workspace settings. If the option is missing, check <a href="https://developers.openai.com/plugins/deploy/connect-chatgpt" target="_blank" rel="noopener noreferrer">OpenAI’s setup guide<span class="sr-only"> (opens in a new tab)</span></a> or ask your workspace admin.</p>
       </section>
       <div class="first-hunt">

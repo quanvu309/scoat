@@ -141,10 +141,11 @@ export async function authFixture(databaseUrl, options = {}) {
     lifecycleKeyVersion: "disposable-fixture",
     cookieKeys: [randomBytes(32).toString("hex")],
     jwks,
+    ...(options.registration ? { registrationClientId: "scoat-chatgpt" } : {}),
     clients: ["host-one", "host-two"].map((client_id) => ({
       client_id,
       redirect_uris: ["https://client.example/cb"],
-    })),
+    })).concat(options.registration ? [{ client_id: "scoat-chatgpt", redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"] }] : []),
   };
   await cp(new URL("../knowledge/releases",import.meta.url),root+"/releases",{recursive:true});
   await writeFile(root + "/auth.json", JSON.stringify(config), { mode: 0o600 });
@@ -252,11 +253,13 @@ export async function authFixture(databaseUrl, options = {}) {
   ) {
     identity = subject;
     jar.clear();
+    const redirect = config.clients.find(value => value.client_id === client)?.redirect_uris[0];
+    assert.ok(redirect);
     const verifier = randomBytes(32).toString("base64url"),
       state = randomBytes(32).toString("hex");
     const params = new URLSearchParams({
       client_id: client,
-      redirect_uri: "https://client.example/cb",
+      redirect_uri: redirect,
       response_type: "code",
       scope: "openid " + scope,
       resource: issuer + "/mcp",
@@ -266,7 +269,7 @@ export async function authFixture(databaseUrl, options = {}) {
     });
     let url = issuer + "/auth?" + params;
     const steps = [];
-    for (let n = 0; n < 30 && !url.startsWith("https://client.example/"); n++) {
+    for (let n = 0; n < 30 && !url.startsWith(redirect); n++) {
       if (pauseAtCallback && new URL(url).pathname === "/upstream/callback") return {callback:url,cookie:[...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ")};
       let response = await browser(url);
       steps.push({ path: new URL(url).pathname, status: response.status });
@@ -331,7 +334,7 @@ export async function authFixture(databaseUrl, options = {}) {
         grant_type: "authorization_code",
         code,
         code_verifier: verifier,
-        redirect_uri: "https://client.example/cb",
+        redirect_uri: redirect,
         resource: issuer + "/mcp",
       }),
     });

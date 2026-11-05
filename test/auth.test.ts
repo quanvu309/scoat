@@ -34,6 +34,7 @@ test("maintained issuer authenticates two clients to the same durable subject", 
       ).json();
       assert.equal(discovery.issuer, f.issuer);
       assert.equal(discovery.registration_endpoint, undefined);
+      assert.equal((await fetch(f.issuer + "/reg", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
       assert.deepEqual(discovery.code_challenge_methods_supported, ["S256"]);
     } finally {
       await f.close();

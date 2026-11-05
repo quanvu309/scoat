@@ -1,12 +1,18 @@
 # Identity and host support
 
-Production uses oidc-provider 9.13.3 as the single Scoat HTTPS issuer, with openid-client 6.8.9 verifying the upstream OIDC login. Two statically registered public code clients share a stable Scoat subject when they authenticate the same upstream issuer/subject. Email and display name never identify or link accounts. Dynamic registration is disabled. Redirects are pre-registered exact HTTPS URLs; PKCE S256, resource and state are required.
+Production uses oidc-provider 9.13.3 as the single Scoat HTTPS issuer, with openid-client 6.8.9 verifying the upstream OIDC login. Statically registered public code clients share a stable Scoat subject when they authenticate the same upstream issuer/subject. Email and display name never identify or link accounts. Native provider dynamic registration is disabled. Optional constrained RFC 7591 registration returns the existing configured public ChatGPT client without creating a client artifact. Redirects are pre-registered exact HTTPS URLs; PKCE S256, resource and state are required.
+
+For automatic ChatGPT setup, set optional `registrationClientId` in the private issuer configuration to the existing ChatGPT client ID. That client must have exactly one redirect: `https://chatgpt.com/connector_platform_oauth_redirect`. Duplicate client IDs, another client sharing that callback, an unknown selector or any different selected callback fail startup. Existing configurations omit the selector and keep registration disabled; the static Codex client remains configured independently.
+
+When selected, discovery advertises `/reg`. A successful JSON POST returns HTTP 201 with `Cache-Control: no-store`, the same static client ID, code-only grants and `none` token authentication. Repeated requests represent instances of one application, as permitted by RFC 7591 section 3.2.1. Registration adds no database rows, secrets or management credentials. Requests require the exact singleton callback and reject unsupported security metadata; bounded display metadata and scalar or short string-list extensions are ignored without fetching URLs. Bodies are limited to 8192 bytes. Client authentication defaults explicitly to `none` for this public-client policy. PKCE S256, explicit resource, state, email login and Scoat consent remain required by authorization.
+
+Users paste `https://mcp.scoat.net/mcp`, choose OAuth, then sign in and approve Scoat access. The connection guide retains an advanced existing-client fallback. Local fixture tests establish the protocol; ChatGPT acceptance of the shared client ID and the actual production flow require a real host session and remain UNTESTED. Claude setup remains pending.
 
 `npm run verify -- p05` runs ten local HTTPS/PostgreSQL fixture lanes. It launches the compiled production server in a child process, drives a separate test-owned upstream issuer, exchanges real authorization codes, and tests durable replay after an actual process restart. Local clients named host-one and host-two are synthetic OAuth clients. They are not ChatGPT, Claude or Codex hosts. The test upstream uses an in-memory adapter; the production issuer always uses PostgreSQL and configured persistent keys. No production fixture identity switch exists.
 
 | Surface | Evidence | State |
 | --- | --- | --- |
-| Discovery, static registration, consent, code exchange, S256, exact redirect, state, resource, expiry and revocation | `npm run verify -- p05` | Local integration |
+| Discovery, constrained ChatGPT registration, consent, code exchange, S256, exact redirect, state, resource, expiry and revocation | `npm run verify -- p05` | Local integration |
 | Authenticated guide/start/list/read/record/finish, prompts and historical pinned resources | `test/mcp.test.ts`; local lane transcript and projection | Local integration |
 | Two OAuth clients, same subject; different same-email subject isolation | Local lanes 2/3 | Local integration |
 | Double reauthenticated explicit linking, old account tokens revoked | Local linking receipt | Local integration; existing-hunt migration intentionally refused |

@@ -12,6 +12,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
 import { authConfigSchema } from "./config.js";
+import { publicClient, registerClient } from "./registration.js";
 import { linkIdentity } from "./link.js";
 import type { Agent, Id } from "../domain.js";
 import { UnknownIdentity, resolveIdentity } from "./identity.js";
@@ -108,18 +109,16 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     config.upstreamClientId,
     config.upstreamClientSecret,
   );
+  const clients = config.clients.map(publicClient);
+  const registration = clients.find(client => client.client_id === config.registrationClientId);
   const provider = new Provider(issuer, {
     adapter: postgresAdapter(pool),
     jwks: config.jwks,
     cookies: { keys: config.cookieKeys },
-    clients: config.clients.map((client) => ({
-      ...client,
-      response_types: ["code"],
-      grant_types: ["authorization_code"],
-      token_endpoint_auth_method: "none",
-      subject_type: "public",
-    })),
+    clients,
+    discovery: registration ? { registration_endpoint: issuer + "/reg" } : {},
     responseTypes: ["code"],
+    clientAuthMethods: ["none"],
     scopes: ["openid"],
     extraParams: {
       state: (ctx, value) => {
@@ -128,6 +127,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       },
     },
     features: {
+      registration: { enabled: false },
       dPoP: { enabled: false },
       pushedAuthorizationRequests: { enabled: false },
       userinfo: { enabled: false },
@@ -240,6 +240,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
   }
   async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", issuer);
+    if (url.pathname === "/reg" && registration) return registerClient(req, res, registration);
     if (url.pathname === "/account/enroll" && req.method === "POST") {
       if (req.headers.origin !== issuer) throw new Error("Same origin required");
       const submitted = await form(req), confirmation = submitted.get("confirmation");

@@ -410,7 +410,7 @@ export function checkAuthorizationPolicy(source) {
   const responseTypes = options.find(node => node.key?.name === "responseTypes")?.value;
   const scopes = options.find(node => node.key?.name === "scopes")?.value;
   const features = options.find(node => node.key?.name === "features")?.value.properties ?? [];
-  const disabled = ["dPoP", "pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
+  const disabled = ["registration", "dPoP", "pushedAuthorizationRequests", "userinfo", "rpInitiatedLogout"].every(name => features.find(node => node.key?.name === name)?.value.properties?.some(node => node.key?.name === "enabled" && node.value?.value === false));
   if (JSON.stringify(responseTypes?.elements?.map(node => node.value)) !== '["code"]' || JSON.stringify(scopes?.elements?.map(node => node.value)) !== '["openid"]' || !disabled) throw new Error("Advertise only the shipped authorization-code flow and disable unused issuer endpoints");
 }
 export function checkBrowserLink(source) {

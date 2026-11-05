@@ -6,7 +6,7 @@ const read = (result) => {
   return result._meta?.["scoat/readCapability"] ?? result.structuredContent;
 };
 export async function authLanes(databaseUrl) {
-  const f = await authFixture(databaseUrl);
+  const f = await authFixture(databaseUrl, { registration: true });
   const transcript = [];
   const intent = {
     product: { kind: "description", text: "SYNTHETIC P05 product" },
@@ -21,7 +21,20 @@ export async function authLanes(databaseUrl) {
   try {
     assert.equal((await f.rpc(null, "tools/list")).status, 401);
     const one = await f.login();
-    const two = await f.login("host-two");
+    const discovery = await (await fetch(f.issuer + "/.well-known/oauth-authorization-server")).json();
+    assert.equal(discovery.registration_endpoint, f.issuer + "/reg");
+    assert.deepEqual(discovery.code_challenge_methods_supported, ["S256"]);
+    assert.deepEqual(discovery.token_endpoint_auth_methods_supported, ["none"]);
+    const registered = await fetch(discovery.registration_endpoint, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"] }),
+    });
+    assert.equal(registered.status, 201);
+    assert.equal(registered.headers.get("cache-control"), "no-store");
+    const registration = await registered.json();
+    assert.equal(registration.client_id, "scoat-chatgpt");
+    const two = await f.login(registration.client_id);
+    assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_artifacts WHERE model='Client'")).rows[0].count, "0");
     const request = { requestKey: randomUUID(), intent, profile: null };
     const start = await call(one.token, "start", request);
     assert.ok(start.ok, JSON.stringify(start));
@@ -35,12 +48,14 @@ export async function authLanes(databaseUrl) {
     passed(2, {
       clients: [one.client, two.client],
       sameHunt: true,
+      automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0 },
       loginSteps: one.steps,
     });
-    const foreign = await f.login("host-one", "same-email-other-subject");
+    const foreign = await f.login(registration.client_id, "same-email-other-subject");
     assert.equal((await call(foreign.token, "list")).value.hunts.length, 0);
     passed(3, {
       distinctSubjectIsolated: true,
+      sharedRegistrationClient: registration.client_id,
       emailFixture: "same@example.invalid",
       emailUnusedByProduction: true,
     });

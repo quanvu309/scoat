@@ -5,9 +5,12 @@ CREATE TABLE IF NOT EXISTS scoat_lineage (
  consumed_by text,
  identity text NOT NULL,
  schema_head text NOT NULL,
+ origin text,
+ origin_seal uuid,
  changed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  CHECK ((state = 'sealed') = (seal_id IS NOT NULL)),
- CHECK (state = 'sealed' OR consumed_by IS NULL)
+ CHECK (state = 'sealed' OR consumed_by IS NULL),
+ CHECK ((origin IS NULL) = (origin_seal IS NULL))
 );
 CREATE OR REPLACE FUNCTION scoat_lineage_identity(row_xmin numeric) RETURNS text LANGUAGE sql VOLATILE AS $lineage$
 SELECT concat_ws(':', (pg_control_system()).system_identifier, ('x' || substr(pg_walfile_name(pg_current_wal_lsn()), 1, 8))::bit(32)::bigint, (SELECT oid FROM pg_database WHERE datname = current_database()), to_regclass(quote_ident(current_schema()) || '.scoat_lineage')::oid, row_xmin)

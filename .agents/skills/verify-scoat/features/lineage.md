@@ -2,7 +2,7 @@
 
 Run `npm run build`, then `pstack-run run --timeout 600 -- npm run verify -- p09-lineage`. It needs the shared PostgreSQL 17.6 binaries used by P04 (or `DATABASE_URL` with a role that may create roles and databases) and PostgreSQL client tools at least as new as the server: `SCOAT_PG_BIN` and `SCOAT_PG_LIB`, defaulting to `~/.local/pg/root`. The lane creates a non-superuser owner role and disposable databases, removes them afterwards, and writes `receipt.json` under `~/tmp/scoat-delivery/p09/s1/lineage-*`.
 
-This is S1 only. The sealed two-database handoff (consume and bind), the recovery CLI, deployment units, health digest and the public P09 acceptance story do not exist yet. Do not report P09 as verified from this branch.
+This branch covers S1 admission and fences. The sealed two-database handoff and recovery CLI are verified by [recovery](recovery.md). Deployment units, health digest and the public P09 acceptance story do not exist yet. Do not report P09 as verified from this branch.
 
 ## Lanes
 

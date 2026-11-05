@@ -18,6 +18,7 @@
     "db:migrate": "node scripts/database.mjs migrate",
     "db:seed": "node scripts/database.mjs seed",
     "start:worker": "node dist/worker.js",
+    "recovery": "node dist/recovery.js",
     "accounts:maintain": "node scripts/maintain-accounts.mjs"
   },
   "dependencies": {

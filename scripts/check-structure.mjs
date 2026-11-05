@@ -4,7 +4,7 @@ import { parse as yaml } from "yaml";
 import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
-import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission } from "./check-lineage.mjs";
+import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification } from "./check-lineage.mjs";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -143,6 +143,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkLineageBegin(fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/transaction.ts", "utf8"));
   checkLineageIdentity(fs.readFileSync("db/migrations/0004_lineage.sql", "utf8"), fs.readFileSync("src/db/lineage.ts", "utf8"), fs.readFileSync("src/db/schema.ts", "utf8"), fs.readFileSync("db/migrations/meta/_journal.json", "utf8"));
   checkRuntimeAdmission({ server: fs.readFileSync("src/server.ts", "utf8"), worker: fs.readFileSync("src/worker.ts", "utf8"), queue: fs.readFileSync("src/queue/index.ts", "utf8"), watches: fs.readFileSync("src/memory/watches.ts", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
+  checkRecoveryAuthority({ handoff: fs.readFileSync("src/recovery/handoff.ts", "utf8"), recovery: fs.readFileSync("src/recovery.ts", "utf8"), tools: fs.readFileSync("src/recovery/tools.ts", "utf8"), index: fs.readFileSync("src/index.ts", "utf8") });
+  checkRecoveryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));

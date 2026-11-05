@@ -17,4 +17,4 @@ P07 browser unit: [browser controls](controls.md) owns signed intent links, fres
 
 P08: [price watches](watches.md) owns browser-confirmed public price watches, verified recipients, the named Pi Hut parser and bounded public fetch, pg-boss wakes, the fenced durable outbox, unsubscribe, cancellation and erasure.
 
-P09 S1: [lineage](lineage.md) owns database lineage identity, admission, the shared fenced transaction opener, seal/unseal fences and runtime refusal of restored or unadmitted databases. The sealed two-database handoff, recovery CLI, operations and the public P09 acceptance story are not implemented yet.
+P09 S1: [lineage](lineage.md) owns database lineage identity, admission, the shared fenced transaction opener, seal/unseal fences and runtime refusal of restored or unadmitted databases. P09 S2: [recovery](recovery.md) owns the recovery CLI, the sealed two-database handoff (restore, source consumption, target bind) and atomic target migration. Operations, health digest, deployment units and the public P09 acceptance story are not implemented yet.

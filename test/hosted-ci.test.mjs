@@ -91,3 +91,14 @@ test("foundation wiring and executable predicate fail closed", () => {
  for (const id of suites) for (const result of ["failure", "skipped", "cancelled", "pending", null, "SUCCESS"]) assert.notEqual(execute(JSON.stringify({ ...success, [id]: { result } })), 0);
  for (const id of suites) for (const value of [null, {}, "success"]) assert.notEqual(execute(JSON.stringify({ ...success, [id]: value })), 0);
 });
+
+test("quality builds the actual Railway image and checks its release and secret-free startup in order", () => {
+ const steps = workflow().jobs.quality.steps;
+ const indices = steps.flatMap((step, index) => /^(docker |for role in server worker)/.test(step.run ?? "") ? [index] : []);
+ assert.equal(indices.length, 3);
+ for (const index of indices) {
+  rejects(w => w.jobs.quality.steps.splice(index, 1), /quality: Hosted CI runs/);
+  for (const change of [step => { step.if = false; }, step => { step["continue-on-error"] = true; }, step => { step.env = { SECRET: "value" }; }, step => { step.run += " || true"; }]) rejects(w => change(w.jobs.quality.steps[index]), /quality:/);
+ }
+ rejects(w => { const steps = w.jobs.quality.steps; [steps[indices[0]], steps[indices[1]]] = [steps[indices[1]], steps[indices[0]]]; }, /retain suite order/);
+});

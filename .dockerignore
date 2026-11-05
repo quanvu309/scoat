@@ -5,7 +5,13 @@
 .env.*
 **/node_modules
 dist
-landing
+landing/*
+!landing/public
+landing/public/*
+!landing/public/ui.css
+!landing/public/account.css
+!landing/public/favicon.svg
+!landing/public/fonts
 arch
 design
 docs

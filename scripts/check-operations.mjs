@@ -102,8 +102,12 @@ export function checkListenHost(server) {
 const pgdgInstall = "sudo install -d /usr/share/postgresql-common/pgdg\nsudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc\necho \"deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main\" | sudo tee /etc/apt/sources.list.d/pgdg.list\nsudo apt-get update\nsudo apt-get install -y --no-install-recommends postgresql-client-18\n/usr/lib/postgresql/18/bin/pg_dump --version";
 const aggregateCommand = "node -e 'const keys = [\"quality\", \"protocol\", \"browser\", \"operations\", \"watch-performance\"]; try { const needs = JSON.parse(process.env.NEEDS_JSON); if (needs === null || Array.isArray(needs) || typeof needs !== \"object\" || Object.keys(needs).length !== keys.length || !keys.every(key => Object.hasOwn(needs, key) && needs[key]?.result === \"success\")) process.exit(1); } catch { process.exit(1); }'";
 
+const imageBuild = "docker build --build-arg RAILWAY_GIT_COMMIT_SHA=\"$(git rev-parse HEAD)\" --tag scoat-ci .";
+const imageVerify = "docker run --rm --network none --entrypoint node scoat-ci --input-type=module -e 'const state = await (await import(\"./dist/release.js\")).verifyRelease(); if (state.kind !== \"verified\") process.exit(1); console.log(state.release.digest);'";
+const imageStartup = "for role in server worker; do\n  status=0\n  output=$(timeout 30s docker run --rm --network none --env SCOAT_RUNTIME_ROLE=\"$role\" scoat-ci 2>&1) || status=$?\n  printf '%s\\n' \"$output\"\n  test \"$status\" -eq 78\n  printf '%s\\n' \"$output\" | grep -F runtime_configuration_refused\ndone";
+
 const suiteCommands = {
- quality: ["npm run typecheck", "npm run lint", "npm test"],
+ quality: ["npm run typecheck", "npm run lint", "npm test", imageBuild, imageVerify, imageStartup],
  protocol: ["npm run db:migrate", "npm run db:migrate", "npm run db:seed -- --fixture ci-p01", "npm run db:seed -- --fixture ci-p01", ...["p01", "p02", "p03", "p04", "p05"].flatMap(scope => ["npm run verify -- " + scope, "npm run perf -- " + scope])],
  browser: ["npm run verify -- auth-ui", "npm run verify -- p06", "npm run perf -- p06", "npm run verify -- p07-controls", "npm run verify -- p07-card", "npm run verify -- p08"],
  operations: ["npm run verify -- p09-lineage", "npm run verify -- p09-recovery", "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"],
@@ -245,6 +249,14 @@ function stringArrays(nodes, name) {
  return Object.fromEntries((object?.properties ?? []).map(property => [property.key.name, property.value.elements.map(element => element.value)]));
 }
 
+export function checkDockerContext({ dockerfile, dockerignore }) {
+ const sources = dockerfile.split("\n").filter(line => /^COPY /.test(line) && !/^COPY --from=/.test(line)).flatMap(line => line.split(/\s+/).slice(1, -1)).filter(source => source.startsWith("landing/"));
+ if (!sources.length || sources.some(source => !/^landing\/public\/[a-zA-Z0-9.-]+$/.test(source))) throw new Error("Docker landing sources must be explicit public assets");
+ const expected = ["landing/*", "!landing/public", "landing/public/*", ...sources.map(source => "!" + source)];
+ const actual = dockerignore.split("\n").map(line => line.trim()).filter(line => /^!?landing(?:\/|$)/.test(line));
+ if (!same(actual, expected)) throw new Error("Docker context must admit exactly the Dockerfile landing assets while excluding the rest of landing");
+}
+
 export function checkRailwayRuntime({ dockerfile, dockerignore, manifest, runtime }) {
  const lines = dockerfile.split("\n").filter(line => line.trim());
  if (lines.some(line => line.trimStart().startsWith("#"))) throw new Error("Dockerfile carries no comments");
@@ -260,6 +272,7 @@ export function checkRailwayRuntime({ dockerfile, dockerignore, manifest, runtim
  if (lines.slice(-3).join("\n") !== runtimeTail) throw new Error("Run the unprivileged runtime under tini through dist/railway.js");
  const ignored = dockerignore.split("\n").map(line => line.trim());
  for (const entry of [".git", ".env", ".env.*", "**/node_modules", "dist", "*.pem"]) if (!ignored.includes(entry)) throw new Error("Exclude " + entry + " from the image build context");
+ checkDockerContext({ dockerfile, dockerignore });
  const nodes = parsed(runtime);
  const variables = stringArrays(nodes, "runtimeVariables");
  const inherited = stringArrays(nodes, "inheritedVariables");

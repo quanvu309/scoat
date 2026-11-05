@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { parse } from "parse5";
-import { sendPage, pageHead, refusalPage } from "../dist/browser/page.js";
+import { sendPage, pageHead, refusalPage, browserDocument } from "../dist/browser/page.js";
 import { consent, enroll, link, emailEntry, emailCode } from "../dist/browser/views.js";
 
 function elements(html) {
@@ -86,4 +86,12 @@ test("code states keep challenge-bound verification and resend separate", () => 
    assert.equal(attr(code, "aria-invalid"), state === "invalid" ? "true" : undefined);
   }
  }
+});
+
+test("browser documents preserve task headings independently of browser titles", () => {
+ const html = browserDocument("<title>Confirm Scoat price watch</title><h1>Confirm price watch</h1><p>Review this watch.</p>");
+ assert.ok(html.includes("<title>Confirm Scoat price watch · Scoat</title>"));
+ const headings = elements(html).filter(node => node.tagName === "h1");
+ assert.equal(headings.length, 1);
+ assert.equal(headings[0].childNodes[0].value, "Confirm price watch");
 });

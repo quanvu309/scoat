@@ -1,93 +1,72 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Agent, HuntId, Id, Money, Person, RequestKey, Result } from "../domain.js";
-import type { Guide, GuideRequest, Knowledge } from "../knowledge/index.js";
-import type { Control, HuntReply, HuntRequest, Hunts, HuntView } from "../hunt/index.js";
-import type { Memory, MemoryReply, MemoryRequest } from "../memory/index.js";
-export type CardRequest = Readonly<{
-    hunt: HuntId;
-    grant: Id<"AppGrant">;
-}> & ({
-    readonly op: "poll";
-} | {
-    readonly op: "act";
-    readonly requestKey: RequestKey;
-    readonly action: Control | {
-        readonly kind: "watch";
-        readonly target: Money;
-    };
-});
-export type Contracts = {
-    scoat_guide: {
-        input: GuideRequest;
-        output: Result<Guide>;
-    };
-    scoat_hunt: {
-        input: HuntRequest;
-        output: Result<HuntReply | {
-            readonly hunts: readonly HuntView[];
-        }>;
-    };
-    scoat_memory: {
-        input: MemoryRequest;
-        output: Result<MemoryReply>;
-    };
-    scoat_card: {
-        input: CardRequest;
-        output: Result<HuntView | MemoryReply>;
-    };
-};
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { ListToolsRequestSchema, ListToolsResultSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+
+const text = z.string().min(1).max(2000);
+const id = z.string().min(1).max(128);
+const money = z.strictObject({ currency: z.literal("GBP"), pence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const profile = z.strictObject({ student: z.enum(["yes", "no", "unknown"]), cards: z.array(text).max(30), memberships: z.array(text).max(30) });
+const proof = z.strictObject({ url: z.url({ protocol: /^https$/ }), observedAt: z.iso.datetime(), note: text });
+const status = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("confirmed") }), z.strictObject({ kind: z.literal("needs-step"), steps: z.array(z.enum(["verify-student", "join", "enrol", "activate", "apply-code", "request-price-match"])).min(1).max(20) }), z.strictObject({ kind: z.literal("untested") }), z.strictObject({ kind: z.literal("unknown"), reason: text })]);
+const attested = { seller: text, variant: text.nullable(), status, proof };
+const adjustment = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("fixed"), amount: money }), z.strictObject({ kind: z.literal("percent"), basisPoints: z.number().int().min(0).max(10000), basis: z.enum(["item", "remaining", "delivery"]) })]);
+const offer = z.discriminatedUnion("kind", [
+  z.strictObject({ ...attested, kind: z.literal("price"), amount: money }),
+  z.strictObject({ ...attested, kind: z.literal("delivery"), amount: money }),
+  z.strictObject({ ...attested, kind: z.literal("discount"), adjustment, code: text.nullable() }),
+  z.strictObject({ ...attested, kind: z.literal("cashback"), amount: money, programme: text }),
+  z.strictObject({ ...attested, kind: z.literal("points"), quantity: z.number().int().nonnegative(), programme: text }),
+  z.strictObject({ ...attested, kind: z.literal("perk"), description: text })
+]);
+const outcome = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("checking") }), z.strictObject({ kind: z.literal("found"), offers: z.array(offer).min(1).max(50) }), z.strictObject({ kind: z.literal("none"), checked: text, proof: z.array(proof).min(1).max(20) }), z.strictObject({ kind: z.literal("gap"), reason: text })]);
+const huntInput = z.discriminatedUnion("op", [
+  z.strictObject({ op: z.literal("start"), requestKey: id, profile: profile.nullable(), intent: z.strictObject({ product: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("url"), url: z.url({ protocol: /^https$/ }) }), z.strictObject({ kind: z.literal("description"), text })]), variant: text.nullable(), shop: text.nullable(), budget: money.nullable() }) }),
+  z.strictObject({ op: z.literal("list") }),
+  z.strictObject({ op: z.literal("read"), hunt: id }),
+  z.strictObject({ op: z.literal("record"), requestKey: id, hunt: id, row: id, slot: z.number().int().nonnegative(), expected: z.number().int().nonnegative(), outcome }),
+  z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: z.strictObject({ price: id, delivery: id.nullable(), benefits: z.array(id).max(50), stackProof: z.array(proof).max(20) }).nullable() })
+]);
+const memoryInput = z.discriminatedUnion("op", [
+  z.strictObject({ op: z.literal("read") }), z.strictObject({ op: z.literal("profile"), requestKey: id, profile }),
+  z.strictObject({ op: z.literal("save"), requestKey: id, hunt: id }), z.strictObject({ op: z.literal("watch"), requestKey: id, hunt: id, target: money }),
+  z.strictObject({ op: z.literal("unwatch"), requestKey: id, watch: id }), z.strictObject({ op: z.literal("erase"), requestKey: id })
+]);
+const cardInput = z.discriminatedUnion("op", [z.strictObject({ op: z.literal("poll"), hunt: id, grant: id }), z.strictObject({ op: z.literal("act"), hunt: id, grant: id, requestKey: id, action: z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("stop") }), z.strictObject({ kind: z.literal("skip"), row: id }), z.strictObject({ kind: z.literal("watch"), target: money })]) })]);
+export const appUri = "ui://scoat/hunt.html";
 export const toolCatalog = {
-    scoat_guide: {
-        visibility: ["model"], readOnly: true,
-        description: "Get the hunt method and Scoat's facts for a shop (student scheme, what stacks, cashback, price match). " +
-            "Use when the host has no prompts. You search and open pages yourself; Scoat gives the method.",
-    },
-    scoat_hunt: {
-        visibility: ["model"], readOnly: false,
-        description: "Start, list, read, record or finish a hunt for the best benefit. Record each checklist slot with " +
-            "a source link and time, or a named gap. Follow the returned directive. Finish only when every row is done, " +
-            "skipped by the person, or a gap. Scoat prices the result; never send totals. Reuse requestKey only to retry.",
-    },
-    scoat_memory: {
-        visibility: ["model"], readOnly: false,
-        description: "Read or update what she has (student, cards, memberships), save a finished hunt, watch it daily " +
-            "for a target price by email, stop a watch, or erase her data. Watch only when she asks. Never send card numbers.",
-    },
-    scoat_card: {
-        visibility: ["app"], readOnly: false,
-        description: "Card only: poll a hunt, or send her Stop, Skip or Watch. Not for agents.",
-    },
-} satisfies {
-    [K in keyof Contracts]: {
-        visibility: readonly ("model" | "app")[];
-        readOnly: boolean;
-        description: string;
-    };
-};
-export const promptCatalog = {
-    prompts: ["hunt-best-benefit"],
-    resources: ["scoat://releases/{release}/playbook", "scoat://releases/{release}/facts/{shop}", "scoat://releases/{release}/SKILL.md"],
-    apps: ["ui://scoat/hunt.html"],
-} as const;
-export function schemas(): never {
-    throw new Error("not implemented");
+  scoat_guide: { input: z.strictObject({ job: z.literal("best-benefit"), shop: text.nullable() }), description: "UK/GBP hunt guidance. Unavailable until P02.", visibility: ["model"], readOnly: true },
+  scoat_hunt: { input: huntInput, description: "Record agent-discovered evidence; Scoat calculates totals. Unavailable until P04.", visibility: ["model"], readOnly: false },
+  scoat_memory: { input: memoryInput, description: "Account memory and requested watches. Unavailable until P06/P08.", visibility: ["model"], readOnly: false },
+  scoat_card: { input: cardInput, description: "Card controls require trustworthy person authorization. Denied until authenticated confirmation exists.", visibility: ["app"], readOnly: false }
+} satisfies Record<string, { input: z.ZodType; description: string; visibility: ("model" | "app")[]; readOnly: boolean }>;
+export type ToolName = keyof typeof toolCatalog;
+export type Requests = { [K in ToolName]: z.infer<(typeof toolCatalog)[K]["input"]> };
+export function isToolName(name: string): name is ToolName { return Object.hasOwn(toolCatalog, name); }
+export type CardRequest = Requests["scoat_card"];
+export const promptCatalog = { prompts: [], resources: [], apps: [appUri] };
+export const schemas = () => Object.fromEntries(Object.entries(toolCatalog).map(([name, entry]) => [name, { ...z.toJSONSchema(entry.input, { target: "draft-7" }), type: "object" }]));
+export function dispatch(name: ToolName, raw: unknown) {
+  toolCatalog[name].input.parse(raw);
+  const code = name === "scoat_card" ? "forbidden" : "unavailable";
+  const message = name === "scoat_card" ? "Person authorization unavailable; visibility and grants are not authorization." : toolCatalog[name].description;
+  return { isError: true, content: [{ type: "text" as const, text: message }], structuredContent: { ok: false, error: { code, message }, market: "GB", currency: "GBP" } };
 }
-export function authenticate(args: {
-    bearer: unknown;
-}): Promise<Agent> {
-    throw new Error("not implemented");
+export async function authenticate(_args: unknown): Promise<never> { throw new Error("OAuth unavailable until P05"); }
+export async function person(_args: unknown): Promise<never> { throw new Error("Person authorization unavailable; use authenticated same-account browser confirmation in P07"); }
+export const fixtureHtml = '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri \'none\'; form-action \'none\'"><title>Scoat foundation</title><p>Scoat UK/GBP fixture. Shopping and controls are unavailable.</p></html>';
+export function mount({ server }: { server: McpServer }) {
+  server.server.registerCapabilities({ tools: {} });
+  server.server.setRequestHandler(ListToolsRequestSchema, async () => ListToolsResultSchema.parse({ tools: Object.entries(toolCatalog).map(([name, entry]) => ({ name, description: entry.description, inputSchema: schemas()[name], annotations: { readOnlyHint: entry.readOnly }, _meta: { ui: { visibility: entry.visibility, ...(name === "scoat_hunt" ? { resourceUri: appUri } : {}) } } })) }));
+  server.server.setRequestHandler(CallToolRequestSchema, async request => {
+    const name = request.params.name;
+    if (!isToolName(name) || !toolCatalog[name].input.safeParse(request.params.arguments).success) return { isError: true, content: [{ type: "text", text: "Invalid tool input; use the strict registry schema. Identity and calculated totals are server-owned." }] };
+    return dispatch(name, request.params.arguments);
+  });
+  registerAppResource(server, "Scoat foundation fixture", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
 }
-export function person(args: {
-    grant: Id<"AppGrant">;
-    hunt: HuntId;
-}): Promise<Person> {
-    throw new Error("not implemented");
-}
-export function mount(args: {
-    server: McpServer;
-    knowledge: Knowledge;
-    hunts: Hunts;
-    memory: Memory;
-}): void {
-    throw new Error("not implemented");
+export function createMcpServer() {
+  const server = new McpServer({ name: "scoat-foundation", version: "0.1.0" });
+  mount({ server });
+  return server;
 }

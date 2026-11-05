@@ -14,6 +14,7 @@ export type HuntRecord = Readonly<{
     release: ReleaseId;
     intent: Intent;
     profile: Profile;
+    profileProvenance: { readonly kind: "default" | "explicit" } | { readonly kind: "declared"; readonly revision: string };
     startedAt: Instant;
     stopRequestedAt: Instant | null;
     final: {

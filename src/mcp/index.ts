@@ -1,3 +1,4 @@
+import { memoryInput } from "../memory/contracts.js";
 import { pinnedResources } from "./resources.js";
 import { moneySchema, proofSchema, offerInputSchema, compatibilitySchema, selectionSchema } from "../hunt/evidence.js";
 import { Knowledge, renderGuide } from "../knowledge/index.js";
@@ -23,13 +24,13 @@ export const huntInput = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("compatibility"), requestKey: id, hunt: id, evidence: compatibilitySchema }),
   z.strictObject({ op: z.literal("finish"), requestKey: id, hunt: id, selection: selectionSchema.nullable() })
 ]);
-const memoryInput = z.strictObject({});
+
 const cardInput = z.discriminatedUnion("op", [z.strictObject({ op:z.literal("open"),hunt:id.brand<"HuntId">() }), ...(["read","renew","revoke"] as const).map(op=>z.strictObject({op:z.literal(op),hunt:id.brand<"HuntId">(),grant:id.brand<"ReadGrantId">()}))]);
 export const appUri = "ui://scoat/hunt.html";
 export const toolCatalog = {
   scoat_guide: { input: z.strictObject({ job: z.literal("best-benefit"), shop: text.nullable() }), description: "Complete versioned UK/GBP hunt guidance with explicit knowledge gaps.", visibility: ["model"], readOnly: true },
   scoat_hunt: { input: huntInput, description: "Record and resume durable UK/GBP hunts; Scoat calculates totals.", visibility: ["model"], readOnly: false },
-  scoat_memory: { input: memoryInput, description: "Reserved memory namespace; no released operations.", visibility: ["model"], readOnly: false },
+  scoat_memory: { input: memoryInput, description: "Read durable profiles and saved results; propose exact browser-approved profile and save commands.", visibility: ["model"], readOnly: false },
   scoat_card: { input: cardInput, description: "Session-bound hunt read capabilities: open, read, renew and revoke. Person controls remain unavailable.", visibility: ["app"], readOnly: false }
 } satisfies Record<string, { input: z.ZodType; description: string; visibility: ("model" | "app")[]; readOnly: boolean }>;
 export type ToolName = keyof typeof toolCatalog;

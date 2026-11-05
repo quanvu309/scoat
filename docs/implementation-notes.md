@@ -59,8 +59,8 @@ Design intent moved out of the code. The code has no comments; names and interfa
 - **run**: TODO Every reply is the fresh renderView, so the agent always sees the directive.
 - **control**: Person controls from the card. Skip is sticky and wins over same-row evidence. Stop asks the agent to name gaps and finish.
 - **inspect**: Card poll. Read-only.
-- **finished**: @internal Used by memory to freeze a finished hunt for saving and watching.
-- **erase**: @internal Called by the erasure flow in memory.
+- **readFinishedResult**: Internal Hunts persistence port used by Memory to freeze a finished result.
+- **deleteHunts**: Internal deletion port called only by the Accounts coordinator under its exclusive account fence.
 
 ## src/hunt/store.ts
 
@@ -86,17 +86,7 @@ P01 now implements strict wire contracts and unavailable/forbidden dispatch. Req
 
 ## src/memory/index.ts
 
-- **MemoryView**: Same account in Claude and ChatGPT sees the same view.
-- **Memory**: The only writer of profile, saved items and watches.
-- **run**: TODO Idempotent by (account, requestKey) like hunts.
-- **run**: TODO save/watch freeze a finished hunt via hunts.finished; watch requires a verified email and her request.
-- **run**: TODO watch target compares known pay-today only. unwatch is sticky; re-watching makes a new id.
-- **run**: TODO erase: fence the account, then hunts.erase, then profile, saved, watches, outbox, receipts.
-- **recheckDue**: Daily scheduler entry. Per-watch daily key tolerates crashes and multiple workers.
-- **recheckDue**: TODO For each active watch: delivery.recheck on the recorded link only. Unknown => record, no email.
-- **recheckDue**: TODO Email when known pay-today <= target AND better than last notified. Cashback alone never triggers.
-- **unsubscribe**: Signed unsubscribe link from the email; cancels one watch, returns nothing.
-- **profileOf**: @internal Read by Hunts at start when the request carries no profile.
+P06 implements bounded profile, recent/saved lists and immutable item reads. Profile/save use persisted proposals requiring fresh exact browser approval bound to the account incarnation, OAuth client and live session. The agent resubmits the same command to apply one transaction and recover its compact receipt. Hunts owns finished-result and recent-history reads. Accounts owns erasure and calls feature-owned deletion ports. Watch and email behavior are deferred. See [Memory and erasure](memory-erasure.md).
 
 ## Historical P01 foundation
 
@@ -184,6 +174,6 @@ Start probes an existing receipt behind the account fence before loading knowled
 
 ## P05 authenticated remote boundary
 
-Current production behavior and exact launch configuration are documented in [host support](host-support.md). `src/server.ts` requires configured HTTPS issuer/upstream identity and PostgreSQL; the P01 unauthenticated server exists only in `test/fixtures/legacy-server.mjs` for historical regression drivers. The production registry mounts guide and durable hunt commands, prompts, all historical pinned resources and bound read capabilities. Memory/watch variants and Person controls are unreleased.
+Current production behavior and exact launch configuration are documented in [host support](host-support.md). `src/server.ts` requires configured HTTPS issuer/upstream identity and PostgreSQL; the P01 unauthenticated server exists only in `test/fixtures/legacy-server.mjs` for historical regression drivers. The production registry mounts guide and durable hunt commands, prompts, all historical pinned resources and bound read capabilities. P06 adds profile/save/read/item Memory variants and explicit browser lifecycle ceremonies. Watches and card Person controls are unreleased.
 
 `npm run verify -- p05` produces actual local HTTPS OAuth/database interaction transcripts and a canonical final HuntView. `npm run perf -- p05` produces raw samples and runner/fixture/exclusion metadata. Each receipt identifies its exact source head and working-tree state. These commands are authoritative; unit tests do not replace them. Real upstream deployment, ten real-host/model-agent lanes, screenshots/video, fixed two-vCPU acceptance and independent parent review remain separate gates.

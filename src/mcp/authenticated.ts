@@ -1,3 +1,4 @@
+import { Memory } from "../memory/index.js";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Hunts } from "../hunt/index.js";
@@ -9,11 +10,10 @@ import { dispatchParsed } from "./index.js";
 import type { ToolCall } from "./index.js";
 import { toHuntRequest } from "./contracts.js";
 
-export function authenticatedDispatch(store: HuntStore, principal: Principal) {
+export function authenticatedDispatch(store: HuntStore, principal: Principal, issuer: string) {
   const hunts = new Hunts({
     store,
-    knowledge: new Knowledge(),
-    profileOf: async () => ({ student: "unknown", cards: [], memberships: [] }),
+    knowledge: new Knowledge(process.env.SCOAT_KNOWLEDGE_DIRECTORY),
     delivery: {
       readyLink: async () => {
         throw new Error("Live delivery requires separate verification");
@@ -30,7 +30,12 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal) {
   const now = () =>
     z.string().brand<"UtcInstant">().parse(new Date().toISOString());
   return async (call: ToolCall): Promise<CallToolResult> => {
-    if (call.name === "scoat_guide" || call.name === "scoat_memory")
+    if (call.name === "scoat_memory") {
+      if (["profile","save"].includes(call.input.op) && !principal.scopes.has("scoat:write")) throw new Error("Write scope required");
+      const result = await new Memory(store.pool,issuer).run({ ...principal.agent, session: principal.session },call.input);
+      return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+    }
+    if (call.name === "scoat_guide")
       return dispatchParsed(call);
     if (call.name === "scoat_hunt") {
       const request = toHuntRequest(call.input);

@@ -214,7 +214,7 @@ await withDatabase(async databaseUrl => {
    hooks.beforeAccountFence=async (scope,client)=>{if(scope.accountFence==="exclusive"){await proveContention(scope,client);eraseEntered.resolve();}};
    const writer=run(record(current,0,{requestKey:precommitKey}));
    await heldWriter.promise;
-   const erasing=f.hunts.erase({account:f.scope});
+   const erasing=f.erase({account:f.scope});
    await eraseEntered.promise;
    releaseWriter.resolve();
    assert((await writer).ok);
@@ -232,7 +232,7 @@ await withDatabase(async databaseUrl => {
    hooks.beforeAccountFence=async scope=>{if(scope.request?.key===oldKey){paused.resolve();await resume.promise;}};
    const old=run(record(view,0,{requestKey:oldKey}));
    await paused.promise;
-   await f.hunts.erase({account:f.scope});
+   await f.erase({account:f.scope});
    resume.resolve();
    assert.equal((await old).error.code,"forbidden");
    delete hooks.beforeAccountFence;

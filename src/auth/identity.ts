@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 import { z } from "zod";
 
@@ -22,18 +22,8 @@ export async function resolveIdentity(
       "SELECT account,incarnation FROM oauth_identities WHERE issuer=$1 AND subject=$2",
       [issuer, subject],
     );
-    let scope = existing.rows[0];
-    if (!scope) {
-      scope = { account: randomUUID(), incarnation: randomUUID() };
-      await client.query(
-        "INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)",
-        [scope.account, scope.incarnation],
-      );
-      await client.query(
-        "INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)",
-        [issuer, subject, scope.account, scope.incarnation],
-      );
-    }
+    const scope = existing.rows[0];
+    if (!scope) throw new UnknownIdentity("Explicit browser enrollment required");
     const active = await client.query(
       "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",
       [scope.account, scope.incarnation],
@@ -48,3 +38,5 @@ export async function resolveIdentity(
     client.release();
   }
 }
+
+export class UnknownIdentity extends Error {}

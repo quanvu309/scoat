@@ -17,7 +17,8 @@
     "lint": "npm run lint:comments && node scripts/check-structure.mjs",
     "db:migrate": "node scripts/database.mjs migrate",
     "db:seed": "node scripts/database.mjs seed",
-    "start:worker": "node scripts/worker.mjs"
+    "start:worker": "node scripts/worker.mjs",
+    "accounts:maintain": "node scripts/maintain-accounts.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
@@ -33,6 +34,7 @@
     "@types/node": "26.6.6",
     "@types/oidc-provider": "9.13.1",
     "@types/pg": "8.23.1",
+    "playwright": "1.64.1",
     "typescript": "7.0.2",
     "yaml": "2.9.1"
   },

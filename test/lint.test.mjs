@@ -10,6 +10,19 @@ test("comment parser rejects comments outside src and accepts URL/regex literals
   assert.throws(() => checkComments("ci.yaml", "jobs:\n  # forbidden\n  a: {}"), /comments forbidden/);
   assert.doesNotThrow(() => checkComments("x.mjs", 'const url="https://example.com"; const re=/a\\/b/;'));
 });
+
+test("browser flow starts cannot mix the application and database clocks",async()=>{
+ const {checkBrowserFlowClock}=await import("../scripts/check-structure.mjs");
+ const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8"),flows=readFileSync(new URL("../src/auth/flows.ts",import.meta.url),"utf8");
+ assert.doesNotThrow(()=>checkBrowserFlowClock(issuer,flows));
+ assert.throws(()=>checkBrowserFlowClock(issuer.replace("{ verifier, nonce, browser: digest(browser), context }","{ initiatedAt: Date.now(), verifier, nonce, browser: digest(browser), context }"),flows),/database clock/);
+ assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("clock_timestamp()","now()")),/database clock/);
+ for (const confirmation of issuer.matchAll(/\{\s*\.\.\.flow,\s*context:/g)) {
+  const original=confirmation[0];
+  for (const replacement of [original.replace("...flow,","...flow, initiatedAt: Date.now(),"),original.replace("...flow,","")]) assert.throws(()=>checkBrowserFlowClock(issuer.slice(0,confirmation.index)+replacement+issuer.slice(confirmation.index+original.length),flows),/preserve that start/);
+ }
+ assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("value.initiatedAt ?? ","")),/preserve that start/);
+});
 test("structural rules reject each offending fixture with supported fix", () => {
   assert.throws(() => checkSdkImports("src/domain.ts", 'import { Client } from "@modelcontextprotocol/sdk/client/index.js";'), /SDK-free/);
   assert.throws(() => checkSdkImports("src/server.ts", 'import { fixture } from "../fixtures/confirmation.mjs";'), /out of production/);
@@ -97,7 +110,7 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
     assert.throws(() => checkHostConfig(server.replace("    res.setHeader", injected + "\n    res.setHeader")), /immutable/);
   }
   assert.throws(() => checkRemoteBoundary('const x="Authentication is not configured"; async function h(){ try { await auth.authenticate(req); } catch {} const server=createMcpServer(); }'), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal)", "authenticatedDispatch(store, ignored)")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(server.replace("authenticatedDispatch(store, principal, auth.issuer)", "authenticatedDispatch(store, ignored, auth.issuer)")), /verified issuer/);
   assert.throws(() => checkRemoteBoundary(server.replace("res.end(\"Authentication is not configured\");\n      return;", "res.end(\"Authentication is not configured\");")), /Fail closed/);
   for (const value of ['export * from "./auth/identity.js";', 'export { principalFor as safe } from "./auth/identity.js";']) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('export type * from "./auth/issuer.js";'));
@@ -107,14 +120,14 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
   assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
-  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
+  assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
   assert.doesNotThrow(() => checkConsentDecision(issuer));
   assert.doesNotThrow(() => checkConsentDecision(issuer.replace("!decision.success", '!z.enum(["allow","deny"]).safeParse(submitted.get("decision")).success')));
   assert.throws(() => checkRemoteBoundary(server.replace("!(error instanceof InvalidCredential)", "false")), /infrastructure failures/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('throw new errors.InvalidTarget("Explicit resource required");', 'return resource;')), /missing explicit resource/);
-  assert.throws(() => checkBrowserLink(issuer.replace('req.method === "GET"', 'req.method === "UNAVAILABLE"')), /Start linking in a browser/);
+  assert.throws(() => checkBrowserLink(issuer.replace('url.pathname === "/account/link"', 'url.pathname === "/account/unavailable"')), /Start linking in a browser/);
   assert.throws(() => checkBrowserLink(issuer.replace('DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data', 'SELECT data FROM oauth_browser_flows WHERE state=$1')), /browser-bound confirmation/);
-  assert.throws(() => checkBrowserLink(issuer.replace("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
+  assert.throws(() => checkBrowserLink(issuer.replaceAll("digest(browser) !== flow.browser", "false")), /browser-bound confirmation/);
   const skill = readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md", import.meta.url), "utf8");
   const index = readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md", import.meta.url), "utf8");
   assert.throws(() => checkAuthVerification(skill.replace("features/auth.md", "features/foundation.md"), index), /Route OAuth/);
@@ -146,14 +159,14 @@ test("P05 guards reject residual alias, result and dead-condition bypasses", asy
   ]) assert.throws(() => checkPublicAuthority(value), /public barrel/);
   assert.doesNotThrow(() => checkPublicAuthority('import type { Principal } from "./auth/issuer.js"; export type { Principal };'));
   assert.throws(() => checkRemoteBoundary(replace(server, "return await invoke(call);", "void invoke(call); return dispatchParsed(call);")), /verified issuer/);
-  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", "principal = forged; const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer);", "principal = forged; const invoke = authenticatedDispatch(store, principal, auth.issuer);")), /verified issuer/);
   const parser = 'const decision = z.enum(["allow", "deny"]).safeParse(submitted.get("decision"));';
   const named = replace(issuer, parser, 'const decisionSchema = z.enum(["allow", "deny"]); const decision = decisionSchema.safeParse(submitted.get("decision"));');
   assert.doesNotThrow(() => checkConsentDecision(named));
   const renamed = replace(replace(issuer, parser, 'const choice = z.enum(["allow", "deny"]).safeParse(submitted.get("decision")); const decision = choice;'), "!decision.success", "!choice.success");
   assert.doesNotThrow(() => checkConsentDecision(renamed));
   assert.throws(() => checkConsentDecision(replace(issuer, "!decision.success", "(false && !decision.success)")), /explicit allow or deny/);
-  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal);", assignment + "const invoke = authenticatedDispatch(store, principal);")), /verified issuer/);
+  for (const assignment of ["[principal] = [forged];", "({ principal } = forged);"]) assert.throws(() => checkRemoteBoundary(replace(server, "const invoke = authenticatedDispatch(store, principal, auth.issuer);", assignment + "const invoke = authenticatedDispatch(store, principal, auth.issuer);")), /verified issuer/);
   const rejection = issuer.slice(issuer.indexOf("        if (\n          req.method"), issuer.indexOf('        if (decision.data === "deny")'));
   assert.ok(rejection.includes("!decision.success"));
   assert.throws(() => checkConsentDecision(replace(issuer, rejection, "if (false) {" + rejection + "}")), /explicit allow or deny/);
@@ -175,4 +188,58 @@ test("P05 disables unsupported DPoP and preserves candidate linking refusals", a
     for (const condition of ["false", `false && ${name}.rowCount`]) assert.throws(() => checkLinkRetirement(link.replace(`if (${name}.rowCount)`, `if (${condition})`)), /Refuse candidate accounts/);
   }
   assert.doesNotThrow(() => checkLinkRetirement(link));
+});
+
+test("P06 ownership and enrollment guards reject the original unsafe shapes", async () => {
+ const {checkErasureCoordinator,checkExplicitEnrollment,checkMemoryVerification}=await import("../scripts/check-structure.mjs");
+ const coordinator=readFileSync(new URL("../src/accounts/erasure.ts",import.meta.url),"utf8");
+ for (const port of ["deleteAuthentication","deleteMemory","deleteHunts"]) {
+  assert.ok(coordinator.includes("await "+port+"(client,scope"));
+  assert.throws(()=>checkErasureCoordinator(coordinator.replace("await "+port+"(client,scope","void "+port+"(client,scope")),/fixed owner deletion/);
+ }
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("NOT erased FOR UPDATE","NOT erased FOR SHARE")),/exclusive active account fence/);
+ const original='async function resolveIdentity() { await client.query("INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)",[]); }';
+ assert.throws(()=>checkExplicitEnrollment(original),/explicit browser enrollment/);
+ assert.doesNotThrow(()=>checkExplicitEnrollment(readFileSync(new URL("../src/auth/identity.ts",import.meta.url),"utf8")));
+ assert.doesNotThrow(()=>checkErasureCoordinator(coordinator));
+ const recheck='if (identities.rows.some(identity => !lockedSubjects.has(JSON.stringify([identity.issuer,identity.subject])))) throw new SerializationConflict("Identity inventory changed");';
+ const lock='for (const subject of lockedSubjects) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[subject]);';
+ const tombstone=`await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')", [...prefix,pseudonym,keyVersion]);`;
+ for (const statement of [recheck,lock,tombstone]) {
+  assert.ok(coordinator.includes(statement));
+  for (const replacement of ["", "if (false) {"+statement+"}", "function unused(){"+statement.replaceAll("await ","void ")+"}"]) {
+   assert.throws(()=>checkErasureCoordinator(coordinator.replace(statement,replacement)),/inventory recheck/);
+  }
+ }
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("const prefix = [scope.account,scope.incarnation]","const prefix = [other.account,scope.incarnation]")),/exclusive active account fence/);
+ assert.throws(()=>checkErasureCoordinator(coordinator.replaceAll("clock_timestamp()","now()")),/suppression tombstones/);
+ assert.throws(()=>checkErasureCoordinator(coordinator.replace("export async function eraseAccount", "async function unusedErasure")),/fixed owner deletion/);
+ for (const sql of ["INSERT INTO hunt_accounts(account) VALUES($1)"," INSERT INTO oauth_identities VALUES($1)","INSERT INTO public.hunt_accounts VALUES($1)","WITH x AS (INSERT INTO oauth_identities VALUES($1) RETURNING *) SELECT * FROM x"]) {
+  for (const delimiter of ['"','`']) assert.throws(()=>checkExplicitEnrollment("async function resolveIdentity(){await pool.query("+delimiter+sql+delimiter+");}"),/explicit browser enrollment/);
+ }
+ assert.throws(()=>checkMemoryVerification("---\ndescription: P05\n---",""),/features\/memory.md/);
+ const skill=readFileSync(new URL("../.agents/skills/verify-scoat/SKILL.md",import.meta.url),"utf8"),index=readFileSync(new URL("../.agents/skills/verify-scoat/features/README.md",import.meta.url),"utf8");
+ assert.throws(()=>checkMemoryVerification(skill.replace("For identity linking, also load [memory and erasure](features/memory.md)",""),index),/linking/);
+ assert.doesNotThrow(()=>checkMemoryVerification(skill,index));
+});
+
+test("P06 exposes browser recovery and rejects links started before erasure", async () => {
+ const {checkEraseRecovery,checkLinkSuppression}=await import("../scripts/check-structure.mjs");
+ const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8");
+ const link=readFileSync(new URL("../src/auth/link.ts",import.meta.url),"utf8");
+ const recovery='if (url.pathname === "/account/erase-status" && req.method === "GET")';
+ for (const change of [issuer.replace(recovery,'if (false)'),issuer.replace('action="/account/erase-status"','action="/account/erase"'),issuer.replace('href="/account/erase-status"','href="/account/erase"'),issuer.replace('name="status"','name="wrong"')]) assert.throws(()=>checkEraseRecovery(change),/GET recovery form/);
+ const refusal='if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");';
+ assert.ok(link.includes(refusal));
+ for (const replacement of ["","if (false) {"+refusal+"}",refusal.replace("suppressed.rowCount","false && suppressed.rowCount")]) assert.throws(()=>checkLinkSuppression(issuer,link.replace(refusal,replacement)),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer.replace("startedAt: flow.initiatedAt","startedAt: Date.now()"),link),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer.replace("flow.context.startedAt,","flow.initiatedAt,"),link),/pre-erasure link flows/);
+ assert.throws(()=>checkLinkSuppression(issuer,link.replace("pg_advisory_xact_lock(hashtextextended($1,0))","pg_advisory_xact_lock(hashtextextended($1,1))")),/pre-erasure link flows/);
+ assert.throws(()=>checkEraseRecovery(issuer.replace('"referrer-policy":"same-origin"','"referrer-policy":"no-referrer"')),/same-origin Referrer-Policy/);
+ const confirmationStart=issuer.indexOf('if (flow.context.stage === "erase")');
+ const confirmation=issuer.slice(confirmationStart);
+ assert.ok(confirmation.includes('"cache-control":"no-store"'));
+ assert.throws(()=>checkEraseRecovery(issuer.slice(0,confirmationStart)+confirmation.replace(',"cache-control":"no-store"',"")),/confirmation status secret with no-store/);
+ assert.doesNotThrow(()=>checkEraseRecovery(issuer));
+ assert.doesNotThrow(()=>checkLinkSuppression(issuer,link));
 });

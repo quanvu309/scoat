@@ -99,6 +99,7 @@ const result=await withDatabase(async databaseUrl=>{
   await button.focus();
   const [approval]=await Promise.all([page.waitForEvent("popup"),button.press("Enter")]);
   await approval.waitForLoadState();
+  await f.fixture.nativeLogin(approval);
   assert.equal((await page.evaluate(()=>window.harness.opened))[0],skip.url);
   await approval.getByRole("button",{name:/Skip/}).click();
   await approval.close();
@@ -162,6 +163,7 @@ const result=await withDatabase(async databaseUrl=>{
   await stop.focus();
   const [stopApproval]=await Promise.all([page.waitForEvent("popup"),stop.press("Space")]);
   await stopApproval.waitForLoadState();
+  await f.fixture.nativeLogin(stopApproval);
   await stopApproval.getByRole("button",{name:"Stop accepting new discoveries"}).click();
   await stopApproval.close();
   await frame.getByText("Discovery stopped",{exact:true}).waitFor();

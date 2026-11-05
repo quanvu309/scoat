@@ -15,7 +15,7 @@ test("browser flow starts cannot mix the application and database clocks",async(
  const {checkBrowserFlowClock}=await import("../scripts/check-structure.mjs");
  const issuer=readFileSync(new URL("../src/auth/issuer.ts",import.meta.url),"utf8"),flows=readFileSync(new URL("../src/auth/flows.ts",import.meta.url),"utf8");
  assert.doesNotThrow(()=>checkBrowserFlowClock(issuer,flows));
- assert.throws(()=>checkBrowserFlowClock(issuer.replace("{ verifier, nonce, browser: digest(browser), context }","{ initiatedAt: Date.now(), verifier, nonce, browser: digest(browser), context }"),flows),/database clock/);
+ assert.throws(()=>checkBrowserFlowClock(issuer.replace("{ browser: digest(browser), context }","{ initiatedAt: Date.now(), browser: digest(browser), context }"),flows),/database clock/);
  assert.throws(()=>checkBrowserFlowClock(issuer,flows.replace("clock_timestamp()","now()")),/database clock/);
  for (const confirmation of issuer.matchAll(/\{\s*\.\.\.flow,\s*context:/g)) {
   const original=confirmation[0];

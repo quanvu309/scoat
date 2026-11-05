@@ -1,3 +1,4 @@
+import { checkLoginCodes } from "./check-login.mjs";
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
@@ -170,6 +171,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
+  checkLoginCodes(...["src/auth/login.ts","src/auth/issuer.ts","src/auth/erasure.ts","src/auth/flows.ts","src/auth/config.ts","package.json"].map(file=>fs.readFileSync(file,"utf8")));
   checkConnectionPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/auth/registration.ts", "utf8"), fs.readFileSync("src/auth/adapter.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));
@@ -421,10 +423,10 @@ export function checkBrowserLink(source) {
   const nodes = parsedNodes(source);
   const link = nodes.find(node => node.type === "IfStatement" && node.test.type === "BinaryExpression" && node.test.right?.value === "/account/link");
   const body = link?.consequent.body ?? [];
-  const entry = body.find(node => node.type === "IfStatement" && node.test.right?.value === "GET" && astNodes(node.consequent).some(call => call.type === "CallExpression" && call.callee?.name === "upstreamRedirect" && call.arguments[1]?.properties?.some(property => property.value?.value === "link-current")));
+  const entry = body.find(node => node.type === "IfStatement" && node.test.right?.value === "GET" && astNodes(node.consequent).some(call => call.type === "CallExpression" && call.callee?.name === "loginRedirect" && call.arguments[1]?.properties?.some(property => property.value?.value === "link-current")));
   const consumed = astNodes(link).find(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data");
   const bound = body.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "BinaryExpression" && test.operator === "!==" && test.right?.value === "link-confirm") && node.consequent.type === "ThrowStatement");
-  const candidate = astNodes(link).find(node => node.type === "CallExpression" && node.callee?.name === "upstreamRedirect" && node.arguments[1]?.properties?.some(property => property.value?.value === "link-candidate"));
+  const candidate = astNodes(link).find(node => node.type === "CallExpression" && node.callee?.name === "loginRedirect" && node.arguments[1]?.properties?.some(property => property.value?.value === "link-candidate"));
   const cookie = bound && astNodes(bound.test).some(node => node.type === "BinaryExpression" && node.operator === "!==" && node.left?.callee?.name === "digest" && node.left.arguments[0]?.name === "browser" && member(node.right,"flow","browser"));
   const origin = body.find(node => node.type === "IfStatement" && astNodes(node.test).some(test => test.type === "BinaryExpression" && member(test.left?.object,"req","headers") && test.left?.property?.name === "origin" && test.operator === "!==" && test.right?.name === "issuer") && node.consequent.body?.at(-1)?.type === "ReturnStatement");
   if (!entry || !consumed || !bound || !cookie || !origin || !candidate || !(consumed.start < bound.start && bound.start < candidate.start)) throw new Error("Start linking in a browser and consume a browser-bound confirmation before the candidate sign-in");
@@ -506,9 +508,9 @@ export function checkLinkSuppression(issuer,link) {
  `,message);
  const nodes = parsedNodes(issuer);
  const callback = nodes.find(node => node.type === "IfStatement" && node.test?.right?.value === "link-candidate");
- requireOrderedStatements(callback?.consequent.body ?? [],"await linkIdentity(pool,flow.context.target,upstream.serverMetadata().issuer,claims.sub,flow.context.startedAt,config.lifecycleKey);",message);
+ requireOrderedStatements(callback?.consequent.body ?? [],"await linkIdentity(pool,flow.context.target,issuer,claims.sub,flow.context.startedAt,config.lifecycleKey);",message);
  const entry = nodes.find(node => node.type === "IfStatement" && node.test?.right?.value === "/account/link");
- requireOrderedStatements(entry?.consequent.body ?? [],'await upstreamRedirect(res,{stage:"link-candidate",target:flow.context.target,startedAt:flow.initiatedAt});',message);
+ requireOrderedStatements(entry?.consequent.body ?? [],'await loginRedirect(res,{stage:"link-candidate",target:flow.context.target,startedAt:flow.initiatedAt});',message);
 }
 export function checkEraseRecovery(source) {
  const nodes = parsedNodes(source);
@@ -531,7 +533,7 @@ export function checkExplicitEnrollment(source) {
 }
 export function checkBrowserFlowClock(issuer,flows) {
  const issuerNodes = parsedNodes(issuer);
- const redirect = issuerNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "upstreamRedirect");
+ const redirect = issuerNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "loginRedirect");
  const initial = astNodes(redirect).find(node => node.type === "CallExpression" && node.callee.name === "persistBrowserFlow");
  const writes = issuerNodes.filter(node => node.type === "CallExpression" && ["writeBrowserFlow","persistBrowserFlow"].includes(node.callee.name));
  const invalidPayload = writes.some(write => {

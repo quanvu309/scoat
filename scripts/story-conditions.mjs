@@ -42,9 +42,14 @@ export function storyConditions(w, record) {
    hits: () => w.state.hits,
   },
   identity: {
-   setEmail(claims) {
-    record({ condition: "identity.setEmail", verified: claims.email_verified === true, boundary: "SYNTHETIC upstream OIDC fixture claims for the same subject" });
-    w.f.setEmail(claims);
+   async login(page) {
+    record({condition:"identity.login",boundary:"fixture mail capture entered in native local code form"});
+    await w.f.advanceLoginWindow();
+    await w.f.nativeLogin(page,false);
+   },
+   async setEmail(claims) {
+    record({ condition: "identity.setEmail", verified: claims.email_verified === true, boundary: "fixture address change authenticated by both local email codes" });
+    await w.f.setEmail(claims);
    },
   },
   schedule: {

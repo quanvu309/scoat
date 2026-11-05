@@ -7,7 +7,9 @@ import { eraseAccount } from "../accounts/erasure.js";
 import { randomUUID, randomBytes, createHash, createHmac } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Provider, { errors } from "oidc-provider";
-import * as oidc from "openid-client";
+import { loginPage as renderLoginPage, signedInPage } from "../browser/login.js";
+import { Login, LoginRefused } from "./login.js";
+import { Delivery } from "../delivery/index.js";
 import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
@@ -40,7 +42,7 @@ const contextSchema = z.discriminatedUnion("stage", [
   z.strictObject({ stage: z.literal("link-candidate"), target: accountScope, startedAt: z.number().int() }),
 ]);
 const flowSchema = z.strictObject({
-  initiatedAt: z.number().int(), verifier: z.string(), nonce: z.string(), browser: z.string(), context: contextSchema,
+  initiatedAt: z.number().int(), browser: z.string(), context: contextSchema,
 });
 const verified = Symbol("verified OAuth principal");
 export type Principal = Readonly<{
@@ -99,16 +101,13 @@ async function form(req: IncomingMessage) {
   }
   return new URLSearchParams(body);
 }
-export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {codec:ControlCodec; hunts:Hunts}, watches?: Watches) {
+export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {codec:ControlCodec; hunts:Hunts}, watches?: Watches, loginDelivery?: Delivery) {
+  if (!z.object({loginMailKey:z.string().trim().min(1)}).safeParse(raw).success) throw new LoginRefused("Sign-in requires a mail key");
   const config = authConfigSchema.parse(raw);
   const issuer = new URL(config.issuer).origin;
   if (watches && watches.issuer !== issuer) throw new Error("Watch unsubscribe origin must equal the authorization issuer origin");
   const resource = issuer + "/mcp";
-  const upstream = await oidc.discovery(
-    new URL(config.upstreamIssuer),
-    config.upstreamClientId,
-    config.upstreamClientSecret,
-  );
+  const login = new Login(pool, config.lifecycleKey, config.loginMailFrom, loginDelivery ?? Delivery.production(config.loginMailKey));
   const clients = config.clients.map(publicClient);
   const registration = config.registrationClientId ? new RegisteredClients(config) : undefined;
   const provider = new Provider(issuer, {
@@ -216,33 +215,47 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       [verified]: true,
     } satisfies Principal;
   }
-  async function upstreamRedirect(
-    res: ServerResponse,
-    context: z.infer<typeof contextSchema>,
-  ) {
-    const state = oidc.randomState(),
-      verifier = oidc.randomPKCECodeVerifier(),
-      nonce = oidc.randomNonce(),
-      browser = randomBytes(32).toString("base64url");
-    await persistBrowserFlow(pool,digest(state),{ verifier, nonce, browser: digest(browser), context });
-    const destination = oidc.buildAuthorizationUrl(upstream, {
-      redirect_uri: issuer + "/upstream/callback",
-      scope: context.stage === "watch" ? "openid email" : "openid",
-      state,
-      nonce,
-      code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
-      code_challenge_method: "S256",
-      prompt: "login",
-      max_age: "0",
-    });
-    res.writeHead(303, {
-      location: destination.href,
-      "set-cookie": `__Host-scoat-flow=${browser}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=300`,
-    });
+  function loginPage(res: ServerResponse, state: string, message = "Enter your email to receive a sign-in code.") {
+    res.writeHead(200, watchHeaders);
+    res.end(renderLoginPage(state, message));
+  }
+  async function loginRedirect(res: ServerResponse, context: z.infer<typeof contextSchema>) {
+    const state = randomBytes(32).toString("base64url"), browser = randomBytes(32).toString("base64url");
+    await persistBrowserFlow(pool,digest(state),{ browser: digest(browser), context });
+    res.setHeader("set-cookie", `__Host-scoat-flow=${browser}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+    loginPage(res, state);
+  }
+  async function finishLogin(res: ServerResponse, uid: string, subject: string, account: string) {
+    const secret = await login.establish(subject);
+    res.setHeader("set-cookie", `__Host-scoat-session=${secret}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
+    if (!uid) {
+      res.writeHead(200, watchHeaders);
+      res.end(signedInPage());
+      return;
+    }
+    const interaction = await provider.Interaction.find(uid);
+    if (!interaction) throw new Error("Interaction expired; sign in again");
+    interaction.result = { login: { accountId: account, ts: Math.floor(Date.now()/1000) } };
+    await interaction.save(60);
+    res.writeHead(303, { location: interaction.returnTo, "cache-control": "no-store" });
     res.end();
   }
   async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", issuer);
+    if (url.pathname === "/login" && req.method === "GET") {
+      await loginRedirect(res, { stage: "login", uid: "" });
+      return;
+    }
+    if (url.pathname === "/login/send" && req.method === "POST") {
+      if (req.headers.origin !== issuer) throw new Error("Same origin required");
+      const submitted = await form(req), state = submitted.get("state") ?? "", browser = browserCookie(req);
+      const row = (await pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>clock_timestamp()", [digest(state)])).rows[0];
+      const flow = flowSchema.parse(row?.data);
+      if (!browser || digest(browser) !== flow.browser) throw new Error("Browser binding mismatch");
+      const sent = await login.send(digest(state), flow.browser, flow.context.stage, submitted.get("email") ?? "", req.socket.remoteAddress ?? "unknown");
+      loginPage(res, state, sent ? "Check your email for a code. Enter it below." : "A code could not be sent. Try again later.");
+      return;
+    }
     if (url.pathname === "/reg" && registration) return registerClient(req, res, registration);
     if (url.pathname === "/account/enroll" && req.method === "POST") {
       if (req.headers.origin !== issuer) throw new Error("Same origin required");
@@ -251,6 +264,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       const client = await pool.connect();
       let uid: string;
       let account: string;
+      let subject: string;
       try {
         await begin(client);
         const row = (await client.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>now()",[digest(confirmation)])).rows[0];
@@ -265,16 +279,13 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         if (!consumed.rowCount) throw new Error("Enrollment already used");
         const existing = await client.query("SELECT 1 FROM oauth_identities WHERE issuer=$1 AND subject=$2",[context.issuer,context.subject]);
         if (existing.rowCount) throw new Error("Identity already enrolled");
-        account = randomUUID(); const incarnation = randomUUID(); uid = context.uid;
+        account = randomUUID(); const incarnation = randomUUID(); uid = context.uid; subject = context.subject;
         await client.query("INSERT INTO hunt_accounts(account,incarnation) VALUES($1,$2)",[account,incarnation]);
         await client.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)",[context.issuer,context.subject,account,incarnation]);
         await client.query("COMMIT");
       } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
-      const interaction = await provider.Interaction.find(uid);
-      if (!interaction) throw new Error("Interaction expired; sign in again");
-      interaction.result = { login: { accountId: account, ts: Math.floor(Date.now()/1000) } };
-      await interaction.save(60);
-      res.writeHead(303,{location:interaction.returnTo}); res.end(); return;
+      await finishLogin(res, uid, subject, account);
+      return;
     }
     if (url.pathname === "/account/control") {
       if (!controls) throw new Error("Browser controls unavailable");
@@ -282,7 +293,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       res.setHeader("content-security-policy","default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
       if(req.method === "GET") {
         const intent=controls.codec.readIntent(z.string().parse(url.searchParams.get("intent")));
-        await upstreamRedirect(res,{stage:"control",account:intent.account,intent});
+        await loginRedirect(res,{stage:"control",account:intent.account,intent});
         return;
       }
       if(req.method !== "POST" || req.headers.origin !== issuer || req.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Invalid control request");
@@ -314,7 +325,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       res.writeHead(200,{"content-type":"application/json","cache-control":"no-store","referrer-policy":"no-referrer"}); res.end(JSON.stringify(row)); return;
     }
     if (url.pathname === "/account/erase") {
-      if (req.method === "GET") { await upstreamRedirect(res,{stage:"erase"}); return; }
+      if (req.method === "GET") { await loginRedirect(res,{stage:"erase"}); return; }
       if (req.method !== "POST" || req.headers.origin !== issuer) throw new Error("Same-origin POST required");
       const submitted = await form(req);
       const confirmation = submitted.get("confirmation");
@@ -335,7 +346,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         return;
       }
       if (req.method === "GET") {
-        await upstreamRedirect(res, { stage: "watch", account: z.uuid().parse(url.searchParams.get("account")), hunt: z.string().min(1).max(128).parse(url.searchParams.get("hunt")) });
+        await loginRedirect(res, { stage: "watch", account: z.uuid().parse(url.searchParams.get("account")), hunt: z.string().min(1).max(128).parse(url.searchParams.get("hunt")) });
         return;
       }
       if (req.method !== "POST" || req.headers.origin !== issuer || req.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Explicit same-origin confirmation required");
@@ -384,7 +395,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     }
     if (url.pathname === "/account/memory") {
       if (req.method === "GET") {
-        await upstreamRedirect(res, { stage: "memory", account: z.uuid().parse(url.searchParams.get("account")), key: z.string().min(1).max(128).parse(url.searchParams.get("key")) });
+        await loginRedirect(res, { stage: "memory", account: z.uuid().parse(url.searchParams.get("account")), key: z.string().min(1).max(128).parse(url.searchParams.get("key")) });
         return;
       }
       if (req.method !== "POST" || req.headers.origin !== issuer) throw new Error("Explicit same-origin confirmation required");
@@ -411,7 +422,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     }
     if (url.pathname === "/account/link") {
       if (req.method === "GET") {
-        await upstreamRedirect(res, { stage: "link-current" });
+        await loginRedirect(res, { stage: "link-current" });
         return;
       }
       if (req.method !== "POST" || req.headers.origin !== issuer) {
@@ -430,7 +441,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       const browser = browserCookie(req);
       if (!browser || digest(browser) !== flow.browser || flow.context.stage !== "link-confirm")
         throw new Error("Invalid link confirmation");
-      await upstreamRedirect(res, { stage: "link-candidate", target: flow.context.target, startedAt: flow.initiatedAt });
+      await loginRedirect(res, { stage: "link-candidate", target: flow.context.target, startedAt: flow.initiatedAt });
       return;
     }
     if (url.pathname === "/.well-known/oauth-protected-resource/mcp") {
@@ -448,16 +459,23 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     if (url.pathname.startsWith("/interaction/")) {
       const details = await provider.interactionDetails(req, res);
       if (details.prompt.name === "login" && req.method === "GET") {
-        await upstreamRedirect(res, { stage: "login", uid: details.uid });
+        const secret = req.headers.cookie?.split(/;\s*/).find(value => value.startsWith("__Host-scoat-session="))?.slice(21);
+        const session = await login.session(secret, issuer);
+        if (session) {
+          const account = await resolveIdentity(pool, issuer, session.subject);
+          await finishLogin(res, details.uid, session.subject, account.account);
+        } else await loginRedirect(res, { stage: "login", uid: details.uid });
         return;
       }
       if (details.prompt.name === "consent" && details.session) {
         const csrf = createHmac("sha256", config.cookieKeys.join(":")).update(JSON.stringify([details.uid, details.session.uid])).digest("hex");
         if (req.method === "GET") {
+          const callback = new URL(String(details.params.redirect_uri));
+          const callbackSource = callback.origin === "null" ? callback.protocol : callback.origin;
           res.writeHead(200, {
             "content-type": "text/html; charset=utf-8",
             "content-security-policy":
-              "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+              `default-src 'none'; form-action 'self' ${callbackSource}; frame-ancestors 'none'; base-uri 'none'`,
             "cache-control": "no-store",
           });
           res.end(
@@ -511,29 +529,19 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       res.end();
       return;
     }
-    if (url.pathname === "/upstream/callback" && req.method === "GET") {
-      const state = url.searchParams.get("state");
-      if (!state) throw new Error("Missing state");
-      const flows = await retryTransaction(pool, client => client.query(
-        "DELETE FROM oauth_browser_flows WHERE state=$1 AND expires_at>now() RETURNING data",
-        [digest(state)],
-      ));
-      const flow = flowSchema.parse(flows.rows[0]?.data);
-      const browser = browserCookie(req);
-      if (!browser || digest(browser) !== flow.browser)
-        throw new Error("Browser binding mismatch");
-      const tokens = await oidc.authorizationCodeGrant(upstream, url, {
-        pkceCodeVerifier: flow.verifier,
-        expectedState: state,
-        expectedNonce: flow.nonce,
-        maxAge: 0,
-        idTokenExpected: true,
-      });
-      const claims = tokens.claims();
-      if (!claims || !Number.isSafeInteger(claims.auth_time) || Number(claims.auth_time)*1000 < flow.initiatedAt-60000 || Number(claims.auth_time)*1000 > Date.now()+60000) throw new Error("Fresh verified auth_time required");
+    if (url.pathname === "/login/complete" && req.method === "POST") {
+      if (req.headers.origin !== issuer) throw new Error("Same origin required");
+      const submitted = await form(req), state = submitted.get("state") ?? "";
+      const row = (await pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>clock_timestamp()", [digest(state)])).rows[0];
+      const flow = flowSchema.parse(row?.data), browser = browserCookie(req);
+      if (!browser || digest(browser) !== flow.browser) throw new Error("Browser binding mismatch");
+      const identity = await login.consume(digest(state), flow.browser, flow.context.stage, submitted.get("code") ?? "");
+      if (!identity) { loginPage(res, state, "That code could not be verified. Try again or request a new code."); return; }
+      const claims = { sub: identity.subject, email: identity.email, email_verified: true };
+      await retryTransaction(pool, client => client.query("DELETE FROM oauth_browser_flows WHERE state=$1", [digest(state)]));
       if(flow.context.stage === "control") {
         if(!controls) throw new Error("Browser controls unavailable");
-        const actual=await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        const actual=await resolveIdentity(pool,issuer,claims.sub);
         const intent=flow.context.intent;
         if(actual.account!==intent.account || actual.incarnation!==intent.incarnation) throw new Error("Control requires the same account and incarnation");
         const issued=await retryTransaction(pool,async client=>{
@@ -559,7 +567,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         return;
       }
       if (flow.context.stage === "erase") {
-        const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        const target = await resolveIdentity(pool,issuer,claims.sub);
         const client = await pool.connect();
         try {
           await begin(client);
@@ -570,12 +578,12 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"erase-confirm",target,status:digest(status)}});
           await client.query("COMMIT");
           res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
-          res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Upstream identities and delivered mail are outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
+          res.end(`<title>Erase Scoat account</title><p>Erasure removes saved results, profiles, hunts and Scoat credentials. Pseudonymous suppression metadata remains 31 days; completion status remains 24 hours. Backup enforcement is an operational gate. Delivered mail is outside Scoat deletion.</p><p>Save this status secret before confirming: <code>${status}</code></p><p>If the response is lost, <a href="/account/erase-status">check the erasure result</a> with your saved secret.</p><form method="post" action="/account/erase"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="erase">Erase this account</button></form>`); return;
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }
       if (flow.context.stage === "watch") {
         if (!watches) throw new Error("Watches unavailable");
-        const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        const target = await resolveIdentity(pool,issuer,claims.sub);
         if (target.account !== flow.context.account) throw new Error("Same account required");
         const hunt = flow.context.hunt;
         const retry = watchUrl(issuer, target.account, hunt);
@@ -615,7 +623,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         return;
       }
       if (flow.context.stage === "memory") {
-        const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        const target = await resolveIdentity(pool,issuer,claims.sub);
         if (target.account !== flow.context.account) throw new Error("Same account required");
         const client = await pool.connect();
         try {
@@ -628,14 +636,14 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           await writeBrowserFlow(client,digest(confirmation),{ ...flow, context: { stage: "memory-confirm", target, key: flow.context.key } });
           await client.query("COMMIT");
           const display = JSON.stringify(command.command).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-          res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
+          res.writeHead(200,watchHeaders);
           res.end(`<title>Confirm Memory command</title><pre>${display}</pre><form method="post" action="/account/memory"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="allow">Approve exact command</button></form>`); return;
         } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
       }
       if (flow.context.stage === "link-current") {
         const existing = await pool.query(
           "SELECT i.account,i.incarnation FROM oauth_identities i JOIN hunt_accounts a USING(account,incarnation) WHERE i.issuer=$1 AND i.subject=$2 AND NOT a.erased",
-          [upstream.serverMetadata().issuer, claims.sub],
+          [issuer, claims.sub],
         );
         const target = accountScope.parse(existing.rows[0]);
         const confirmation = randomBytes(32).toString("base64url");
@@ -652,7 +660,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
         await linkIdentity(
           pool,
           flow.context.target,
-          upstream.serverMetadata().issuer,
+          issuer,
           claims.sub,
           flow.context.startedAt,
           config.lifecycleKey,
@@ -669,40 +677,26 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       }
       if (flow.context.stage !== "login") throw new Error("Invalid callback stage");
       let account;
-      try { account = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub); }
+      try { account = await resolveIdentity(pool,issuer,claims.sub); }
       catch(error) {
         if (!(error instanceof UnknownIdentity)) throw error;
         const confirmation = randomBytes(32).toString("base64url");
         const client = await pool.connect();
         try {
           await begin(client);
-          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([upstream.serverMetadata().issuer,claims.sub])]);
-          const existing = await client.query("SELECT 1 FROM oauth_identities WHERE issuer=$1 AND subject=$2",[upstream.serverMetadata().issuer,claims.sub]);
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([issuer,claims.sub])]);
+          const existing = await client.query("SELECT 1 FROM oauth_identities WHERE issuer=$1 AND subject=$2",[issuer,claims.sub]);
           if (existing.rowCount) throw new Error("Identity changed; start a fresh login");
-          const subjectDigest = createHmac("sha256",config.lifecycleKey).update(JSON.stringify([upstream.serverMetadata().issuer,claims.sub])).digest("hex");
+          const subjectDigest = createHmac("sha256",config.lifecycleKey).update(JSON.stringify([issuer,claims.sub])).digest("hex");
           const suppressed = await client.query("SELECT 1 FROM account_suppression WHERE subject_digest=$1 AND erased_at>=to_timestamp($2/1000.0)",[subjectDigest,flow.initiatedAt]);
           if (suppressed.rowCount) throw new Error("Callback predates erasure; start a fresh login");
-          await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"enroll-confirm",issuer:upstream.serverMetadata().issuer,subject:claims.sub,uid:flow.context.uid}});
+          await writeBrowserFlow(client,digest(confirmation),{...flow,context:{stage:"enroll-confirm",issuer:issuer,subject:claims.sub,uid:flow.context.uid}});
           await client.query("COMMIT");
         } catch(failure) { await client.query("ROLLBACK"); throw failure; } finally { client.release(); }
-        res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
+        res.writeHead(200,watchHeaders);
         res.end(`<title>Enroll in Scoat</title><p>Create a fresh Scoat account for this authenticated identity.</p><form method="post" action="/account/enroll"><input type="hidden" name="confirmation" value="${confirmation}"><button name="decision" value="enroll">Create account</button></form>`); return;
       }
-      const interaction = await provider.Interaction.find(flow.context.uid);
-      if (!interaction) throw new Error("Expired interaction");
-      interaction.result = {
-        login: {
-          accountId: account.account,
-          ts: Math.floor(Date.now() / 1000),
-        },
-      };
-      await interaction.save(60);
-      res.writeHead(303, {
-        location: interaction.returnTo,
-        "set-cookie":
-          "__Host-scoat-flow=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
-      });
-      res.end();
+      await finishLogin(res, flow.context.uid, claims.sub, account.account);
       return;
     }
     await provider.callback()(req, res);

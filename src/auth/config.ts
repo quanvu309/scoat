@@ -12,9 +12,8 @@ const registrationKey = z.strictObject({
 });
 export const authConfigSchema = z.strictObject({
   issuer: https.refine((value) => new URL(value).pathname === "/"),
-  upstreamIssuer: https,
-  upstreamClientId: z.string().min(1).max(200),
-  upstreamClientSecret: z.string().min(1).max(4096),
+  loginMailKey: z.string().min(1).max(512),
+  loginMailFrom: z.email().max(254),
   lifecycleKey: z.string().min(64).max(256),
   lifecycleKeyVersion: z.string().min(1).max(64),
   cookieKeys: z.array(z.string().min(32)).min(1).max(3),

@@ -364,7 +364,7 @@ await withDatabase(async adminUrl => {
    const folder = path.join(root, "migrations-p08");
    await mkdir(path.join(folder, "meta"), { recursive: true });
    const journal = JSON.parse(await readFile(path.join(checkout, "db/migrations/meta/_journal.json"), "utf8"));
-   const p08 = journal.entries.filter(entry => entry.tag !== "0004_lineage");
+   const p08 = journal.entries.filter(entry => entry.idx < journal.entries.find(item => item.tag === "0004_lineage").idx);
    for (const entry of p08) await copyFile(path.join(checkout, "db/migrations", entry.tag + ".sql"), path.join(folder, entry.tag + ".sql"));
    await writeFile(path.join(folder, "meta/_journal.json"), JSON.stringify({ ...journal, entries: p08 }));
    const legacyPool = open(legacy.url), upgradePool = open(upgrade.url);
@@ -378,7 +378,7 @@ await withDatabase(async adminUrl => {
    assert.match(behind.stderr, /"reason":"schema-behind"/);
    const upgraded = await migrateDb(upgrade.url);
    assert.equal(upgraded.code, 0, upgraded.stderr);
-   assert.match(upgraded.stdout, /"event":"migrated","applied":1,"head":"0004_lineage"/);
+   assert.match(upgraded.stdout, /"event":"migrated","applied":2,"head":"0005_login"/);
    assert.equal((await inspect(upgradePool)).kind, "admitted");
    await legacyPool.query("INSERT INTO hunt_accounts(account,incarnation) VALUES('p08-account',$1)", [randomUUID()]);
    await legacyPool.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES('Session','p08',$1,now()-interval '1 hour')", [{}]);

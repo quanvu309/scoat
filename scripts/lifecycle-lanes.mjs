@@ -13,7 +13,9 @@ export async function lifecycleLanes(databaseUrl) {
  const {authSchema} = await import("../dist/auth/schema.js");
  const {memorySchema} = await import("../dist/memory/schema.js");
  const {lifecycleSchema} = await import("../dist/accounts/schema.js");
- assert.equal(migration,authSchema+memorySchema+lifecycleSchema);
+ const {loginSchema}=await import("../dist/auth/login.js");
+ assert.equal(migration,authSchema.slice(0,-loginSchema.length)+memorySchema+lifecycleSchema);
+ assert.equal(await readFile(new URL("../db/migrations/0005_login.sql",import.meta.url),"utf8"),loginSchema);
  const pool = new pg.Pool({connectionString:databaseUrl,max:1});
  const client = await pool.connect();
  const migrationSchema = "p06_migration_"+randomUUID().replaceAll("-","");
@@ -73,9 +75,9 @@ export async function lifecycleLanes(databaseUrl) {
     if(sql==="SELECT issuer,subject FROM oauth_identities WHERE account=$1 AND incarnation=$2 ORDER BY issuer,subject") {
      await observer.query("BEGIN");
      try {
-      await observer.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([f.config.upstreamIssuer,addedSubject])]);
+      await observer.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([f.config.issuer,addedSubject])]);
       await observer.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",prefix);
-      await observer.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)",[f.config.upstreamIssuer,addedSubject,...prefix]);
+      await observer.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)",[f.config.issuer,addedSubject,...prefix]);
       await observer.query("COMMIT");
      } catch(error) { await observer.query("ROLLBACK"); throw error; }
     }
@@ -89,7 +91,7 @@ export async function lifecycleLanes(databaseUrl) {
    assert.equal((await holder.query("SELECT erased FROM hunt_accounts WHERE account=$1 AND incarnation=$2",prefix)).rows[0].erased,false);
    assert.equal((await holder.query("SELECT count(*) FROM account_suppression WHERE account=$1",[scope.account])).rows[0].count,"0");
   } finally { await holder.query("ROLLBACK"); }
-  await observer.query("DELETE FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.upstreamIssuer,addedSubject]);
+  await observer.query("DELETE FROM oauth_identities WHERE issuer=$1 AND subject=$2",[f.config.issuer,addedSubject]);
   const crashed=await f.store.pool.connect();
   crashed.on("error",()=>{});
   try {
@@ -107,13 +109,13 @@ export async function lifecycleLanes(databaseUrl) {
   const status=createHash("sha256").update(randomUUID()).digest("hex");
   await holder.query("BEGIN");
   await holder.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR UPDATE",prefix);
-  const originalSubjectLock=await observer.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired",[JSON.stringify([f.config.upstreamIssuer,"upstream-subject-A"])]);
+  const originalSubjectLock=await observer.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired",[JSON.stringify([f.config.issuer,await f.subjectFor("upstream-subject-A")])]);
   assert.equal(originalSubjectLock.rows[0].acquired,true,"The original account-only fence does not block enrollment");
   await holder.query("ROLLBACK");
   await holder.query("BEGIN");
   await holder.query("INSERT INTO erase_status(digest,operation) VALUES($1,$2)",[status,randomUUID()]);
   await eraseAccount(holder,scope,f.config.lifecycleKey,f.config.lifecycleKeyVersion,status);
-  const subjectLock=await observer.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired",[JSON.stringify([f.config.upstreamIssuer,"upstream-subject-A"])]);
+  const subjectLock=await observer.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired",[JSON.stringify([f.config.issuer,await f.subjectFor("upstream-subject-A")])]);
   assert.equal(subjectLock.rows[0].acquired,false,"Enrollment must conflict with erasure at the subject lock");
   await holder.query("ROLLBACK");
   assert.equal((await f.rpc(login.token,"tools/list")).status,200);

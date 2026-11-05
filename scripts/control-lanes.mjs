@@ -77,6 +77,7 @@ export async function controlLanes(databaseUrl) {
   f.setIdentity("upstream-subject-B");
   let url=created.controls.stop,response;
   for(let n=0;n<20;n++){response=await f.browser(url);if(![302,303].includes(response.status))break;url=new URL(response.headers.get("location"),url).href;}
+  response=await f.codeLogin(response);
   assert.equal(response.status,400);
   f.setIdentity("upstream-subject-A");
   lanes.push("fresh foreign identity cannot obtain confirmation");
@@ -86,6 +87,7 @@ export async function controlLanes(databaseUrl) {
   const native=await start();
   const get=await page.goto(native.controls.stop);
   assert.equal(get.status(),200);assert.equal((await get.allHeaders())["referrer-policy"],"same-origin");
+  await f.nativeLogin(page);
   const cookies=await context.cookies();
   assert(cookies.some(cookie=>cookie.name.startsWith("__Host-scoat-control-") && cookie.secure && cookie.httpOnly && cookie.sameSite==="Strict"));
   const [posted]=await Promise.all([page.waitForResponse(response=>response.request().method()==="POST" && response.url()===f.issuer+"/account/control"),page.getByRole("button",{name:"Stop accepting new discoveries"}).click()]);
@@ -104,7 +106,7 @@ export async function controlLanes(databaseUrl) {
   assert.equal(expiredPost.status,403);
   lanes.push("HTTPS expired confirmation refused; database expiry survives one-hour application clock skew");
   const waiting=await pending(second.controls.stop);
-  const flow=await f.browser(second.controls.stop);assert.equal(flow.status,303);
+  const flow=await f.browser(second.controls.stop);assert.equal(flow.status,200);
   assert((await f.store.pool.query("SELECT 1 FROM oauth_browser_flow_owners WHERE account=$1",[scope[0]])).rowCount);
   const linked=await f.link("upstream-subject-B","upstream-subject-A");
   assert.equal(linked.status,400);

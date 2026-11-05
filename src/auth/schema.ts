@@ -1,3 +1,4 @@
+import { loginSchema } from "./login.js";
 export const authSchema = `
 CREATE TABLE IF NOT EXISTS oauth_artifacts (
   model text NOT NULL,
@@ -41,4 +42,4 @@ CREATE TABLE IF NOT EXISTS oauth_read_grants (
   revoked boolean NOT NULL DEFAULT false,
   FOREIGN KEY(account,incarnation,hunt) REFERENCES durable_hunts ON DELETE CASCADE
 );
-`;
+` + loginSchema;

@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { execFile, fork } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
-import Provider from "oidc-provider";
+
 import pg from "pg";
 import * as jose from "jose";
 import assert from "node:assert/strict";
@@ -60,44 +60,20 @@ export async function authFixture(databaseUrl, options = {}) {
   const store = new PostgresHuntStore({ databaseUrl });
   await store.pool.query(await durableSchema());
   await store.pool.query(authSchema);
-  let identity = "upstream-subject-A",
-    emailClaims = { email: "same@example.invalid" },
-    provider;
-  const upstreamServer = createServer({ key, cert }, async (req, res) => {
-    try {
-      if (req.url.startsWith("/interaction/")) {
-        const details = await provider.interactionDetails(req, res);
-        if (details.prompt.name === "login")
-          await provider.interactionFinished(
-            req,
-            res,
-            { login: { accountId: identity } },
-            { mergeWithLastSubmission: false },
-          );
-        else {
-          const grant = new provider.Grant({
-            clientId: details.params.client_id,
-            accountId: details.session.accountId,
-          });
-          grant.addOIDCScope(String(details.params.scope ?? "openid"));
-          await provider.interactionFinished(
-            req,
-            res,
-            { consent: { grantId: await grant.save() } },
-            { mergeWithLastSubmission: true },
-          );
-        }
-      } else await provider.callback()(req, res);
-    } catch (error) {
-      res.writeHead(500);
-      res.end(String(error));
-    }
+  let identity = "upstream-subject-A";
+  const mail = [];
+  const mailServer = createServer({ key, cert }, async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    mail.push(JSON.parse(body));
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ id: randomBytes(16).toString("hex") }));
   });
   const server = createServer({ key, cert });
   await listen(server);
-  await listen(upstreamServer);
-  const issuer = `https://127.0.0.1:${server.address().port}`,
-    upstreamIssuer = `https://localhost:${upstreamServer.address().port}`;
+  await listen(mailServer);
+  const issuer = `https://127.0.0.1:${server.address().port}`;
+  const mailOrigin = `https://localhost:${mailServer.address().port}`;
   const { privateKey } = await jose.generateKeyPair("RS256", {
     extractable: true,
   });
@@ -111,32 +87,10 @@ export async function authFixture(databaseUrl, options = {}) {
       },
     ],
   };
-  provider = new Provider(upstreamIssuer, {
-    jwks,
-    cookies: { keys: [randomBytes(32).toString("hex")] },
-    features: { devInteractions: { enabled: false } },
-    claims: { openid: ["sub"], email: ["email", "email_verified"] },
-    conformIdTokenClaims: false,
-    clients: [
-      {
-        client_id: "scoat-upstream",
-        client_secret: "test-upstream-secret",
-        redirect_uris: [issuer + "/upstream/callback"],
-        response_types: ["code"],
-        grant_types: ["authorization_code"],
-        token_endpoint_auth_method: "client_secret_basic",
-      },
-    ],
-    findAccount: (_ctx, id) => ({
-      accountId: id,
-      claims: () => ({ sub: id, ...emailClaims }),
-    }),
-  });
   const config = {
     issuer,
-    upstreamIssuer,
-    upstreamClientId: "scoat-upstream",
-    upstreamClientSecret: "test-upstream-secret",
+    loginMailKey: "fixture-only",
+    loginMailFrom: "login@scoat.invalid",
     lifecycleKey: randomBytes(32).toString("hex"),
     lifecycleKeyVersion: "disposable-fixture",
     cookieKeys: [randomBytes(32).toString("hex")],
@@ -161,12 +115,13 @@ export async function authFixture(databaseUrl, options = {}) {
     flags: "a",
   });
   async function startService() {
-    child = fork(options.entry ?? new URL("../dist/server.js", import.meta.url), [], {
+    child = fork(options.entry ?? new URL("./auth-server.mjs", import.meta.url), [], {
       execArgv: [],
       silent: true,
       env: {
         ...process.env,
         PORT: String(port),
+        SCOAT_FIXTURE_LOGIN_MAIL: mailOrigin,
         SCOAT_AUTH_CONFIG: root + "/auth.json",
         SCOAT_CONTROL_CONFIG: root+"/control.json",
         SCOAT_KNOWLEDGE_DIRECTORY: root+"/releases",
@@ -213,10 +168,10 @@ export async function authFixture(databaseUrl, options = {}) {
     });
   }
   try {
-    await options.beforeStart?.({ issuer, root, databaseUrl });
+    await options.beforeStart?.({ issuer, root, databaseUrl, config });
     await startService();
   } catch (error) {
-    await close(upstreamServer);
+    await close(mailServer);
     await store.close();
     await admin.query("DROP SCHEMA " + schema + " CASCADE");
     await admin.end();
@@ -245,6 +200,43 @@ export async function authFixture(databaseUrl, options = {}) {
     }
     return response;
   }
+  const addresses = new Map(), loginSessions = new Map();
+  function addressFor(value = identity) { return addresses.get(value) ?? (value.replaceAll(/[^A-Za-z0-9-]/g, "-") + "@example.invalid").toLowerCase(); }
+  async function subjectFor(value = identity) {
+    const row = (await store.pool.query("SELECT subject FROM login_addresses WHERE email=$1", [addressFor(value)])).rows[0];
+    assert.ok(row, value);
+    return row.subject;
+  }
+  async function advanceLoginWindow() {
+    interactions.push({condition:"login.budget-window",boundary:"SYNTHETIC expire login quota windows between independent legacy regression cases"});
+    await store.pool.query("DELETE FROM login_mail_budget");
+  }
+  async function prepareCode(response) {
+    await advanceLoginWindow();
+    const html = await response.text();
+    const state = html.match(/name="state" value="([^"]+)"/)?.[1];
+    assert.ok(state, html);
+    const sent = await browser(issuer + "/login/send", { method: "POST", headers: { origin: issuer }, body: new URLSearchParams({ state, email: addressFor() }) });
+    assert.equal(sent.status, 200);
+    const code = mail.at(-1)?.text.match(/[0-9]{6}/)?.[0];
+    assert.ok(code);
+    return { callback: issuer + "/login/complete", method: "POST", body: new URLSearchParams({state,code}), cookie: [...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ") };
+  }
+  async function codeLogin(response) {
+    const pending = await prepareCode(response);
+    return browser(pending.callback, { method: pending.method, headers: {origin:issuer}, body:pending.body });
+  }
+  async function nativeLogin(page, advance = true) {
+    if (!await page.locator('form[action="/login/send"]').count()) return;
+    if (advance) await advanceLoginWindow();
+    await page.getByLabel("Email", {exact:true}).fill(addressFor());
+    const sent = page.waitForResponse(response => response.url() === issuer + "/login/send" && response.request().method() === "POST");
+    await page.getByRole("button", {name:"Send code",exact:true}).click();
+    assert.equal((await sent).status(),200);
+    await page.getByLabel("Code", {exact:true}).fill(mail.at(-1).text.match(/[0-9]{6}/)[0]);
+    await page.getByRole("button",{name:"Sign in",exact:true}).click();
+    await page.locator('form[action="/login/send"]').waitFor({state:"detached"});
+  }
   async function login(
     client = "host-one",
     subject = "upstream-subject-A",
@@ -253,7 +245,9 @@ export async function authFixture(databaseUrl, options = {}) {
     registeredRedirect,
   ) {
     identity = subject;
+    const prior = !pauseAtCallback && loginSessions.get(addressFor(subject));
     jar.clear();
+    if (prior) jar.set(issuer,new Map([["__Host-scoat-session",prior]]));
     const redirect = registeredRedirect ?? config.clients.find(value => value.client_id === client)?.redirect_uris[0];
     assert.ok(redirect);
     const verifier = randomBytes(32).toString("base64url"),
@@ -271,10 +265,13 @@ export async function authFixture(databaseUrl, options = {}) {
     let url = issuer + "/auth?" + params;
     const steps = [];
     for (let n = 0; n < 30 && !url.startsWith(redirect); n++) {
-      if (pauseAtCallback && new URL(url).pathname === "/upstream/callback") return {callback:url,cookie:[...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ")};
       let response = await browser(url);
       steps.push({ path: new URL(url).pathname, status: response.status });
-      if (response.status === 200 && new URL(url).pathname === "/upstream/callback") {
+      if (response.status === 200 && (await response.clone().text()).includes('action="/login/send"')) {
+        if (pauseAtCallback) return prepareCode(response);
+        response = await codeLogin(response);
+      }
+      if (response.status === 200 && (await response.clone().text()).includes('action="/account/enroll"')) {
         const html = await response.text();
         const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
         assert.ok(confirmation,html);
@@ -341,48 +338,24 @@ export async function authFixture(databaseUrl, options = {}) {
     });
     const tokens = await response.json();
     assert.equal(response.status, 200, JSON.stringify(tokens));
+    loginSessions.set(addressFor(subject),jar.get(issuer)?.get("__Host-scoat-session"));
     return { token: tokens.access_token, refresh: tokens.refresh_token, steps, client };
   }
   async function link(current, candidate, pauseAtCandidate = false, beforeCandidate) {
     identity = current;
-    jar.delete(upstreamIssuer);
-    let response = await browser(issuer + "/account/link");
-    let callbacks = 0;
-    const steps = [];
-    let previousUrl = issuer;
-    for (let n = 0; n < 20 && [302, 303].includes(response.status); n++) {
-      const url = new URL(response.headers.get("location"), previousUrl);
-      previousUrl = url.href;
-      if (url.pathname === "/upstream/callback") callbacks++;
-      if (pauseAtCandidate && callbacks === 2 && url.pathname === "/upstream/callback") return { callback: url.href, cookie: [...(jar.get(issuer) ?? [])].map(([key,value])=>`${key}=${value}`).join("; ") };
-      response = await browser(url);
-      steps.push({ path: url.pathname, status: response.status });
-      if (callbacks === 1 && url.pathname === "/upstream/callback") {
-        identity = candidate;
-        jar.delete(upstreamIssuer);
-        if (response.status === 200) {
-          const html = await response.text();
-          const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
-          assert.ok(confirmation, html);
-          const denied = await browser(issuer + "/account/link", {
-            method: "POST", headers: { origin: issuer },
-            body: new URLSearchParams({ confirmation: "forged" }),
-          });
-          assert.equal(denied.status, 400);
-          await beforeCandidate?.();
-          response = await browser(issuer + "/account/link", {
-            method: "POST", headers: { origin: issuer },
-            body: new URLSearchParams({ confirmation }),
-          });
-          const replay = await browser(issuer + "/account/link", {
-            method: "POST", headers: { origin: issuer },
-            body: new URLSearchParams({ confirmation }),
-          });
-          assert.equal(replay.status, 400);
-        }
-      }
-    }
-    return { status: response.status, text: await response.text(), steps };
+    let response = await codeLogin(await browser(issuer + "/account/link"));
+    if (response.status !== 200) return {status:response.status,text:await response.text(),steps:[]};
+    const html = await response.text();
+    const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
+    assert.ok(confirmation,html);
+    assert.equal((await browser(issuer+"/account/link",{method:"POST",headers:{origin:issuer},body:new URLSearchParams({confirmation:"forged"})})).status,400);
+    await beforeCandidate?.();
+    identity = candidate;
+    response = await browser(issuer+"/account/link",{method:"POST",headers:{origin:issuer},body:new URLSearchParams({confirmation})});
+    assert.equal((await browser(issuer+"/account/link",{method:"POST",headers:{origin:issuer},body:new URLSearchParams({confirmation})})).status,400);
+    if (pauseAtCandidate) return prepareCode(response);
+    response = await codeLogin(response);
+    return {status:response.status,text:await response.text(),steps:[{path:"/login/complete",status:response.status}]};
   }
   const interactions = [];
   const redact = (value) =>
@@ -431,6 +404,12 @@ export async function authFixture(databaseUrl, options = {}) {
   const boundary = await createIssuer(config, store.pool);
   return {
     issuer,
+    mail,
+    codeLogin,
+    nativeLogin,
+    subjectFor,
+    advanceLoginWindow,
+    addressFor,
     knowledgeDirectory: root+"/releases",
     logPath,
     store,
@@ -446,12 +425,17 @@ export async function authFixture(databaseUrl, options = {}) {
     root,
     cert,
     databaseUrl,
-    setEmail(value) {
-      jar.delete(upstreamIssuer);
-      emailClaims = value;
+    async setEmail(value) {
+      if (!value.email || value.email === addressFor()) return;
+      const current = identity, candidate = "address-" + value.email;
+      addresses.set(candidate,value.email);
+      const result = await link(current,candidate);
+      assert.equal(result.status,200,result.text);
+      identity = candidate;
+      jar.get(issuer)?.delete("__Host-scoat-session");
     },
     setIdentity(value) {
-      jar.delete(upstreamIssuer);
+      jar.get(issuer)?.delete("__Host-scoat-session");
       identity = value;
     },
     async restart() {
@@ -460,7 +444,7 @@ export async function authFixture(databaseUrl, options = {}) {
     },
     async close() {
       await stopService();
-      await close(upstreamServer);
+      await close(mailServer);
       await store.close();
       await admin.query("DROP SCHEMA " + schema + " CASCADE");
       await admin.end();

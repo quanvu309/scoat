@@ -27,7 +27,6 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "drizzle-orm": "0.45.4",
     "oidc-provider": "9.13.3",
-    "openid-client": "6.8.9",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",
     "react": "19.3.1",

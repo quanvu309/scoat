@@ -120,7 +120,7 @@ export async function authLanes(databaseUrl) {
             view.account ??
               (
                 await f.store.pool.query(
-                  "SELECT account FROM oauth_identities WHERE subject='upstream-subject-A'",
+                  "SELECT account FROM oauth_identities WHERE subject=$1", [await f.subjectFor("upstream-subject-A")],
                 )
               ).rows[0].account,
           ],
@@ -241,7 +241,7 @@ export async function authLanes(databaseUrl) {
     const active = await f.login();
     const account = (
       await f.store.pool.query(
-        "SELECT account FROM oauth_identities WHERE subject='upstream-subject-A'",
+        "SELECT account FROM oauth_identities WHERE subject=$1", [await f.subjectFor("upstream-subject-A")],
       )
     ).rows[0].account;
     const grants = read(
@@ -450,7 +450,7 @@ export async function authLanes(databaseUrl) {
       const subject = "refusal-" + kind;
       const candidate = await f.login("host-two", subject);
       if (kind === "hunts") assert.ok((await call(candidate.token, "start", { requestKey: randomUUID(), intent, profile: null })).ok);
-      const binding = (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE subject=$1", [subject])).rows[0];
+      const binding = (await f.store.pool.query("SELECT issuer,subject,account,incarnation FROM oauth_identities WHERE subject=$1", [await f.subjectFor(subject)])).rows[0];
       if (kind === "identities") await f.store.pool.query("INSERT INTO oauth_identities(issuer,subject,account,incarnation) VALUES($1,$2,$3,$4)", [binding.issuer, subject + "-other", binding.account, binding.incarnation]);
       const snapshot = async () => ({
         accounts: (await f.store.pool.query("SELECT account,incarnation,erased FROM hunt_accounts WHERE account=$1", [binding.account])).rows,
@@ -492,7 +492,7 @@ export async function authLanes(databaseUrl) {
     });
     assert.equal(body.status, 413);
     assert.equal(
-      (await fetch(f.issuer + "/upstream/callback", { redirect: "manual" }))
+      (await fetch(f.issuer + "/login/complete", { method:"POST", headers:{origin:f.issuer}, body:new URLSearchParams({state:"forged",code:"000000"}), redirect: "manual" }))
         .status,
       400,
     );

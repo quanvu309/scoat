@@ -265,7 +265,7 @@ await withDatabase(async adminUrl => {
    for (const report of [fixtureHealth, opsHealth]) {
     assert.equal(report.status, 200, JSON.stringify(report.body));
     assert.equal(report.cacheControl, "no-store");
-    assert.deepEqual(report.body, { ready: true, reasons: [], artifact: { status: "verified", digest: shipped }, database: "available", schema: { expected: "0004_lineage", current: "0004_lineage", status: "current" }, lineage: "admitted", auth: "configured", transport: "https" });
+    assert.deepEqual(report.body, { ready: true, reasons: [], artifact: { status: "verified", digest: shipped }, database: "available", schema: { expected: "0005_login", current: "0005_login", status: "current" }, lineage: "admitted", auth: "configured", transport: "https" });
    }
    const mcp = await fetch(base + "/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" });
    assert.equal(mcp.status, 401);
@@ -318,7 +318,7 @@ await withDatabase(async adminUrl => {
    const up = await healthOf(base);
    assert.equal(down.status, 503);
    assert.deepEqual(down.body.reasons, ["database-unavailable"]);
-   assert.deepEqual(down.body.schema, { expected: "0004_lineage", current: null, status: "unknown" });
+   assert.deepEqual(down.body.schema, { expected: "0005_login", current: null, status: "unknown" });
    assert.equal(mcp.status, 503);
    assert.equal(up.status, 200);
    const output = JSON.stringify(down) + server.output.stdout + server.output.stderr;
@@ -384,7 +384,7 @@ await withDatabase(async adminUrl => {
    assert.match(forward.stdout, /"event":"migrated","applied":1,"head":"0005_review_probe"/);
    const ahead = await healthOf(base);
    assert.equal(ahead.status, 503);
-   assert.deepEqual(ahead.body.schema, { expected: "0004_lineage", current: "unknown-" + future.when, status: "ahead" });
+   assert.deepEqual(ahead.body.schema, { expected: "0005_login", current: "unknown-" + future.when, status: "ahead" });
    assert.deepEqual(ahead.body.reasons, ["schema-ahead"]);
    assert.equal(ahead.body.lineage, "admitted");
    const rollback = await migrateWith(checkout, ops.url);
@@ -401,7 +401,7 @@ await withDatabase(async adminUrl => {
    const live = await database("s3_mlive");
    const genesis = await migrateWith(checkout, live.url);
    assert.equal(genesis.code, 0, genesis.stderr);
-   assert.match(genesis.stdout, /"event":"migrated","applied":5,"head":"0004_lineage"/);
+   assert.match(genesis.stdout, /"event":"migrated","applied":6,"head":"0005_login"/);
    const repeat = await migrateWith(checkout, live.url);
    assert.match(repeat.stdout, /"applied":0/);
    const livePool = new pg.Pool({ connectionString: live.url, max: 2 });
@@ -449,14 +449,14 @@ await withDatabase(async adminUrl => {
    const workerSecrets = { SCOAT_WATCH_CONFIG_JSON: secrets.SCOAT_WATCH_CONFIG_JSON };
    const base = role => ({ SCOAT_RUNTIME_ROLE: role, DATABASE_URL: rail.url, PORT: "0", SCOAT_EDGE_LISTEN_HOST: "127.0.0.1", SCOAT_SOURCE_REVISION: revision, TMPDIR: tmp, NODE_EXTRA_CA_CERTS: f.root + "/cert.pem", SCOAT_KNOWLEDGE_DIRECTORY: f.root + "/releases" });
    const password = new URL(rail.url).password;
-   const upstreamSecret = JSON.parse(authJson).upstreamClientSecret;
+   const loginSecret = JSON.parse(authJson).loginMailKey;
    const refused = async env => {
     const run = start(entry, env, 90000);
     const outcome = await run.first;
     const output = run.output.stdout + run.output.stderr;
     assert.equal(outcome.kind, "exit", output.slice(0, 2000));
     assert.equal(outcome.code, 78, output.slice(0, 2000));
-    for (const secret of [password, upstreamSecret, "PRIVATE KEY"]) assert.ok(!output.includes(secret), "refusal output leaked secret material");
+    for (const secret of [password, loginSecret, "PRIVATE KEY"]) assert.ok(!output.includes(secret), "refusal output leaked secret material");
     return run.output.stderr.trim().split("\n").map(line => { try { return JSON.parse(line); } catch { return { raw: line.slice(0, 200) }; } });
    };
    const last = events => events.findLast(item => item.event === "runtime_configuration_refused" || item.event === "lineage_refused");
@@ -513,7 +513,7 @@ await withDatabase(async adminUrl => {
    const stopped = await server.exited;
    const innerGone = await readFile(`/proc/${inner}/status`, "utf8").then(() => false, () => true);
    assert.deepEqual(leftover, [], "runtime secret files survived readiness");
-   assert.ok(!childNames.some(name => /_JSON$|_PEM$/.test(name)) && !environ.includes("PRIVATE KEY") && !environ.includes(upstreamSecret), "server child inherited secret material");
+   assert.ok(!childNames.some(name => /_JSON$|_PEM$/.test(name)) && !environ.includes("PRIVATE KEY") && !environ.includes(loginSecret), "server child inherited secret material");
    assert.equal(health.status, 200, health.body);
    assert.equal(health.headers["cache-control"], "no-store");
    assert.deepEqual({ ready: report.ready, reasons: report.reasons, transport: report.transport, auth: report.auth, lineage: report.lineage, digest: report.artifact.digest }, { ready: true, reasons: [], transport: "https", auth: "configured", lineage: "admitted", digest: shipped });
@@ -547,7 +547,7 @@ await withDatabase(async adminUrl => {
    }
    assert.deepEqual([sealedServer.event, sealedServer.reason, sealedWorker.event, sealedWorker.reason, sealedMigrate], ["lineage_refused", "sealed", "lineage_refused", "sealed", 78]);
    assert.deepEqual(await readdir(tmp), [], "runtime secret files survived a refused start");
-   return { revision, refusals: { missing: missing.missing, workerMissing: workerMissing.missing, mismatched: mismatched.invalid, placeholder: placeholder.invalid, loose: loose.invalid, unrecorded: unrecorded.invalid, wideHost: wideHost.invalid }, serverChildEnvironmentNames: childNames, health: { status: health.status, transport: report.transport, digest: report.artifact.digest }, edge: { mcpWithoutCredential: mcp.status, plaintext: plaintext.status, unmarked: unmarked.status, edgeHost: edgeHost.status, forwardedHost: forwardedHost.status, foreignOrigin: foreignOrigin.status, hostless: hostless.status, discovery: discovery.status }, sigterm: { server: stopped.code, worker: workerStopped.code, innerGone }, worker: JSON.parse(workerHealth.body), sealed: { server: sealedServer.reason, worker: sealedWorker.reason, migrateExit: sealedMigrate }, topology: "fixture upstream IdP on localhost; Railway edge emulated by sending Host and X-Forwarded-Proto directly; no Railway, real IdP or container runtime involved" };
+   return { revision, refusals: { missing: missing.missing, workerMissing: workerMissing.missing, mismatched: mismatched.invalid, placeholder: placeholder.invalid, loose: loose.invalid, unrecorded: unrecorded.invalid, wideHost: wideHost.invalid }, serverChildEnvironmentNames: childNames, health: { status: health.status, transport: report.transport, digest: report.artifact.digest }, edge: { mcpWithoutCredential: mcp.status, plaintext: plaintext.status, unmarked: unmarked.status, edgeHost: edgeHost.status, forwardedHost: forwardedHost.status, foreignOrigin: foreignOrigin.status, hostless: hostless.status, discovery: discovery.status }, sigterm: { server: stopped.code, worker: workerStopped.code, innerGone }, worker: JSON.parse(workerHealth.body), sealed: { server: sealedServer.reason, worker: sealedWorker.reason, migrateExit: sealedMigrate }, topology: "fixture sign-in mail capture on localhost; Railway edge emulated by sending Host and X-Forwarded-Proto directly; no Railway, live Resend or container runtime involved" };
   });
  } finally {
   for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");

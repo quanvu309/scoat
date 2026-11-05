@@ -10,7 +10,7 @@ export async function writeBrowserFlow(client: pg.PoolClient, state: string, raw
  for (const owner of [...owners].sort()) {
   if (!(await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND NOT erased ORDER BY incarnation FOR SHARE",[owner])).rowCount) throw new Error("Inactive browser flow owner");
  }
- await client.query("INSERT INTO oauth_browser_flows(state,data,expires_at) VALUES($1,$2,now()+interval '5 minutes')",[state,{...z.record(z.string(),z.unknown()).parse(raw),initiatedAt}]);
+ await client.query("INSERT INTO oauth_browser_flows(state,data,expires_at) VALUES($1,$2,clock_timestamp()+interval '10 minutes')",[state,{...z.record(z.string(),z.unknown()).parse(raw),initiatedAt}]);
  for (const owner of owners) await client.query("INSERT INTO oauth_browser_flow_owners(state,account) VALUES($1,$2)",[state,owner]);
 }
 export async function persistBrowserFlow(pool: pg.Pool, state: string, data: unknown) {

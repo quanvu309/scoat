@@ -84,7 +84,7 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close(()=>process.
    PATH: process.env.PATH, TMPDIR: tmp, SCOAT_RUNTIME_ROLE: "server", DATABASE_URL: "postgres://local@127.0.0.1:9/local", PORT: "0", SCOAT_EDGE_LISTEN_HOST: "127.0.0.1", SCOAT_SOURCE_REVISION: "a".repeat(40),
    SCOAT_TLS_KEY_PEM: await readFile(path.join(root, "key.pem"), "utf8"), SCOAT_TLS_CERT_PEM: await readFile(path.join(root, "cert.pem"), "utf8"),
    SCOAT_CONTROL_CONFIG_JSON: "{}",
-   SCOAT_AUTH_CONFIG_JSON: JSON.stringify({ issuer: "https://localhost/", upstreamIssuer: "https://localhost", upstreamClientId: "local", upstreamClientSecret: "local", lifecycleKey: "a".repeat(64), lifecycleKeyVersion: "a", cookieKeys: ["a".repeat(32)], jwks: { keys: [{}] }, clients: [{ client_id: "local", redirect_uris: ["https://localhost/cb"] }] }),
+   SCOAT_AUTH_CONFIG_JSON: JSON.stringify({ issuer: "https://localhost/", loginMailKey: "fixture-only", loginMailFrom: "login@example.invalid", lifecycleKey: "a".repeat(64), lifecycleKeyVersion: "a", cookieKeys: ["a".repeat(32)], jwks: { keys: [{}] }, clients: [{ client_id: "local", redirect_uris: ["https://localhost/cb"] }] }),
    SCOAT_WATCH_CONFIG_JSON: JSON.stringify({ issuer: "https://localhost", from: "test@localhost", unsubscribe: { version: "a", keys: { a: "a".repeat(64) } }, resendApiKey: "local-dummy-never-sent" }),
   };
   const running = launch(env);

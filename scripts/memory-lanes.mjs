@@ -15,7 +15,7 @@ export async function confirm(f, url, action, decision, submit=true) {
  const confirmation = html.match(/name="confirmation" value="([^"]+)"/)?.[1];
  assert.ok(confirmation,html);
  const body = new URLSearchParams({confirmation,decision});
- if (!submit) return {confirmation,html,body,url:f.issuer+action};
+ if (!submit) return {confirmation,html,body,url:f.issuer+action,cookie:response.headers.getSetCookie().map(value=>value.split(";")[0]).join("; ")};
  const result = await f.browser(f.issuer+action,{method:"POST",headers:{origin:f.issuer,"content-type":"application/x-www-form-urlencoded"},body});
  return { result, confirmation, html, body };
 }

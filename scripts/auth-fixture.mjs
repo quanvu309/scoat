@@ -143,6 +143,8 @@ export async function authFixture(databaseUrl) {
   };
   await cp(new URL("../knowledge/releases",import.meta.url),root+"/releases",{recursive:true});
   await writeFile(root + "/auth.json", JSON.stringify(config), { mode: 0o600 });
+  const controlConfig={version:1,keyId:"fixture",secret:randomBytes(32).toString("hex")};
+  await writeFile(root+"/control.json",JSON.stringify(controlConfig),{mode:0o600});
   const port = server.address().port;
   await close(server);
   let child;
@@ -160,6 +162,7 @@ export async function authFixture(databaseUrl) {
         ...process.env,
         PORT: String(port),
         SCOAT_AUTH_CONFIG: root + "/auth.json",
+        SCOAT_CONTROL_CONFIG: root+"/control.json",
         SCOAT_KNOWLEDGE_DIRECTORY: root+"/releases",
         DATABASE_URL: databaseUrl,
         SCOAT_TLS_KEY: root + "/key.pem",
@@ -426,9 +429,11 @@ export async function authFixture(databaseUrl) {
     rpc,
     tool,
     config,
+    controlConfig,
     browser,
     interactions,
     setIdentity(value) {
+      jar.delete(upstreamIssuer);
       identity = value;
     },
     async restart() {

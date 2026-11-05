@@ -48,7 +48,7 @@ await withDatabase(async databaseUrl => {
    const held=gate(),release=gate(),entered=gate();
    let firstKey;
    let accountEntries=0;
-   hooks.afterRowFence=async scope => { if (scope.request?.key===firstKey) { held.resolve(); await release.promise; } else if (disjoint) entered.resolve(); };
+   hooks.afterRowFence=async scope => { if (scope.request?.key===f.controlKey(firstKey)) { held.resolve(); await release.promise; } else if (disjoint) entered.resolve(); };
    hooks.afterAccountFence=async (scope,client) => { if (!disjoint && ++accountEntries===2) { await proveContention(scope,client); entered.resolve(); } };
    const a=first(); firstKey=a.key;
    const pa=a.run();
@@ -157,6 +157,18 @@ await withDatabase(async databaseUrl => {
    assert.equal((await run(record(view,0,{outcome:found()}))).error.code,"forbidden");
    assert((await run(record(view,0,{outcome:{kind:"gap",reason:"Repair after Stop"}}))).ok);
    passed("Stop rejects found and correction but permits named gap");
+   const stoppedBefore=(await store.pool.query("SELECT data FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3",[f.scope.account,f.scope.incarnation,view.hunt])).rows[0].data.stopRequestedAt;
+   const repeatedStop=await control(view,{kind:"stop"});
+   assert(repeatedStop.ok);
+   const stoppedAfter=(await store.pool.query("SELECT data FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3",[f.scope.account,f.scope.incarnation,view.hunt])).rows[0].data.stopRequestedAt;
+   assert.equal(stoppedAfter,stoppedBefore);
+   transcript.push({repeatedStop:repeatedStop.ok,stoppedBefore,stoppedAfter});
+   passed("independent repeated Stop preserves the original timestamp");
+   const reserved="person:"+randomUUID();
+   const rejected=await run({op:"start",requestKey:reserved,intent,profile:null});
+   assert.equal(rejected.error.code,"invalid");
+   assert.equal((await store.pool.query("SELECT key FROM hunt_receipts WHERE account=$1 AND incarnation=$2 AND key=$3",[f.scope.account,f.scope.incarnation,reserved])).rowCount,0);
+   passed("agent cannot poison the person receipt namespace");
    const foreign=await store.createAccount("foreign-"+randomUUID());
    assert.equal((await run({op:"read",hunt:view.hunt},{...f.agent,...foreign})).error.code,"missing");
    assert.equal((await run(record(view),{...f.agent,...foreign})).error.code,"missing");
@@ -225,7 +237,7 @@ await withDatabase(async databaseUrl => {
    passed("erasure waits for paused precommit writer then removes its effect");
    const freshScope=await store.createAccount(f.scope.account);
    Object.assign(f.agent,freshScope);
-   Object.assign(f.person,freshScope);
+
    Object.assign(f.scope,freshScope);
    view=await start();
    const paused=gate(),resume=gate(),oldKey=randomUUID();
@@ -239,7 +251,7 @@ await withDatabase(async databaseUrl => {
    assert.equal((await run(identical)).error.code,"forbidden");
    assert.equal((await run({op:"start",requestKey:randomUUID(),intent:view.intent,profile:null})).error.code,"forbidden");
    assert.equal((await run({op:"list"})).error.code,"forbidden");
-   assert.equal((await f.hunts.inspect({person:f.person,hunt:view.hunt,now})).error.code,"forbidden");
+   assert.equal((await f.hunts.view({account:f.scope,hunt:view.hunt,now})).error.code,"forbidden");
    assert.equal((await f.hunts.finished({account:f.scope,hunt:view.hunt})).error.code,"forbidden");
    assert.equal((await control(view,{kind:"stop"})).error.code,"forbidden");
 

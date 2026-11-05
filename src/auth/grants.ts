@@ -6,6 +6,9 @@ import type { Principal } from "./issuer.js";
 
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+export class ReadGrantFailure extends Error {
+ constructor(readonly code: "expired"|"revoked") { super(code); }
+}
 export class ReadGrants {
   constructor(private readonly pool: pg.Pool) {}
   private async query(principal: Principal, sql: string, values: unknown[]) {
@@ -16,7 +19,7 @@ export class ReadGrants {
         "SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",
         [principal.agent.account, principal.agent.incarnation],
       );
-      if (!active.rowCount) throw new Error("Inactive account incarnation");
+      if (!active.rowCount) throw new ReadGrantFailure("revoked");
       const result = await client.query(sql, values);
       await client.query("COMMIT");
       return result;
@@ -35,7 +38,7 @@ export class ReadGrants {
       "INSERT INTO oauth_read_grants(digest,account,incarnation,hunt,session,permission,expires_at) SELECT $1,h.account,h.incarnation,h.id,$5,'read',now()+interval '5 minutes' FROM durable_hunts h JOIN hunt_accounts a USING(account,incarnation) WHERE h.account=$2 AND h.incarnation=$3 AND h.id=$4 AND NOT a.erased RETURNING expires_at",
       [digest(grant), agent.account, agent.incarnation, hunt, session],
     );
-    if (!result.rowCount) throw new Error("Hunt unavailable");
+    if (!result.rowCount) throw new ReadGrantFailure("revoked");
     return { grant, expiresAt: result.rows[0].expires_at };
   }
   async use(
@@ -64,7 +67,7 @@ export class ReadGrants {
           " RETURNING account,incarnation,hunt,session,permission) INSERT INTO oauth_read_grants(digest,account,incarnation,hunt,session,permission,expires_at) SELECT $6,p.account,p.incarnation,p.hunt,p.session,p.permission,now()+interval '5 minutes' FROM prior p JOIN hunt_accounts a USING(account,incarnation) WHERE NOT a.erased RETURNING expires_at",
         [...values, digest(renewed)],
       );
-      if (!result.rowCount) throw new Error("Read capability unavailable");
+      if (!result.rowCount) throw new ReadGrantFailure("revoked");
       return { grant: renewed, expiresAt: result.rows[0].expires_at };
     }
     const result = await this.query(
@@ -76,7 +79,13 @@ export class ReadGrants {
             " RETURNING digest",
       values,
     );
-    if (!result.rowCount) throw new Error("Read capability unavailable");
+    if (!result.rowCount) {
+      if(op === "read") {
+        const expired = await this.query(principal,"SELECT 1 FROM oauth_read_grants WHERE digest=$1 AND account=$2 AND incarnation=$3 AND hunt=$4 AND session=$5 AND permission='read' AND NOT revoked AND expires_at<=now()",values);
+        if(expired.rowCount) throw new ReadGrantFailure("expired");
+      }
+      throw new ReadGrantFailure("revoked");
+    }
     return { revoked: op === "revoke" };
   }
 }

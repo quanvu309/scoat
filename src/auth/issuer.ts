@@ -1,3 +1,5 @@
+import { ControlCodec, intentSchema, actionSchema } from "../controls/codec.js";
+import { Hunts } from "../hunt/index.js";
 import { retryTransaction } from "../db/transaction.js";
 import { persistBrowserFlow, writeBrowserFlow } from "./flows.js";
 import { eraseAccount } from "../accounts/erasure.js";
@@ -18,6 +20,7 @@ const accountScope = z.strictObject({
   incarnation: z.uuid().brand<"Incarnation">(),
 });
 const contextSchema = z.discriminatedUnion("stage", [
+  z.strictObject({stage:z.literal("control"),account:z.string(),intent:intentSchema}),
   z.strictObject({ stage: z.literal("enroll-confirm"), issuer: z.string(), subject: z.string().max(4096), uid: z.string() }),
   z.strictObject({ stage: z.literal("erase") }),
   z.strictObject({ stage: z.literal("erase-confirm"), target: accountScope, status: z.string() }),
@@ -52,7 +55,7 @@ async function form(req: IncomingMessage) {
   }
   return new URLSearchParams(body);
 }
-export async function createIssuer(raw: unknown, pool: pg.Pool) {
+export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {codec:ControlCodec; hunts:Hunts}) {
   const config = authConfigSchema.parse(raw);
   const issuer = new URL(config.issuer).origin;
   const resource = issuer + "/mcp";
@@ -224,6 +227,30 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       interaction.result = { login: { accountId: account, ts: Math.floor(Date.now()/1000) } };
       await interaction.save(60);
       res.writeHead(303,{location:interaction.returnTo}); res.end(); return;
+    }
+    if (url.pathname === "/account/control") {
+      if (!controls) throw new Error("Browser controls unavailable");
+      res.setHeader("referrer-policy","same-origin");
+      res.setHeader("content-security-policy","default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+      if(req.method === "GET") {
+        const intent=controls.codec.readIntent(z.string().parse(url.searchParams.get("intent")));
+        await upstreamRedirect(res,{stage:"control",account:intent.account,intent});
+        return;
+      }
+      if(req.method !== "POST" || req.headers.origin !== issuer || req.headers["content-type"]?.split(";")[0] !== "application/x-www-form-urlencoded") throw new Error("Invalid control request");
+      const submitted=await form(req);
+      const fields=z.strictObject({confirmation:z.string().max(4096),action:z.string().max(512),csrf:z.string().regex(/^[A-Za-z0-9_-]{43}$/)}).parse(Object.fromEntries(submitted));
+      if([...submitted.keys()].length!==3) throw new Error("Duplicate form fields");
+      if(controls.codec.nonce(fields.confirmation)!==fields.csrf) throw new Error("Invalid control nonce");
+      const cookies=req.headers.cookie?.split(/;\s*/).filter(value=>value.startsWith("__Host-scoat-control-"+fields.csrf+"="));
+      if(cookies?.length!==1) throw new Error("Missing control cookie");
+      const browser=cookies[0]?.split("=")[1];
+      if(!browser) throw new Error("Missing browser secret");
+      const confirmed=controls.codec.verify(fields.confirmation,browser,JSON.parse(fields.action));
+      const result=await controls.hunts.control({confirmed});
+      res.writeHead(result.ok ? 200 : 403,{"content-type":"application/json"});
+      res.end(JSON.stringify(result));
+      return;
     }
     if (url.pathname === "/account/erase-status" && req.method === "GET") {
       res.writeHead(200,{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","cache-control":"no-store","referrer-policy":"same-origin"});
@@ -402,6 +429,33 @@ export async function createIssuer(raw: unknown, pool: pg.Pool) {
       });
       const claims = tokens.claims();
       if (!claims || !Number.isSafeInteger(claims.auth_time) || Number(claims.auth_time)*1000 < flow.initiatedAt-60000 || Number(claims.auth_time)*1000 > Date.now()+60000) throw new Error("Fresh verified auth_time required");
+      if(flow.context.stage === "control") {
+        if(!controls) throw new Error("Browser controls unavailable");
+        const actual=await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
+        const intent=flow.context.intent;
+        if(actual.account!==intent.account || actual.incarnation!==intent.incarnation) throw new Error("Control requires the same account and incarnation");
+        const issued=await retryTransaction(pool,async client=>{
+          if(!(await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR SHARE",[actual.account,actual.incarnation])).rowCount) throw new Error("Inactive control owner");
+          const hunt=(await client.query("SELECT snapshot IS NOT NULL AS finished,data->>'stopRequestedAt' AS stopped FROM durable_hunts WHERE account=$1 AND incarnation=$2 AND id=$3",[actual.account,actual.incarnation,intent.hunt])).rows[0];
+          if(!hunt) throw new Error("Unknown control hunt");
+          const databaseTime=z.coerce.number().parse((await client.query("SELECT extract(epoch FROM clock_timestamp())*1000 AS milliseconds")).rows[0]?.milliseconds);
+          const actions=intent.action.kind === "hub"
+            ? [actionSchema.parse({kind:"stop"}),...(await client.query("SELECT id FROM hunt_rows WHERE account=$1 AND incarnation=$2 AND hunt=$3 ORDER BY id",[actual.account,actual.incarnation,intent.hunt])).rows.map(row=>actionSchema.parse({kind:"skip",row:row.id}))]
+            : [intent.action];
+          const forms=actions.map(action=>{
+            const browser=randomBytes(32).toString("base64url");
+            return {...controls.codec.issue({...intent,action},browser,databaseTime),browser,action};
+          });
+          return {forms,state:hunt.finished ? "Finished; its saved result stays unchanged." : hunt.stopped ? "Stop was already requested." : "Hunt is open."};
+        });
+        const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+        res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
+        res.end(`<title>Confirm Scoat control</title><p>Hunt ${escape(intent.hunt)}. ${issued.state}</p><p>Stop prevents new accepted discoveries. It does not cancel your host or agent. Watch is unavailable until P08 verifies email and a confirmed target.</p>`+issued.forms.map(form=>{
+          const label=form.action.kind === "stop" ? "Stop accepting new discoveries" : "Skip row "+form.action.row;
+          return `<form method="post" action="/account/control"><input type="hidden" name="confirmation" value="${form.token}"><input type="hidden" name="csrf" value="${form.nonce}"><input type="hidden" name="action" value="${escape(JSON.stringify(form.action))}"><button>${escape(label)}</button></form>`;
+        }).join(""));
+        return;
+      }
       if (flow.context.stage === "erase") {
         const target = await resolveIdentity(pool,upstream.serverMetadata().issuer,claims.sub);
         const client = await pool.connect();

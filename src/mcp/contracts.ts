@@ -1,10 +1,11 @@
+import { agentRequestKey as key } from "../hunt/request-key.js";
 import { z } from "zod";
 import type { HuntRequest } from "../hunt/index.js";
 import { nonempty } from "../hunt/evidence.js";
 import { huntInput } from "./index.js";
 
 const hunt = z.string().brand<"HuntId">();
-const key = z.string().brand<"RequestKey">();
+
 export function parseHuntRequest(raw: unknown): HuntRequest {
   return toHuntRequest(huntInput.parse(raw));
 }

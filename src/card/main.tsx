@@ -1,0 +1,14 @@
+import { createRoot } from "react-dom/client";
+import { Card } from "./renderer.js";
+import { createAppAdapter } from "./adapter.js";
+import { snapshotSchema } from "./contracts.js";
+import "./style.css";
+const element=document.getElementById("root");
+if(!element) throw new Error("Card root required");
+const root=createRoot(element);
+const {app,bridge,connect}=createAppAdapter();
+let connected=false;
+let activeHunt:string|undefined;
+root.render(<main className="card"><h1>Scoat hunt</h1><p>Waiting for the canonical hunt result. If this host has no app bridge, use the hunt text and browser controls in the conversation.</p></main>);
+app.ontoolresult=raw=>{const result=snapshotSchema.safeParse(raw.structuredContent);if(result.success && activeHunt!==result.data.value.view.hunt) {activeHunt=result.data.value.view.hunt;root.render(<Card key={result.data.value.view.hunt} initial={result.data} bridge={connected && app.getHostCapabilities()?.serverTools?bridge:undefined}/>);}};
+void connect().then(()=>{connected=true;}).catch(()=>{connected=false;});

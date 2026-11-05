@@ -1,3 +1,4 @@
+if (process.argv[2] === "p07") { await import("./verify-card.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p06") { await import("./perf-memory.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p05") { await import("./perf-auth.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p04") { await import("./perf-durable.mjs"); process.exit(process.exitCode ?? 0); }

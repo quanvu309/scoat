@@ -8,8 +8,19 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "lib": ["ES2022", "DOM"],
-    "types": ["node"]
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ],
+    "jsx": "react-jsx",
+    "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts"
+  ]
 }

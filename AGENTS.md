@@ -4,6 +4,9 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Risk | Required fix | Enforcement and negative proof |
 | --- | --- | --- |
+| Lost renewal response leaves a live card permanently revoked | Discard the prior capability before awaiting renewal and reopen through authenticated MCP after transient failure | checkCardRenewal; missing/dead disposal fixtures; lost-committed-response controller and native Chromium lanes |
+| Card hides actionable canonical evidence | Render slot proof links, finished quote and status steps and reasons | checkCardProjection; missing projection fixtures; native proof-link, status-step and finished-quote assertions |
+| Agent receipt keys occupy browser namespace or repeat Stop changes its timestamp | Reject reserved agent keys before store access and preserve the first Stop | checkControlPrerequisites; missing/dead guard and timestamp-overwrite fixtures; PostgreSQL receipt absence and repeated Stop |
 | Comments outside src | Use parser-checked comment-free JS/TS, YAML, JSON and SQL | check-no-comments; test/lint.test.mjs |
 | SDK in domain | Keep SDK imports in boundary adapters | checkSdkImports; SDK-import fixture |
 | Permissive wire objects | Use strict schemas including union branches | checkWire; permissive-object fixture |
@@ -11,7 +14,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Nonpublic source URLs published as confirmed facts | Use public HTTPS DNS source validation | checkReleaseSources; reproduced loopback/private fact fixtures; publication regression |
 | Union schemas disappear in SDK listing | Derive list/call handlers from registry | checkRegistryAdapter; high-level registration fixture; protocol schema comparison |
 | Schema dialect mismatch | Emit draft-7 for pinned SDK | checkWire; 2020-12 fixture |
-| App visibility mistaken for identity | person always throws in P01 | checkPersonBoundary; forged-person fixture; direct-call protocol test |
+| App visibility mistaken for identity | Remove legacy person mint; verify nominal browser authority; give MCP only a bound link function | checkPersonBoundary/checkBrowserControls/checkControlImports/checkHuntAuthority; structural/reflected authority, full-codec type/dynamic import and public codec export negative fixtures; native HTTPS controls |
 | Incompatible SDK helpers | Retain tested 1.32.2 / 1.7.5 pins until spike reruns | checkDependencyPair; previous 2.0.4 fixture |
 | Wildcard ports rejected by transport | Use exact local socket port in allowedHosts | checkHostConfig; wildcard-host fixture |
 | Foreign browser Origins accepted by transport | Allow exact loopback HTTP origins at the local socket port and the configured HTTPS issuer | checkHostConfig; missing/empty/foreign-Origin fixtures; raw HTTP Origin test |
@@ -47,10 +50,16 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 | Migration drifts from startup schema or revokes on every boot | Keep SQL equal to exported installation schema and use a one-time version marker | real PostgreSQL migration equality, legacy revocation and second-application preservation; malformed ALTER negative probe |
 | Memory edits miss verification routing | Route P06 from the skill header, selector and feature index | checkMemoryVerification; missing-P06 route fixture |
 | Enrollment crosses an erase commit after an earlier suppression read | Lock sorted subject identities before the account fence and recheck inventory | checkErasureCoordinator; dead-body, missing-lock, missing-tombstone, wrong-account and missing-recheck fixtures; lifecycle enrollmentSubjectConflict and concurrentIdentityInventory regressions |
+| Fractional PostgreSQL milliseconds break strict confirmation deadlines | Round database milliseconds before signing | checkBrowserControls; original fractional deadline negative fixture; codec fractional-time regression |
+| Browser control edits miss verification routing | Route P07 browser controls through the skill header, selector, feature index and executable branch | checkControlVerification; missing header, route, index and driver fixtures |
 | Memory transcripts overwrite runner memory metadata | Name measured RAM memoryBytes separately from the Memory result | memory-evidence.test.mjs reproduces the original overwritten field and preserves both values |
 | Application clock skew bypasses erasure suppression | Stamp browser flow starts with the database clock and preserve the start through every confirmation write | checkBrowserFlowClock; initial/confirmation Date.now, missing-flow-spread and discarded-start fixtures; lifecycle databaseFlowClock with one-hour application skew |
 | Long erase transactions admit callbacks started before suppression | Stamp suppression cutoff and retention at the fenced write with the database wall clock | checkErasureCoordinator; transaction-now fixture; real HTTPS transactionStartDoesNotWeakenSuppression regression |
 | Erase result recovery is unreachable after losing credentials | Link a credential-free GET form with same-origin Referrer-Policy before erasure and POST the saved status secret; serve the secret confirmation with no-store | checkEraseRecovery; missing confirmation no-store, absent/dead GET, wrong form, missing-link and no-referrer fixtures; Chromium native-form recovery and foreign-Origin rejection |
 | Linking admits a callback started before erasure | Preserve the first link flow start and check suppression under the subject lock | checkLinkSuppression; removed/dead refusal, reset-start and wrong-lock fixtures; stale HTTPS callback and confirmation-spanning-erasure rejection; fresh post-erasure link regression |
+| Vulnerable card build dependency returns | Pin the verified Vite 6.4.5 patch until a replacement is verified | checkCardBuild; prior 6.4.1–6.4.4 fixtures; clean npm audit |
+| Card bundling deletes emitted server controller modules | Preserve emitted modules while the build cleans once | checkCardBuild; emptyOutDir true negative fixture and compiled controller import |
+| SDK transport logs private card grant messages | Use a source-checked quiet transport with schema validation | checkCardBuild; default PostMessageTransport, console and removed/dead message-source guard fixtures; transport foreign-source regression; Chromium rotating-grant DOM/console absence |
+| Card edits miss verification routing or leave obsolete docs | Route P07 through header, selector, index and driver; document current card/controls in one enforcement table | checkCardRouting; missing routes, stale fixture/card claims and split-table fixtures |
 
 P01 is local fixture transport only. New real authentication must replace the denied boundary and update its enforcement in the same phase. Keep isolated fixture imports out of the server bundle. Later phases extend the verification feature map after their public behavior works.

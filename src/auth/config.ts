@@ -10,6 +10,8 @@ export const authConfigSchema = z.strictObject({
   upstreamIssuer: https,
   upstreamClientId: z.string().min(1).max(200),
   upstreamClientSecret: z.string().min(1).max(4096),
+  lifecycleKey: z.string().min(64).max(256),
+  lifecycleKeyVersion: z.string().min(1).max(64),
   cookieKeys: z.array(z.string().min(32)).min(1).max(3),
   jwks: z.strictObject({
     keys: z.array(z.record(z.string(), z.unknown())).min(1).max(3),

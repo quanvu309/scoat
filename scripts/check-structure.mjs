@@ -136,6 +136,12 @@ export function checkDriver(source) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkRemoteBoundary(fs.readFileSync("src/server.ts", "utf8"));
+  checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
+  checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
+  checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
+  checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
+  checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));
+  checkMemoryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
   checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
@@ -384,7 +390,7 @@ export function checkLinkRetirement(source) {
   const nodes = parsedNodes(source);
   const queries = nodes.filter(node => node.type === "CallExpression" && member(node.callee,"client","query"));
   const lock = queries.find(node => node.arguments[0]?.value?.includes("ORDER BY account,incarnation FOR UPDATE"));
-  const retired = queries.find(node => node.arguments[0]?.value === "UPDATE hunt_accounts SET erased=true WHERE account=$1 AND incarnation=$2");
+  const retired = queries.find(node => node.arguments[0]?.value === "UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2");
   const move = queries.find(node => node.arguments[0]?.value?.startsWith("INSERT INTO oauth_identities"));
   if (!lock || !retired || !move || !(lock.start < retired.start && retired.start < move.start)) throw new Error("Retire the old account under its exclusive fence before moving its last identity");
   const migration = nodes.find(node => node.type === "BlockStatement" && node.body.some(statement => astNodes(statement).includes(retired) && statement.type === "ExpressionStatement"));
@@ -400,4 +406,104 @@ export function checkAuthVerification(skill, index) {
   const header = skill.split("---")[1] ?? "";
   const routing = skill.split("## Completion")[0];
   if (!/OAuth/.test(header) || /excludes[^.]*OAuth/i.test(header) || !routing.includes("features/auth.md") || !index.includes("[authentication](auth.md)")) throw new Error("Route OAuth changes from the verification skill header and feature index to features/auth.md");
+}
+
+function requireOrderedStatements(body,required,message) {
+ const normalize = value => {
+  if (Array.isArray(value)) return value.map(normalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !["start","end","loc","extra","typeParameters","typeArguments"].includes(key)).map(([key,item]) => [key,normalize(item)]));
+ };
+ const signature = node => JSON.stringify(normalize(node));
+ const statements = parse("async function expected(){"+required+"}",{sourceType:"module"}).program.body[0].body.body;
+ let position = -1;
+ for (const expected of statements) {
+  const next = body.findIndex((node,index) => index>position && signature(node)===signature(expected));
+  if (next<0) throw new Error(message);
+  position=next;
+ }
+}
+export function checkErasureCoordinator(source) {
+ const root = parse(source,{sourceType:"module",plugins:["typescript"]}).program;
+ const body = root.body.find(node => node.type === "ExportNamedDeclaration" && node.declaration?.id?.name === "eraseAccount")?.declaration?.body?.body ?? [];
+ const required = `
+ const prefix = [scope.account,scope.incarnation];
+ const candidates = await client.query("SELECT issuer,subject FROM oauth_identities WHERE account=$1 AND incarnation=$2 ORDER BY issuer,subject",prefix);
+ const lockedSubjects = new Set(candidates.rows.map(identity => JSON.stringify([identity.issuer,identity.subject])));
+ for (const subject of lockedSubjects) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[subject]);
+ const active = await client.query("SELECT 1 FROM hunt_accounts WHERE account=$1 AND incarnation=$2 AND NOT erased FOR UPDATE",prefix);
+ if (!active.rowCount) throw new Error("Inactive account incarnation");
+ const status = await client.query("SELECT 1 FROM erase_status WHERE digest=$1 AND completed_at IS NULL AND expires_at>now() FOR UPDATE",[statusDigest]);
+ if (!status.rowCount) throw new Error("Completion capability unavailable");
+ const identities = await client.query("SELECT issuer,subject FROM oauth_identities WHERE account=$1 AND incarnation=$2",prefix);
+ if (identities.rows.some(identity => !lockedSubjects.has(JSON.stringify([identity.issuer,identity.subject])))) throw new SerializationConflict("Identity inventory changed");
+ for (const identity of identities.rows) {
+  const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([identity.issuer,identity.subject])).digest("hex");
+  await client.query("INSERT INTO account_suppression(account,incarnation,subject_digest,key_version,erased_at,purge_after) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '31 days')",[...prefix,pseudonym,keyVersion]);
+ }
+ const authentication = await deleteAuthentication(client,scope,identities.rows);
+ const memory = await deleteMemory(client,scope);
+ const hunts = await deleteHunts(client,scope);
+ await client.query("UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2",prefix);
+ `;
+ requireOrderedStatements(body,required,"Accounts erasure must await every fixed owner deletion port after its exclusive active account fence, subject locks, inventory recheck and suppression tombstones");
+}
+export function checkLinkSuppression(issuer,link) {
+ const root = parse(link,{sourceType:"module",plugins:["typescript"]}).program;
+ const body = root.body.find(node => node.type === "ExportNamedDeclaration" && node.declaration?.id?.name === "linkIdentity")?.declaration?.body?.body.find(node => node.type === "TryStatement")?.block.body ?? [];
+ const message = "Reject pre-erasure link flows under the subject lock using the original database-stamped start";
+ requireOrderedStatements(body,`
+ await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+ await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[JSON.stringify([issuer,subject])]);
+ const pseudonym = createHmac("sha256",lifecycleKey).update(JSON.stringify([issuer,subject])).digest("hex");
+ const suppressed = await client.query("SELECT 1 FROM account_suppression WHERE subject_digest=$1 AND erased_at>=to_timestamp($2/1000.0) AND purge_after>now() LIMIT 1",[pseudonym,startedAt]);
+ if (suppressed.rowCount) throw new Error("Link flow predates erasure; start linking again");
+ const existing = (await client.query("SELECT account,incarnation FROM oauth_identities WHERE issuer=$1 AND subject=$2",[issuer,subject])).rows[0];
+ `,message);
+ const nodes = parsedNodes(issuer);
+ const callback = nodes.find(node => node.type === "IfStatement" && node.test?.right?.value === "link-candidate");
+ requireOrderedStatements(callback?.consequent.body ?? [],"await linkIdentity(pool,flow.context.target,upstream.serverMetadata().issuer,claims.sub,flow.context.startedAt,config.lifecycleKey);",message);
+ const entry = nodes.find(node => node.type === "IfStatement" && node.test?.right?.value === "/account/link");
+ requireOrderedStatements(entry?.consequent.body ?? [],'await upstreamRedirect(res,{stage:"link-candidate",target:flow.context.target,startedAt:flow.initiatedAt});',message);
+}
+export function checkEraseRecovery(source) {
+ const nodes = parsedNodes(source);
+ const entry = nodes.find(node => node.type === "IfStatement" && node.test.type === "LogicalExpression" && node.test.left.right?.value === "/account/erase-status" && node.test.right.right?.value === "GET");
+ const body = entry?.consequent.body ?? [];
+ const html = body.find(node => node.type === "ExpressionStatement" && member(node.expression.callee,"res","end"))?.expression.arguments[0];
+ const page = html?.type === "TemplateLiteral" && html.expressions.length === 0 ? html.quasis[0].value.cooked : "";
+ const headers = body.find(node => node.type === "ExpressionStatement" && member(node.expression.callee,"res","writeHead"))?.expression.arguments[1]?.properties ?? [];
+ const header = name => headers.find(node => node.key.value === name)?.value.value;
+ const linked = nodes.some(node => node.type === "TemplateElement" && node.value.cooked.includes('href="/account/erase-status"'));
+ if (!page.includes('<form method="post" action="/account/erase-status">') || !page.includes('name="status"') || !header("content-security-policy")?.includes("form-action 'self'") || header("cache-control") !== "no-store" || header("referrer-policy") !== "same-origin" || !linked || body.at(-1)?.type !== "ReturnStatement") throw new Error("Expose a credential-free GET recovery form linked before erasure; submit status secrets by same-origin POST with same-origin Referrer-Policy");
+ const confirmation = nodes.find(node => node.type === "IfStatement" && node.test.right?.value === "erase" && node.test.left?.property?.name === "stage");
+ const confirmationHeaders = astNodes(confirmation).find(node => node.type === "CallExpression" && member(node.callee,"res","writeHead"))?.arguments[1]?.properties ?? [];
+ if (!["cache-control","referrer-policy"].every((name,index) => confirmationHeaders.some(node => node.key.value === name && node.value.value === ["no-store","same-origin"][index]))) throw new Error("Serve the erase confirmation status secret with no-store and same-origin Referrer-Policy");
+}
+export function checkExplicitEnrollment(source) {
+ const nodes = parsedNodes(source);
+ const sql = nodes.flatMap(node => node.type === "StringLiteral" ? [node.value] : node.type === "TemplateLiteral" ? [node.quasis.map(quasi => quasi.value.cooked ?? quasi.value.raw).join(" ")] : []);
+ if (sql.some(value => /\bINSERT\s+INTO\s+(?:[\w"]+\.)?"?(?:hunt_accounts|oauth_identities)"?\b/i.test(value))) throw new Error("Unknown identity resolution cannot provision; use explicit browser enrollment");
+}
+export function checkBrowserFlowClock(issuer,flows) {
+ const issuerNodes = parsedNodes(issuer);
+ const redirect = issuerNodes.find(node => node.type === "FunctionDeclaration" && node.id?.name === "upstreamRedirect");
+ const initial = astNodes(redirect).find(node => node.type === "CallExpression" && node.callee.name === "persistBrowserFlow");
+ const writes = issuerNodes.filter(node => node.type === "CallExpression" && ["writeBrowserFlow","persistBrowserFlow"].includes(node.callee.name));
+ const invalidPayload = writes.some(write => {
+  const payload = write.arguments[2];
+  if (payload?.type !== "ObjectExpression") return true;
+  const properties = payload.properties;
+  const preserved = properties[0]?.type === "SpreadElement" && properties[0].argument.name === "flow";
+  const fields = write === initial ? properties : properties.slice(1);
+  return (write !== initial && !preserved) || fields.some(node => node.type !== "ObjectProperty" || node.computed || (node.key.name ?? node.key.value) === "initiatedAt") || astNodes(payload).some(node => node.type === "CallExpression" && node.callee.object?.name === "Date");
+ });
+ const flowNodes = parsedNodes(flows);
+ const timestamp = flowNodes.find(node => node.type === "VariableDeclarator" && node.id.name === "initiatedAt")?.init;
+ const preservedTimestamp = timestamp?.type === "LogicalExpression" && timestamp.operator === "??" && member(timestamp.left,"value","initiatedAt");
+ const databaseClock = astNodes(timestamp?.right).some(node => node.type === "CallExpression" && member(node.callee,"client","query") && node.arguments[0]?.value === "SELECT floor(extract(epoch FROM clock_timestamp())*1000)::text AS initiated_at");
+ if (!initial || invalidPayload || !preservedTimestamp || !databaseClock || flowNodes.some(node => node.type === "CallExpression" && member(node.callee,"Date","now"))) throw new Error("Stamp new browser flows with the database clock; preserve that start through confirmations");
+}
+export function checkMemoryVerification(skill,index) {
+ if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !skill.includes("For identity linking, also load [memory and erasure](features/memory.md)") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory, linking and erasure changes to features/memory.md");
 }

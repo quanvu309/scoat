@@ -6,6 +6,11 @@ CREATE TABLE IF NOT EXISTS oauth_artifacts (
   expires_at timestamptz NOT NULL,
   PRIMARY KEY(model,id)
 );
+CREATE TABLE IF NOT EXISTS oauth_artifact_owners (
+ model text NOT NULL, id text NOT NULL, account text NOT NULL,
+ PRIMARY KEY(model,id,account), FOREIGN KEY(model,id) REFERENCES oauth_artifacts ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS oauth_owner_accounts ON oauth_artifact_owners(account);
 CREATE INDEX IF NOT EXISTS oauth_grants ON oauth_artifacts ((payload->>'grantId'));
 CREATE INDEX IF NOT EXISTS oauth_uids ON oauth_artifacts(model,(payload->>'uid'));
 CREATE TABLE IF NOT EXISTS oauth_identities (
@@ -21,6 +26,10 @@ CREATE TABLE IF NOT EXISTS oauth_browser_flows (
   data jsonb NOT NULL,
   expires_at timestamptz NOT NULL
 );
+CREATE TABLE IF NOT EXISTS oauth_browser_flow_owners (
+ state text NOT NULL REFERENCES oauth_browser_flows ON DELETE CASCADE, account text NOT NULL, PRIMARY KEY(state,account)
+);
+CREATE INDEX IF NOT EXISTS oauth_flow_accounts ON oauth_browser_flow_owners(account);
 CREATE TABLE IF NOT EXISTS oauth_read_grants (
   digest text PRIMARY KEY,
   account text NOT NULL,

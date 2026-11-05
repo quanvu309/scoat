@@ -125,7 +125,7 @@ function projection(state: Snapshot, now: string, selection: Selection | null = 
     return renderView({ evidenceGaps, hunt: state.hunt.id, release: state.release, intent: state.hunt.intent, profile: state.hunt.profile, rows, offers: state.offers, quotes, final: state.hunt.final, stopRequested: state.hunt.stopRequestedAt !== null, ready: null });
 }
 export class Hunts {
-    constructor(private readonly deps: { store: HuntStore; knowledge: Knowledge; delivery: Delivery; profileOf: (agent: Agent) => Promise<Profile> }) {}
+    constructor(private readonly deps: { store: HuntStore; knowledge: Knowledge; delivery: Delivery }) {}
     private async execute<T>(scope: Scope, run: (tx: Tx) => Promise<Result<T>>): Promise<Result<T>> {
         try { return await this.deps.store.transact(scope, async tx => {
             const reply = await run(tx);
@@ -137,7 +137,7 @@ export class Hunts {
         }
     }
     async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>> {
-        let start: { release: Release; profile: Profile } | null = null;
+        let start: { release: Release } | null = null;
         if (request.op === "start") {
             try {
                 const replay = await this.deps.store.transact({ ...agent, hunt: null, accountFence: "shared", huntFence: "shared", rows: [] }, tx => tx.priorReceipt({ key: request.requestKey, digest: digest(request) }));
@@ -146,7 +146,7 @@ export class Hunts {
                 if (error instanceof StoreFailure) return failure(error.code,error.message);
                 throw error;
             }
-            start = { release: await this.deps.knowledge.read({ release: "latest" }), profile: request.profile ?? await this.deps.profileOf(agent) };
+            start = { release: await this.deps.knowledge.read({ release: "latest" }) };
         }
         const scope: Scope = { ...agent, hunt: "hunt" in request ? request.hunt : null, accountFence: "shared", huntFence: request.op === "finish" || request.op === "compatibility" ? "exclusive" : "shared", rows: request.op === "record" ? [request.row] : [], ...("requestKey" in request ? { request: { key: request.requestKey, digest: digest(request) } } : {}) };
         return this.execute<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>(scope, async tx => {
@@ -159,7 +159,8 @@ export class Hunts {
             if (request.op === "start") {
                 if (!start) throw new Error("Missing start inputs");
                 const id = z.string().brand<"HuntId">().parse(randomUUID());
-                await tx.create({ id, account: agent.account, release: start.release.id, intent: request.intent, profile: start.profile, startedAt: now, stopRequestedAt: null, final: { kind: "open" } }, start.release, start.release.rows.map(row => ({ hunt: id, row: row.id, revision: z.number().brand<"RowRevision">().parse(0), skippedByPerson: null, slots: row.slots.map(slot => ({ slot, seller: null, completion: { kind: "pending" } })) })));
+            const declared = request.profile === null ? await tx.declaredProfile() : { value: request.profile, provenance: { kind: "explicit" } satisfies { kind: "explicit" } };
+            await tx.create({ id, account: agent.account, release: start.release.id, intent: request.intent, profile: declared.value, profileProvenance: declared.provenance, startedAt: now, stopRequestedAt: null, final: { kind: "open" } }, start.release, start.release.rows.map(row => ({ hunt: id, row: row.id, revision: z.number().brand<"RowRevision">().parse(0), skippedByPerson: null, slots: row.slots.map(slot => ({ slot, seller: null, completion: { kind: "pending" } })) })));
                 const state = await tx.snapshot(id);
                 if (!state) throw new Error("Missing created hunt");
                 return { ok: true, value: { view: projection(state,now) } };
@@ -246,8 +247,6 @@ export class Hunts {
             return state?.final ? { ok: true, value: state.final } : failure("incomplete","No finished snapshot");
         });
     }
-    async erase({ account }: { account: AccountScope }): Promise<void> {
-        await this.deps.store.transact({ ...account, hunt: null, accountFence: "exclusive", huntFence: "exclusive", rows: [] }, tx => tx.erase());
-    }
+
 }
 export type { Failure };

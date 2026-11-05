@@ -61,6 +61,8 @@ jobs:
           /usr/lib/postgresql/18/bin/pg_dump --version
       - run: npm run verify -- p09-lineage
       - run: npm run verify -- p09-recovery
+      - name: Provide the systemd Node executable
+        run: sudo ln -sfn "$(command -v node)" /usr/bin/node
       - run: npm run verify -- p09-operations
       - run: npm run perf -- p09
       - name: Install ffmpeg for P09 story media

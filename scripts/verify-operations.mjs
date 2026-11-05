@@ -338,6 +338,7 @@ await gate("O8 systemd units verify with one release directory, one environment 
  if (analyze === null) return { status: "UNTESTED", reason: "systemd-analyze unavailable on this host" };
  const verified = await exec("systemd-analyze", ["verify", ...units]).then(result => ({ code: 0, stderr: result.stderr }), error => ({ code: error.code, stderr: String(error.stderr) }));
  const ours = verified.stderr.split("\n").filter(line => line.includes("scoat-"));
+ if (verified.code !== 0) process.stderr.write(JSON.stringify({ gate: "O8", code: verified.code, stderr: verified.stderr.slice(0, 4000) }) + "\n");
  assert.equal(verified.code, 0, verified.stderr);
  assert.deepEqual(ours, []);
  return { systemd: analyze, units: units.map(unit => path.basename(unit)), deployed: "not deployed: release /opt/scoat/release and /etc/scoat/scoat.env are placeholders on this host" };

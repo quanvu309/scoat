@@ -69,6 +69,8 @@ test("hosted CI covers P07 and P09 lanes with PGDG tools and no developer instal
  assert.throws(() => checkWorkflow(replaced(workflow, "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n", "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n      SCOAT_BASE_APP: /home/runner/base\n")), /developer homes/);
  assert.throws(() => checkWorkflow(replaced(workflow, "timeout-minutes: 60", "timeout-minutes: 240")), /timeout-minutes/);
  assert.throws(() => checkWorkflow(replaced(workflow, "      - run: npm run perf -- p09\n", "")), /perf -- p09/);
+ assert.throws(() => checkWorkflow(original("9705fec", ".github/workflows/ci.yaml")), /\/usr\/bin\/node executable/);
+ assert.throws(() => checkWorkflow(replaced(workflow, '        run: sudo ln -sfn "$(command -v node)" /usr/bin/node\n', '        run: node --version\n')), /\/usr\/bin\/node executable/);
 });
 
 test("P09 lanes resolve tools from explicit environment and build the base artifact in scratch; the S2 lanes fail", () => {

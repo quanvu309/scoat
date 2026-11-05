@@ -116,6 +116,13 @@ export function checkHostedCoverage(source) {
  const browsers = runs.findIndex(run => /playwright install --with-deps chromium/.test(run));
  const firstBrowser = runs.findIndex(run => /verify -- p0[67]/.test(run));
  if (browsers < 0 || browsers > firstBrowser) throw new Error("Install Chromium with its system dependencies before browser lanes");
+ for (const job of jobs) {
+  const operations = job.steps.findIndex(step => step.run === "npm run verify -- p09-operations");
+  if (operations < 0) continue;
+  const node = job.steps.findIndex(step => step.uses?.startsWith("actions/setup-node@"));
+  const executable = job.steps.findIndex(step => step.run === 'sudo ln -sfn "$(command -v node)" /usr/bin/node');
+  if (node < 0 || executable <= node || executable >= operations) throw new Error("Provide setup-node's /usr/bin/node executable before systemd verification");
+ }
 }
 
 export function checkLaneTools(lanes) {

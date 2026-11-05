@@ -34,6 +34,22 @@ export async function authLanes(databaseUrl) {
     const registration = await registered.json();
     assert.equal(registration.client_id, "scoat-chatgpt");
     const two = await f.login(registration.client_id);
+    const callback = "https://chatgpt.com/connector/oauth/p05_connection";
+    const scopedResponse = await fetch(discovery.registration_endpoint, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [callback], grant_types: ["authorization_code", "refresh_token"], token_endpoint_auth_method: "none" }),
+    });
+    assert.equal(scopedResponse.status, 201);
+    const scoped = await scopedResponse.json();
+    assert.deepEqual(scoped.grant_types, ["authorization_code"]);
+    const scopedLogin = await f.login(scoped.client_id, undefined, undefined, false, callback);
+    for (const wrong of ["https://chatgpt.com/connector/oauth/another_connection", "https://attacker.example/cb", "https://chatgpt.com/connector_platform_oauth_redirect"]) {
+      const params = new URLSearchParams({ client_id: scoped.client_id, redirect_uri: wrong, response_type: "code", scope: "openid scoat:read scoat:write", state: "binding-negative", resource: f.issuer + "/mcp", code_challenge: createHash("sha256").update("verifier".repeat(8)).digest("base64url"), code_challenge_method: "S256" });
+      const denied = await fetch(f.issuer + "/auth?" + params, { redirect: "manual" });
+      assert.equal(denied.status, 400);
+      assert.equal(denied.headers.get("location"), null);
+    }
+
     assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_artifacts WHERE model='Client'")).rows[0].count, "0");
     const request = { requestKey: randomUUID(), intent, profile: null };
     const start = await call(one.token, "start", request);
@@ -41,6 +57,7 @@ export async function authLanes(databaseUrl) {
     let view = start.value.view;
     const list = await call(two.token, "list");
     assert.equal(list.value.hunts[0].hunt, view.hunt);
+    assert.equal((await call(scopedLogin.token, "list")).value.hunts[0].hunt, view.hunt);
     const before = await f.store.pool.query(
       "SELECT count(*) FROM hunt_receipts",
     );
@@ -48,7 +65,7 @@ export async function authLanes(databaseUrl) {
     passed(2, {
       clients: [one.client, two.client],
       sameHunt: true,
-      automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0 },
+      automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0, callbackBoundCodeExchange: true, wrongCallbackRefusals: 3 },
       loginSteps: one.steps,
     });
     const foreign = await f.login(registration.client_id, "same-email-other-subject");

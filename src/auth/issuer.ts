@@ -12,7 +12,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { postgresAdapter } from "./adapter.js";
 import { authConfigSchema } from "./config.js";
-import { publicClient, registerClient } from "./registration.js";
+import { publicClient, RegisteredClients, registerClient } from "./registration.js";
 import { linkIdentity } from "./link.js";
 import type { Agent, Id } from "../domain.js";
 import { UnknownIdentity, resolveIdentity } from "./identity.js";
@@ -110,9 +110,9 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     config.upstreamClientSecret,
   );
   const clients = config.clients.map(publicClient);
-  const registration = clients.find(client => client.client_id === config.registrationClientId);
+  const registration = config.registrationClientId ? new RegisteredClients(config) : undefined;
   const provider = new Provider(issuer, {
-    adapter: postgresAdapter(pool),
+    adapter: model => model === "Client" && registration ? registration.adapter() : postgresAdapter(pool)(model),
     jwks: config.jwks,
     cookies: { keys: config.cookieKeys },
     clients,

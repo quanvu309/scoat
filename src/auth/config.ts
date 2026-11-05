@@ -6,6 +6,10 @@ const https = z.url({ protocol: /^https$/ }).refine((value) => {
 });
 const redirect = https;
 export const chatgptRedirect = "https://chatgpt.com/connector_platform_oauth_redirect";
+const registrationKey = z.strictObject({
+  version: z.string().regex(/^[A-Za-z0-9_-]{1,8}$/),
+  secret: z.string().min(64).max(256),
+});
 export const authConfigSchema = z.strictObject({
   issuer: https.refine((value) => new URL(value).pathname === "/"),
   upstreamIssuer: https,
@@ -18,6 +22,7 @@ export const authConfigSchema = z.strictObject({
     keys: z.array(z.record(z.string(), z.unknown())).min(1).max(3),
   }),
   registrationClientId: z.string().min(1).max(200).optional(),
+  registrationKeys: z.tuple([registrationKey]).rest(registrationKey).refine(keys => keys.length <= 3).optional(),
   clients: z
     .array(
       z.strictObject({
@@ -34,7 +39,11 @@ export const authConfigSchema = z.strictObject({
 }).superRefine((config, ctx) => {
   const ids = config.clients.map(client => client.client_id);
   if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["clients"], message: "OAuth client IDs must be unique" });
+  if (ids.some(id => id.startsWith("scoat-cb."))) ctx.addIssue({ code: "custom", path: ["clients"], message: "Client IDs reserve scoat-cb. for callback-bound registration" });
+  if (config.registrationKeys && new Set(config.registrationKeys.map(key => key.version)).size !== config.registrationKeys.length)
+    ctx.addIssue({ code: "custom", path: ["registrationKeys"], message: "Registration key versions must be unique" });
   if (config.registrationClientId === undefined) return;
+  if (!config.registrationKeys) ctx.addIssue({ code: "custom", path: ["registrationKeys"], message: "Registration requires dedicated versioned keys" });
   const selected = config.clients.find(client => client.client_id === config.registrationClientId);
   const matches = config.clients.filter(client => client.redirect_uris.includes(chatgptRedirect));
   if (!selected || selected.redirect_uris.length !== 1 || selected.redirect_uris[0] !== chatgptRedirect || matches.length !== 1)

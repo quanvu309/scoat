@@ -4,7 +4,7 @@ import { createServer, request } from "node:http";
 import pg from "pg";
 import { postgresAdapter } from "../dist/auth/adapter.js";
 import { authConfigSchema, chatgptRedirect } from "../dist/auth/config.js";
-import { publicClient, registrationMetadata, registerClient } from "../dist/auth/registration.js";
+import { publicClient, RegisteredClients, registerClient } from "../dist/auth/registration.js";
 
 const client = publicClient({ client_id: "scoat-chatgpt", redirect_uris: [chatgptRedirect] });
 const minimal = { redirect_uris: [chatgptRedirect] };
@@ -14,10 +14,12 @@ const config = {
   lifecycleKey: "k".repeat(64), lifecycleKeyVersion: "test", cookieKeys: ["c".repeat(32)], jwks: { keys: [{}] },
   clients: [{ client_id: "codex", redirect_uris: ["https://codex.example/callback"] }, { client_id: client.client_id, redirect_uris: [chatgptRedirect] }],
 };
+const selected = { ...config, registrationClientId: client.client_id, registrationKeys: [{ version: "first", secret: "r".repeat(64) }] };
+const clients = new RegisteredClients(authConfigSchema.parse(selected));
+const registrationMetadata = raw => clients.metadata(raw);
 
 test("registration selector is optional and rejects ambiguous or different clients", () => {
   assert.equal(authConfigSchema.parse(config).registrationClientId, undefined);
-  const selected = { ...config, registrationClientId: client.client_id };
   assert.equal(authConfigSchema.parse(selected).clients[0].client_id, "codex");
   for (const value of [
     { ...selected, registrationClientId: "absent" },
@@ -39,11 +41,11 @@ test("registration returns stable public metadata and ignores bounded display fi
 
 test("registration rejects callback variations and security metadata", () => {
   for (const redirect_uris of [[], [chatgptRedirect, chatgptRedirect], [chatgptRedirect, "https://attacker.example/cb"], ...[
-    chatgptRedirect + "/", chatgptRedirect + "?x=1", chatgptRedirect + "#x", chatgptRedirect.replace("https:", "http:"), chatgptRedirect.replace("chatgpt.com", "CHATGPT.COM"), chatgptRedirect.replace("chatgpt.com", "chatgpt.com.attacker.example"), chatgptRedirect.replace("chatgpt.com", "user@chatgpt.com"), "https://chatgpt.com/connector/oauth/abc",
+    chatgptRedirect + "/", chatgptRedirect + "?x=1", chatgptRedirect + "#x", chatgptRedirect.replace("https:", "http:"), chatgptRedirect.replace("chatgpt.com", "CHATGPT.COM"), chatgptRedirect.replace("chatgpt.com", "chatgpt.com.attacker.example"), chatgptRedirect.replace("chatgpt.com", "user@chatgpt.com"),
   ].map(value => [value])]) assert.equal(registrationMetadata({ redirect_uris }, client).error, "invalid_redirect_uri");
   for (const extra of [
     { token_endpoint_auth_method: "client_secret_basic" }, { token_endpoint_auth_method: "private_key_jwt" },
-    { grant_types: ["refresh_token"] }, { grant_types: ["client_credentials"] }, { grant_types: ["authorization_code", "refresh_token"] },
+    { grant_types: ["refresh_token"] }, { grant_types: ["client_credentials"] },
     { response_types: ["token"] }, { application_type: "native" }, { subject_type: "pairwise" },
     { scope: "offline_access" }, { scope: "scoat:read unknown" }, { scope: "scoat:read scoat:read" }, { scope: "" },
     { client_id: "codex" }, { client_secret: "secret" }, { software_statement: "unsigned" }, { jwks: {} }, { jwks_uri: "https://attacker.example/keys" },
@@ -61,7 +63,7 @@ test("real HTTP registration has bounded JSON, precise refusals and no managemen
       res.end();
       return;
     }
-    void registerClient(req, res, client);
+    void registerClient(req, res, clients);
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -124,4 +126,62 @@ test("registration leaves the generic OAuth adapter expiry requirement intact", 
   } finally {
     await pool.end();
   }
+});
+
+test("documented connection-specific ChatGPT callback can register", () => {
+  const result = registrationMetadata({ redirect_uris: ["https://chatgpt.com/connector/oauth/connection_123"] }, client);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.redirect_uris, ["https://chatgpt.com/connector/oauth/connection_123"]);
+});
+
+
+test("callback-bound clients are deterministic, issuer-bound and immutable across key rotation", async () => {
+  const redirect = "https://chatgpt.com/connector/oauth/connection_123";
+  const raw = { redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"] };
+  const result = clients.metadata(raw);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.grant_types, ["authorization_code"]);
+  assert.equal(result.token_endpoint_auth_method, "none");
+  assert.deepEqual(clients.metadata(raw), result);
+  assert.ok(result.client_id.length <= 200);
+  const { scope, ...resolved } = result;
+  assert.deepEqual(clients.resolve(result.client_id), resolved);
+  const second = clients.metadata({ redirect_uris: [redirect + "other"] });
+  assert.notEqual(second.client_id, result.client_id);
+  assert.deepEqual(clients.resolve(second.client_id).redirect_uris, [redirect + "other"]);
+  const otherIssuer = new RegisteredClients(authConfigSchema.parse({ ...selected, issuer: "https://other.example" }));
+  assert.equal(otherIssuer.resolve(result.client_id), undefined);
+  const rotated = new RegisteredClients(authConfigSchema.parse({ ...selected, cookieKeys: ["new-cookie".repeat(8)], lifecycleKey: "changed".repeat(10), registrationKeys: [{ version: "second", secret: "s".repeat(64) }, ...selected.registrationKeys] }));
+  assert.deepEqual(rotated.resolve(result.client_id), resolved);
+  assert.notEqual(rotated.metadata(raw).client_id, result.client_id);
+  const retired = new RegisteredClients(authConfigSchema.parse({ ...selected, registrationKeys: [{ version: "second", secret: "s".repeat(64) }] }));
+  assert.equal(retired.resolve(result.client_id), undefined);
+  for (const id of [result.client_id.slice(0,-1), result.client_id + "x", result.client_id.replace("v1.","v2."), result.client_id.replace("connection_123", "connection_124"), result.client_id.slice(0,-1) + (result.client_id.endsWith("A") ? "B" : "A"), "unknown"]) assert.equal(clients.resolve(id), undefined);
+  const adapter = clients.adapter();
+  assert.deepEqual(await adapter.find(result.client_id), resolved);
+  assert.equal(await adapter.find("unknown"), undefined);
+  assert.equal(await adapter.findByUid(result.client_id), undefined);
+  assert.equal(await adapter.findByUserCode(result.client_id), undefined);
+  for (const op of ["upsert", "destroy", "consume", "revokeByGrantId"]) await assert.rejects(adapter[op](result.client_id, {}, 3600), /immutable and stateless/);
+});
+
+test("connection callbacks reject normalization, foreign hosts and callback sets", () => {
+  const base = "https://chatgpt.com/connector/oauth/";
+  for (const uri of [base, base + "x/", base + "x/y", base + "..", base + "%41", base + "%2e%2e", base + "x?foo=bar", base + "x#bar", base + "*", base + "中文", base + "x".repeat(129), base.replace("https:", "http:") + "x", base.replace("chatgpt.com", "CHATGPT.COM") + "x", base.replace("chatgpt.com", "chatgpt.com:443") + "x", base.replace("chatgpt.com", "user@chatgpt.com") + "x", base.replace("chatgpt.com", "chatgpt.com.evil.example") + "x"]) assert.equal(clients.metadata({ redirect_uris: [uri] }).error, "invalid_redirect_uri", uri);
+  assert.equal(clients.metadata({ redirect_uris: [chatgptRedirect, base + "x"] }).error, "invalid_redirect_uri");
+  const longest = clients.metadata({ redirect_uris: [base + "x".repeat(128)] });
+  assert.equal(longest.error, undefined);
+  assert.ok(longest.client_id.length <= 200);
+  const { scope, ...resolved } = longest;
+  assert.deepEqual(clients.resolve(longest.client_id), resolved);
+  for (const change of [{ registrationKeys: undefined }, { registrationKeys: [selected.registrationKeys[0], selected.registrationKeys[0]] }, { clients: [{ client_id: "scoat-cb.v1.spoof", redirect_uris: [chatgptRedirect] }] }]) assert.equal(authConfigSchema.safeParse({ ...selected, ...change }).success, false);
+});
+
+test("refusal diagnostics expose bounded field names and no attacker values", () => {
+  const raw = { redirect_uris: ["https://secret.example/private"], client_secret: "never-print-this", token_endpoint_auth_method: "client_secret_basic", arbitrary: { secret: "hidden" } };
+  const diagnostic = clients.refusal(raw);
+  assert.deepEqual(diagnostic, { event: "oauth_registration_refused", fields: ["client_secret", "extension", "redirect_uris", "token_endpoint_auth_method"] });
+  const json = JSON.stringify(diagnostic);
+  for (const secret of ["never-print-this", "secret.example", "hidden", "arbitrary"]) assert.equal(json.includes(secret), false);
+  assert.equal(clients.refusal(minimal), undefined);
 });

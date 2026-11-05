@@ -132,7 +132,7 @@ export async function measureStory({ warmBatches = 5, huntsPerBatch = 3, healthP
     assert.equal(activation.status, 200, activationText.slice(0, 600));
     assert.ok(activationText.includes("Watch active"), activationText.slice(0, 600));
     const activationMs = performance.now() - activationStarted;
-    const item = (await call("scoat_memory", { op: "read", collection: "watches" })).structuredContent.items.find(value => value.hunt === watched.hunt);
+    const item = (await call("scoat_memory", { op: "read", collection: "watches" })).structuredContent.value.items.find(value => value.hunt === watched.hunt);
     assert.equal(item.status, "active");
     assert.equal(item.baseline.pence, 7000);
     conditions.seller.setPence(5620);

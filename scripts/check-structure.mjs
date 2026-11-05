@@ -768,6 +768,7 @@ export function checkWatchVerification(skill, index, runner) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkMemoryContract(fs.readFileSync("src/memory/index.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"));
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
@@ -784,7 +785,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
 
 export function checkOutputContract(entries, adapter, gate) {
  for (const [name, entry] of Object.entries(entries)) {
-  if (!entry.outputSchema && ["scoat_guide", "scoat_hunt"].includes(name)) throw new Error("Declare the full success/error output contract");
+  if (!entry.outputSchema && ["scoat_guide", "scoat_hunt", "scoat_memory"].includes(name)) throw new Error("Declare the full success/error output contract");
   if (!entry.outputSchema) continue;
   const schema = entry.outputSchema;
   if (schema.type !== "object" || schema.$schema !== "http://json-schema.org/draft-07/schema#" || !schema.oneOf?.some(branch => branch.properties?.ok?.const === false)) throw new Error("Declare a draft-7 object-root success/error union");
@@ -803,4 +804,12 @@ export function checkToolDescriptors(entries, catalog, adapter) {
   if (operations.some(op => !new RegExp(`\\b${op}\\b`).test(entry.description))) throw new Error("Describe every operation from its input owner");
   if (input.options.some(option => "requestKey" in option.shape) && entry.annotations.readOnlyHint) throw new Error("Mixed write tools cannot claim read-only");
  }
+}
+
+export function checkMemoryContract(source, adapter) {
+ for (const code of ["invalid-cursor", "missing-item", "item-integrity", "key-reused", "session-mismatch", "expired"]) {
+  if (!source.includes('new MemoryRefusal("' + code + '")')) throw new Error("Use typed Memory refusals for expected failures");
+ }
+ if (!adapter.includes("if (!(error instanceof MemoryRefusal)) throw error")) throw new Error("Propagate unexpected Memory infrastructure failures");
+ if (!adapter.includes("structuredContent: { ok: true, value }") || !adapter.includes('value.kind === "confirmation-required"') || !adapter.includes('value.kind === "unwatched"')) throw new Error("Envelope Memory results and distinguish proposals from immediate cancellation");
 }

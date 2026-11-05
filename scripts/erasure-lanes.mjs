@@ -37,8 +37,8 @@ export async function erasureLanes(databaseUrl) {
   const finished=await f.tool(one.token,"scoat_hunt",{op:"finish",requestKey:randomUUID(),hunt:view.hunt,selection:null}); assert.ok(finished.structuredContent.ok);
   const save={op:"save",requestKey:randomUUID(),hunt:view.hunt};
   const proposed=await f.tool(one.token,"scoat_memory",save);
-  assert.equal((await confirm(f,proposed.structuredContent.url,"/account/memory","allow")).result.status,200);
-  assert.equal((await f.tool(one.token,"scoat_memory",save)).structuredContent.kind,"saved");
+  assert.equal((await confirm(f,proposed.structuredContent.value.url,"/account/memory","allow")).result.status,200);
+  assert.equal((await f.tool(one.token,"scoat_memory",save)).structuredContent.value.kind,"saved");
   const readGrant=await f.tool(one.token,"scoat_card",{op:"open",hunt:view.hunt}); assert.ok(!readGrant.isError);
   const compatibility=randomUUID();
   await f.store.pool.query("INSERT INTO hunt_offers(account,incarnation,hunt,row_id,slot,id,data) VALUES($1,$2,$3,$4,1,'erasure-offer',$5)",[...scope,view.hunt,view.rows[0].row.id,{fixture:"SYNTHETIC private offer"}]);

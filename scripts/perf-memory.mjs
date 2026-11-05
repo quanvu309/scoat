@@ -45,7 +45,7 @@ await withDatabase(async url => {
    const result=await f.tool(login.token,"scoat_memory",{op:"read",collection:"saved",limit:20,...(after?{after}: {})});
    const ms=performance.now()-before;
    assert.ok(!result.isError,JSON.stringify(result));
-   return {value:result.structuredContent,ms};
+   return {value:result.structuredContent.value,ms};
   }
   for (let n=0;n<10;n++) await page();
   for (let batch=0;batch<5;batch++) {

@@ -4,6 +4,7 @@ Keep intent in docs and names. Executable source/config has no comments. `arch/`
 
 | Risk | Required fix | Enforcement and negative proof |
 | --- | --- | --- |
+| Memory proposals appear applied or expected refusals swallow outages | Declare the complete Memory envelope, distinguish browser proposals from immediate cancellation and catch only typed Memory refusals | checkMemoryContract/checkOutputContract; missing envelope, missing narrative, untyped refusal and swallowed-infrastructure fixtures; P06 and P08 live lanes |
 | Published MCP results reject errors or lose text-only evidence | Emit full draft-7 object-root success/error unions through one validating JSON-copy gate | checkOutputContract; success-only schema, missing root, validation removal and emission bypass fixtures; pinned SDK conformance and parity probes |
 | Tool discovery hides operations, requires defaults or mislabels writes | Derive titles, operation descriptions and honest whole-tool hints from the registry with input-mode schemas | checkToolDescriptors; missing-title, missing-operation, read-only write and output-mode input fixtures; pinned listing round-trip |
 | A private fixture marks a shared migration journal complete before the base schema exists | Apply real base migrations under migrateAdmitted before creating any private fixture schema | checkFixtureJournal; original 9290141 synthetic journal and missing/wrong-pool fixtures; fresh-database auth-first and repeat-migration regression |

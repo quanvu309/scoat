@@ -6,13 +6,13 @@ import type { AccountScope } from "../domain.js";
 import { releaseSchema } from "../knowledge/index.js";
 import { readFinishedResult, countRecentHunts, readRecentHunts } from "../hunt/postgres.js";
 import { digest } from "../hunt/postgres.js";
-import { memoryInput, profileSchema } from "./contracts.js";
+import { memoryInput, profileSchema, memoryOutcome, MemoryRefusal } from "./contracts.js";
 import { cancelWatch, prepareWatch, readWatches, watchLimits, watchRefusalReasons, watchRefusalText, watchUrl } from "./watches.js";
 import type { PreparedWatch } from "./watches.js";
 
 type Caller = AccountScope & Readonly<{ client: string; session: string }>;
 const cursorSchema = z.strictObject({ account: z.string(), incarnation: z.uuid(), collection: z.enum(["saved", "recent"]), after: z.string().max(256) });
-const outcomeSchema = z.union([z.strictObject({ kind: z.literal("profile"), revision: z.uuid() }), z.strictObject({ kind: z.literal("saved"), item: z.uuid() }), z.strictObject({ kind: z.literal("unfinished") }), z.strictObject({ kind: z.literal("watching"), watch: z.uuid() }), z.strictObject({ kind: z.literal("watch-unavailable"), reason: z.enum(watchRefusalReasons), explanation: z.string(), limits: z.strictObject({ active: z.number().int(), seller: z.string() }) }), z.strictObject({ kind: z.literal("unwatched"), watch: z.uuid(), wasActive: z.boolean(), jobs: z.number().int(), acceptedAlerts: z.number().int(), mayStillArrive: z.number().int() })]);
+const outcomeSchema = memoryOutcome;
 export class Memory {
  constructor(private readonly pool: pg.Pool, private readonly issuer: string, private readonly watches: boolean) {}
  private async transaction<T>(scope: Caller, run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -31,26 +31,27 @@ export class Memory {
    const prefix = [caller.account, caller.incarnation];
    if (request.op === "item") {
     const row = (await client.query("SELECT id,hunt,snapshot,release,digest,format,saved_at FROM memory_items WHERE account=$1 AND incarnation=$2 AND id=$3", [...prefix,request.item])).rows[0];
-    if (!row) throw new Error("Saved item unavailable");
+    if (!row) throw new MemoryRefusal("missing-item");
     const snapshot = z.json().parse(row.snapshot), release = releaseSchema.parse(row.release);
-    if (row.format !== 1 || row.digest !== digest({snapshot,release,format:1})) throw new Error("Saved item integrity failure");
+    if (row.format !== 1 || row.digest !== digest({snapshot,release,format:1})) throw new MemoryRefusal("item-integrity");
     return { kind: "item", item: { ...row, id: z.uuid().parse(row.id), snapshot,release } };
    }
    if (request.op === "read") {
     if (request.collection === "overview") {
-     if (request.after) throw new Error("Overview has no cursor");
+     if (request.after) throw new MemoryRefusal("invalid-cursor");
      const row = (await client.query("SELECT revision,value FROM memory_profiles WHERE account=$1 AND incarnation=$2", prefix)).rows[0];
      const count = (await client.query("SELECT count(*)::integer AS saved FROM memory_items WHERE account=$1 AND incarnation=$2", prefix)).rows[0];
      return { kind: "overview", profile: row ? { revision: z.uuid().parse(row.revision), value: profileSchema.parse(row.value) } : null, counts: {...count,hunts:await countRecentHunts(client,caller)} };
     }
     if (request.collection === "watches") {
-     if (request.after) throw new Error("Watches have no cursor");
+     if (request.after) throw new MemoryRefusal("invalid-cursor");
      return readWatches(client,caller);
     }
     let after = "";
     if (request.after) {
-     const cursor = cursorSchema.parse(JSON.parse(Buffer.from(request.after,"base64url").toString("utf8")));
-     if (cursor.account !== caller.account || cursor.incarnation !== caller.incarnation || cursor.collection !== request.collection) throw new Error("Cursor scope mismatch");
+     let cursor;
+     try { cursor = cursorSchema.parse(JSON.parse(Buffer.from(request.after,"base64url").toString("utf8"))); } catch { throw new MemoryRefusal("invalid-cursor"); }
+     if (cursor.account !== caller.account || cursor.incarnation !== caller.incarnation || cursor.collection !== request.collection) throw new MemoryRefusal("invalid-cursor");
      after = cursor.after;
     }
     const rows = request.collection === "saved"
@@ -63,10 +64,10 @@ export class Memory {
    const commandDigest = digest(request);
    await client.query("INSERT INTO memory_commands(account,incarnation,key,digest,client,session,command) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING", [...prefix,request.requestKey,commandDigest,caller.client,caller.session,request]);
    const row = (await client.query("SELECT digest,client,session,approved,expires_at>now() AS fresh,replay_until>now() AS replay,outcome FROM memory_commands WHERE account=$1 AND incarnation=$2 AND key=$3 FOR UPDATE", [...prefix,request.requestKey])).rows[0];
-   if (row.digest !== commandDigest) throw new Error("Request key has different payload");
-   if (row.client !== caller.client || row.session !== caller.session || !row.replay) throw new Error("Command session unavailable");
+   if (row.digest !== commandDigest) throw new MemoryRefusal("key-reused");
+   if (row.client !== caller.client || row.session !== caller.session || !row.replay) throw new MemoryRefusal("session-mismatch");
    if (row.outcome) return outcomeSchema.parse(row.outcome);
-   if (!row.fresh) throw new Error("Proposal expired; use a new request key");
+   if (!row.fresh) throw new MemoryRefusal("expired");
    if (request.op === "unwatch") {
     const result = await cancelWatch(client,caller,request.watch);
     await client.query("UPDATE memory_commands SET outcome=$4,command=NULL,approved=false WHERE account=$1 AND incarnation=$2 AND key=$3", [...prefix,request.requestKey,result]);

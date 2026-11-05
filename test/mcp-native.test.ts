@@ -7,7 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpServer, descriptors, toolCatalog, parseToolCall } from "../dist/mcp/index.js";
 import { conform, ContractBreach, repairFor, refusal } from "../dist/mcp/results.js";
-import { checkOutputContract, checkToolDescriptors } from "../scripts/check-structure.mjs";
+import { checkMemoryContract, checkOutputContract, checkToolDescriptors } from "../scripts/check-structure.mjs";
 
 async function withClient(run, invoke) {
  const server = createMcpServer(invoke);
@@ -69,4 +69,11 @@ test("native output and discovery enforcement rejects broken contracts", () => {
   assert.throws(() => checkToolDescriptors(changed, toolCatalog, adapter));
  }
  assert.throws(() => checkToolDescriptors(entries, toolCatalog, adapter.replaceAll('io: "input"', 'io: "output"')));
+});
+
+test("Memory refusal enforcement rejects untyped errors and swallowed outages", () => {
+ const source = fs.readFileSync("src/memory/index.ts", "utf8"), adapter = fs.readFileSync("src/mcp/authenticated.ts", "utf8");
+ checkMemoryContract(source, adapter);
+ for (const code of ["invalid-cursor", "missing-item", "item-integrity", "key-reused", "session-mismatch", "expired"]) assert.throws(() => checkMemoryContract(source.replaceAll('new MemoryRefusal("' + code + '")', 'new Error("refused")'), adapter));
+ for (const text of ["if (!(error instanceof MemoryRefusal)) throw error", "structuredContent: { ok: true, value }", 'value.kind === "confirmation-required"', 'value.kind === "unwatched"']) assert.throws(() => checkMemoryContract(source, adapter.replace(text, "false")));
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { memoryValue, memoryRefusalCode } from "../memory/contracts.js";
 import { failureCodes } from "../domain.js";
 import { huntViewSchema } from "../hunt/view-schema.js";
 import { row, releaseSchema } from "../knowledge/schema.js";
@@ -25,7 +26,7 @@ export const repair = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("reconnect-with-write-access") }),
   z.strictObject({ kind: z.literal("none") }),
 ]);
-export const failureCode = z.enum([...failureCodes, "invalid-input", "scope-required", "unavailable"]);
+export const failureCode = z.enum([...failureCodes, ...memoryRefusalCode.options, "invalid-input", "scope-required", "unavailable"]);
 export const refused = z.strictObject({ ok: z.literal(false), error: z.strictObject({ code: failureCode, message: z.string(), next: z.string(), repair }) });
 export const guideOutput = z.discriminatedUnion("ok", [
   z.strictObject({ ok: z.literal(true), market: z.literal("GB"), currency: z.literal("GBP"), release: z.string(), method: z.string(), rows: z.array(row), facts: releaseSchema.shape.facts, gap: z.string().nullable() }),
@@ -36,3 +37,5 @@ const huntSuccess = z.strictObject({ ok: z.literal(true), value: z.union([viewVa
 export const huntSnapshot = huntSuccess.extend({ value: viewValue });
 export const huntOutput = z.discriminatedUnion("ok", [huntSuccess, refused.extend({ current: huntViewSchema.optional() })]);
 export type Repair = z.infer<typeof repair>;
+
+export const memoryOutput = z.discriminatedUnion("ok", [z.strictObject({ ok: z.literal(true), value: memoryValue }), refused]);

@@ -19,6 +19,7 @@ export async function confirm(f, url, action, decision, submit=true) {
  const result = await f.browser(f.issuer+action,{method:"POST",headers:{origin:f.issuer,"content-type":"application/x-www-form-urlencoded"},body});
  return { result, confirmation, html, body };
 }
+import { memoryOutput } from "../dist/mcp/outputs.js";
 export async function memoryLanes(databaseUrl) {
  const f = await authFixture(databaseUrl);
  const transcript = [];
@@ -28,8 +29,10 @@ export async function memoryLanes(databaseUrl) {
   const scope = [principal.agent.account,principal.agent.incarnation];
   const memory = async (request, token=one.token) => {
    const result = await f.tool(token,"scoat_memory",request);
+   memoryOutput.parse(result.structuredContent);
+   assert.equal(result.content.at(-1).text,JSON.stringify(result.structuredContent));
    assert.ok(!result.isError,JSON.stringify(result));
-   return result.structuredContent;
+   return result.structuredContent.value;
   };
   const command = { op:"profile",requestKey:randomUUID(),profile:{student:"yes",cards:["SYNTHETIC"],memberships:[]} };
   const proposal = await memory(command);
@@ -46,9 +49,21 @@ export async function memoryLanes(databaseUrl) {
   assert.equal(replay.status,400);
   const changed = await f.tool(one.token,"scoat_memory",{...command,profile:{...command.profile,student:"no"}});
   assert.ok(changed.isError);
+  memoryOutput.parse(changed.structuredContent);
+  assert.equal(changed.structuredContent.error.code,"key-reused");
   const two = await f.login("host-two");
   assert.deepEqual((await memory({op:"read"},two.token)).profile.value,command.profile);
-  assert.ok((await f.tool(two.token,"scoat_memory",command)).isError);
+  const mismatch=await f.tool(two.token,"scoat_memory",command);
+  memoryOutput.parse(mismatch.structuredContent);
+  assert.equal(mismatch.structuredContent.error.code,"session-mismatch");
+  const expires={...command,requestKey:randomUUID()};
+  await memory(expires);
+  await f.store.pool.query("UPDATE memory_commands SET expires_at=now()-interval '1 second' WHERE account=$1 AND incarnation=$2 AND key=$3",[...scope,expires.requestKey]);
+  const expired=await f.tool(one.token,"scoat_memory",expires);
+  memoryOutput.parse(expired.structuredContent);
+  assert.equal(expired.structuredContent.error.code,"expired");
+  const unwatched=await memory({op:"unwatch",requestKey:randomUUID(),watch:randomUUID()});
+  assert.equal(unwatched.kind,"unwatched"); assert.equal(unwatched.mayStillArrive,0);
   const start = await f.tool(one.token,"scoat_hunt",{op:"start",requestKey:randomUUID(),profile:null,intent:{product:{kind:"description",text:"SYNTHETIC memory fixture"},variant:null,shop:null,budget:null}});
   assert.ok(start.structuredContent.ok,JSON.stringify(start));
   let view = start.structuredContent.value.view;

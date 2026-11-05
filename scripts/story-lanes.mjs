@@ -49,7 +49,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    return result;
   };
   const ok = async (tool, args) => { const result = await call(tool, args); assert.ok(!result.isError, JSON.stringify(result).slice(0, 2000)); return result; };
-  return { name, login, client, call, ok, hunt: args => ok("scoat_hunt", args), memory: async args => (await ok("scoat_memory", args)).structuredContent };
+  return { name, login, client, call, ok, hunt: args => ok("scoat_hunt", args), memory: async args => (await ok("scoat_memory", args)).structuredContent.value };
  };
  const approve = async (url, button) => {
   await page.goto(url);

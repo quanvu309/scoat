@@ -1,5 +1,6 @@
 import { refusal, repairFor } from "./results.js";
 import type { ControlLinksFor } from "../controls/codec.js";
+import { MemoryRefusal } from "../memory/contracts.js";
 import { Memory } from "../memory/index.js";
 import { watchEntry } from "../memory/watches.js";
 import { z } from "zod";
@@ -26,8 +27,15 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
   return async (call: ToolCall): Promise<CallToolResult> => {
     if ("requestKey" in call.input && !principal.scopes.has("scoat:write")) return refusal("scope-required", "This connection was approved without write access.", "Reconnect Scoat and approve write access, then repeat the call.", { kind: "reconnect-with-write-access" });
     if (call.name === "scoat_memory") {
-      const result = await new Memory(store.pool,issuer,watches).run({ ...principal.agent, session: principal.session },call.input);
-      return { content: [{ type: "text", text: "Account memory result" }], structuredContent: result };
+      try {
+        const value = await new Memory(store.pool,issuer,watches).run({ ...principal.agent, session: principal.session },call.input);
+        const text = value.kind === "confirmation-required" ? "Proposal only. Open the browser link and approve the exact command; nothing has been applied." : value.kind === "unwatched" ? "Watch cancelled immediately. Already submitted mail may still arrive: " + ("mayStillArrive" in value ? value.mayStillArrive : 0) + "." : value.kind === "watch-unavailable" && "explanation" in value ? value.explanation : value.kind === "unfinished" ? "Finish the hunt before saving or watching it." : value.kind === "profile" ? "Approved profile updated." : value.kind === "saved" && "item" in value ? "Approved finished result saved." : "Account memory: " + value.kind + ".";
+        return { content: [{ type: "text", text }], structuredContent: { ok: true, value } };
+      } catch (error) {
+        if (!(error instanceof MemoryRefusal)) throw error;
+        const next = error.code === "invalid-cursor" ? "Read the collection again without after." : error.code === "missing-item" || error.code === "item-integrity" ? "Read saved items and select an available item." : error.code === "key-reused" ? "Repeat the original payload or use a new request key." : error.code === "expired" ? "Propose the command again with a new request key and confirm it in the browser." : "Reconnect and propose a new command in this session.";
+        return refusal(error.code, "Memory request refused: " + error.code + ".", next, error.code === "key-reused" ? { kind: "repeat-original-or-new-key" } : { kind: "none" });
+      }
     }
     if (call.name === "scoat_guide")
       return dispatchParsed(call);

@@ -111,7 +111,7 @@ const suiteCommands = {
 };
 const chromiumInstall = "npx playwright install --with-deps chromium";
 const systemdNode = 'sudo ln -sfn "$(command -v node)" /usr/bin/node';
-const mediaInstall = "sudo apt-get install -y --no-install-recommends ffmpeg";
+const mediaInstall = "sudo env DEBIAN_FRONTEND=noninteractive apt-get update\nsudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg";
 const same = isDeepStrictEqual;
 const onlyKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => keys.includes(key));
 
@@ -172,6 +172,10 @@ export function checkHostedCoverage(source) {
   if (!same(steps.filter(step => suiteCommands[id].includes(step.run)).map(step => step.run), suiteCommands[id])) throw new Error(id + ": required commands retain suite order");
   const allowed = new Set(["npm ci", "npm run build", ...suiteCommands[id], ...(id === "browser" || id === "operations" || id === "protocol" ? [chromiumInstall] : []), ...(id === "operations" ? [pgdgInstall, systemdNode, mediaInstall] : [])]);
   for (const [index, step] of steps.entries()) {
+   if (id === "operations" && step.run?.trim() === mediaInstall) {
+    if (!onlyKeys(step, ["name", "run", "timeout-minutes"]) || step["timeout-minutes"] !== 10) throw new Error("Bound ffmpeg installation with timeout-minutes: 10");
+    continue;
+   }
    if (id === "browser" && same(step, { run: "npm run verify -- auth-ui", env: { SCOAT_EVIDENCE_DIR: "auth-ui-evidence" } })) continue;
    if (id === "browser" && same(step, { uses: "actions/upload-artifact@v4", if: "always()", with: { name: "auth-ui-screenshots", path: "auth-ui-evidence", "if-no-files-found": "error" } })) continue;
    if (step.uses !== undefined && index > 1) throw new Error(id + ": source and Node setup occur only once before consumers");

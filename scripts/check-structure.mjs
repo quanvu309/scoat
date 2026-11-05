@@ -1,5 +1,5 @@
 import { checkLoginCodes } from "./check-login.mjs";
-import { checkBrowserTokens, checkBrowserPages, checkBrowserOutcomes } from "./check-browser-ui.mjs";
+import { checkBrowserTokens, checkBrowserPages, checkBrowserOutcomes, checkBrowserDocument, checkBrowserVisual } from "./check-browser-ui.mjs";
 
 import fs from "node:fs";
 import { parse } from "@babel/parser";
@@ -165,6 +165,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkErasureCoordinator(fs.readFileSync("src/accounts/erasure.ts", "utf8"));
   checkExplicitEnrollment(fs.readFileSync("src/auth/identity.ts", "utf8"));
   checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
+  checkBrowserDocument(fs.readFileSync("src/browser/page.ts", "utf8"));
+  checkBrowserVisual({ workflow: fs.readFileSync(".github/workflows/ci.yaml", "utf8"), driver: fs.readFileSync("scripts/verify.mjs", "utf8"), skill: fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), selector: fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), index: fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8") });
   checkBrowserOutcomes(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserPages(Object.fromEntries(["src/auth/issuer.ts", "src/server.ts"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkBrowserTokens(fs.readFileSync("landing/public/ui.css", "utf8"), Object.fromEntries(["landing/public/styles.css", "landing/public/connect.css", "landing/public/account.css"].map(file => [file, fs.readFileSync(file, "utf8")])), Object.fromEntries(["landing/public/index.html", "landing/public/connect/index.html"].map(file => [file, fs.readFileSync(file, "utf8")])));

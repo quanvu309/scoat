@@ -64,12 +64,12 @@ test("the listener binds only the parsed IP literal; the original fixed bind fai
 test("hosted CI covers P07 and P09 lanes with PGDG tools and no developer installs; the original workflow fails", () => {
  const workflow = read(".github/workflows/ci.yaml");
  assert.doesNotThrow(() => checkWorkflow(workflow));
- assert.throws(() => checkWorkflow(original("bd69b97", ".github/workflows/ci.yaml")), /Hosted CI runs npm run verify -- p07-controls/);
+ assert.throws(() => checkWorkflow(original("bd69b97", ".github/workflows/ci.yaml")), /Hosted CI runs npm run verify -- auth-ui/);
  assert.throws(() => checkWorkflow(replaced(workflow, "postgresql-client-18\n", "postgresql-client\n")), /PGDG/);
  assert.throws(() => checkWorkflow(replaced(workflow, "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n", "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n      SCOAT_BASE_APP: /home/runner/base\n")), /developer homes/);
  assert.throws(() => checkWorkflow(replaced(workflow, "timeout-minutes: 60", "timeout-minutes: 240")), /timeout-minutes/);
  assert.throws(() => checkWorkflow(replaced(workflow, "      - run: npm run perf -- p09\n", "")), /perf -- p09/);
- assert.throws(() => checkWorkflow(original("9705fec", ".github/workflows/ci.yaml")), /\/usr\/bin\/node executable/);
+ assert.throws(() => checkWorkflow(original("9705fec", ".github/workflows/ci.yaml")), /Hosted CI runs npm run verify -- auth-ui/);
  assert.throws(() => checkWorkflow(replaced(workflow, '        run: sudo ln -sfn "$(command -v node)" /usr/bin/node\n', '        run: node --version\n')), /\/usr\/bin\/node executable/);
 });
 

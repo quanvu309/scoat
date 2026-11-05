@@ -97,6 +97,15 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      - run: npm run verify -- auth-ui
+        env:
+          SCOAT_EVIDENCE_DIR: auth-ui-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auth-ui-screenshots
+          path: auth-ui-evidence
+          if-no-files-found: error
       - run: npm run verify -- p06
       - run: npm run perf -- p06
       - run: npm run verify -- p07-controls

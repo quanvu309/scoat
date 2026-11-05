@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { checkBrowserTokens, checkBrowserPages, checkBrowserOutcomes } from "../scripts/check-browser-ui.mjs";
+import { checkBrowserTokens, checkBrowserPages, checkBrowserOutcomes, checkBrowserDocument, checkBrowserVisual } from "../scripts/check-browser-ui.mjs";
 
 const read = file => readFileSync(file, "utf8");
 test("shared tokens reject the real landing's independent theme", () => {
@@ -32,3 +32,20 @@ test("browser outcomes reject the two real plain-text success pages", () => {
  assert.throws(() => checkBrowserOutcomes(issuer, server.replace("sendPage(res, refusalPage())", "res.end()")), /browser error boundary/);
 });
 
+test("mobile document check rejects the original consent and enrollment fragments", () => {
+ assert.doesNotThrow(() => checkBrowserDocument(read("src/browser/page.ts")));
+ for (const revision of ["c515888", "998ed02"]) {
+  const historical = execFileSync("git", ["show", `${revision}:src/auth/issuer.ts`], { encoding: "utf8" });
+  assert.throws(() => checkBrowserDocument(historical), /mobile viewport/);
+ }
+ assert.throws(() => checkBrowserDocument(read("src/browser/page.ts").replace('lang="en-GB"', "")), /language/);
+});
+test("visual coverage rejects the historical browser job without an auth matrix", () => {
+ const inputs = { workflow: read(".github/workflows/ci.yaml"), driver: read("scripts/verify.mjs"), skill: read(".agents/skills/verify-scoat/SKILL.md"), selector: read(".agents/skills/verify-scoat/SKILL.md"), index: read(".agents/skills/verify-scoat/features/README.md") };
+ assert.doesNotThrow(() => checkBrowserVisual(inputs));
+ const historical = execFileSync("git", ["show", "875b305:.github/workflows/ci.yaml"], { encoding: "utf8" });
+ assert.throws(() => checkBrowserVisual({ ...inputs, workflow: historical }), /auth-ui after build/);
+ assert.throws(() => checkBrowserVisual({ ...inputs, workflow: inputs.workflow.replace("path: auth-ui-evidence", "path: elsewhere") }), /Retain auth-ui-evidence/);
+ assert.throws(() => checkBrowserVisual({ ...inputs, driver: "" }), /Route verify/);
+ assert.throws(() => checkBrowserVisual({ ...inputs, skill: inputs.skill.replace("auth and connection UI", "other UI") }), /verify-scoat header/);
+});

@@ -20,7 +20,7 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-content { margin-block-start: 1.25rem; font-size: .9375rem; line-height: 1.7; overflow-wrap: anywhere; }
 .account-content p { margin-block: 0 1.25rem; color: var(--muted-foreground); }
 .account-content strong { color: var(--foreground); font-weight: 600; }
-.account-content a { color: var(--primary); text-underline-offset: .2em; }
+.account-content a:not(.ui-button) { color: var(--primary); text-underline-offset: .2em; }
 .account-content p > a { display: inline-flex; align-items: center; min-block-size: 2.75rem; }
 .account-content form { display: grid; gap: .75rem; margin-block-start: 1.5rem; }
 .account-content form + form { margin-block-start: .75rem; }

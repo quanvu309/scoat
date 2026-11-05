@@ -5,7 +5,7 @@ import type { ServerResponse } from "node:http";
 const css = ["ui.css", "account.css"].map(file => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
 const brand = readFileSync(new URL("brand.svg", import.meta.url), "utf8");
 const styleHash = createHash("sha256").update(css).digest("base64");
-export const browserPolicy = `default-src 'none'; style-src 'sha256-${styleHash}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
+export const browserPolicy = `default-src 'none'; font-src data:; style-src 'sha256-${styleHash}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`;
 
 export function browserDocument(content: string): string {
  const title = /<title>([^<]+)<\/title>/.exec(content)?.[1] ?? "Scoat";

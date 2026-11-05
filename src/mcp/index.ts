@@ -43,10 +43,10 @@ export function isToolName(name: string): name is ToolName { return Object.hasOw
 export type CardRequest = Requests["scoat_card"];
 export function parseToolCall(name: ToolName, raw: unknown) {
   switch (name) {
-    case "scoat_guide": return { name, input: toolCatalog.scoat_guide.input.parse(raw) };
-    case "scoat_hunt": return { name, input: toolCatalog.scoat_hunt.input.parse(raw) };
-    case "scoat_memory": return { name, input: toolCatalog.scoat_memory.input.parse(raw) };
-    case "scoat_card": return { name, input: toolCatalog.scoat_card.input.parse(raw) };
+    case "scoat_guide": return { name, input: toolCatalog.scoat_guide.input.parse(raw, { reportInput: true }) };
+    case "scoat_hunt": return { name, input: toolCatalog.scoat_hunt.input.parse(raw, { reportInput: true }) };
+    case "scoat_memory": return { name, input: toolCatalog.scoat_memory.input.parse(raw, { reportInput: true }) };
+    case "scoat_card": return { name, input: toolCatalog.scoat_card.input.parse(raw, { reportInput: true }) };
   }
 }
 export type ToolCall = ReturnType<typeof parseToolCall>;

@@ -22,6 +22,7 @@ import { admit, begin, inspect, LineageRefused, type RefusalReason } from "./db/
 import { verifyRelease } from "./release.js";
 import { health } from "./readiness.js";
 import { z } from "zod";
+import { databaseUnavailable, type DatabaseUnavailable } from "./db/unavailable.js";
 
 const listenHostSchema = z.union([z.ipv4(), z.ipv6()]);
 
@@ -181,12 +182,14 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
     const validationMs = performance.now() - authStart;
     const invoke = authenticatedDispatch(store, principal, auth.issuer, codec?.links.bind(codec), watches?.available === true);
     let invocationRefusal: RefusalReason | undefined;
+    let invocationUnavailable: DatabaseUnavailable | null = null;
     const server = createMcpServer(async (call) => {
       const start = performance.now();
       try {
         return await invoke(call);
       } catch (error) {
         if (error instanceof LineageRefused) invocationRefusal = error.reason;
+        invocationUnavailable = databaseUnavailable(error);
         throw error;
       } finally {
         if (!res.headersSent)
@@ -228,6 +231,10 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
         if (invocationRefusal !== undefined) {
           process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: invocationRefusal }) + "\n");
           return Response.json({ error: "service_unavailable", lineage: invocationRefusal }, { status: 503 });
+        }
+        if (invocationUnavailable !== null) {
+          process.stderr.write(JSON.stringify({ event: "mcp_database_unavailable" }) + "\n");
+          return Response.json({ error: "service_unavailable" }, { status: 503 });
         }
         return response;
       }, { overrideGlobalObjects: false });

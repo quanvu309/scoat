@@ -768,7 +768,7 @@ export function checkWatchVerification(skill, index, runner) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
- checkCardOutputContract(fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/adapter.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"));
+ checkCardOutputContract(fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/adapter.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
  checkMemoryContract(fs.readFileSync("src/memory/index.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"));
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
@@ -819,7 +819,12 @@ export function checkMemoryContract(source, adapter) {
  if (!adapter.includes("structuredContent: { ok: true, value }") || !adapter.includes('value.kind === "confirmation-required"') || !adapter.includes('value.kind === "unwatched"')) throw new Error("Envelope Memory results and distinguish proposals from immediate cancellation");
 }
 
-export function checkCardOutputContract(adapter, card, contract) {
+export function checkCardOutputContract(adapter, card, contract, server = fs.readFileSync("src/server.ts", "utf8")) {
+ const capture = server.indexOf("invocationUnavailable = databaseUnavailable(error)");
+ const handled = server.indexOf("await transport.handleRequest(request, { parsedBody: body })");
+ const gate = server.indexOf("if (invocationUnavailable !== null)", handled);
+ const translation = server.indexOf('return Response.json({ error: "service_unavailable" }, { status: 503 })', gate);
+ if (capture < 0 || handled < capture || gate < handled || translation < gate || translation > server.indexOf("return response;", handled)) throw new Error("Translate typed invocation infrastructure failures after SDK handling to sanitized HTTP 503");
  if (!adapter.includes("if (!(error instanceof ReadGrantFailure)) throw error")) throw new Error("Propagate card lineage and infrastructure failures");
  if (!adapter.includes('value: { capability: "issued", expiresAt: capability.expiresAt.toISOString() }') || !adapter.includes('_meta: { "scoat/readCapability": capability }')) throw new Error("Keep capability grants private and declare only public expiry");
  const publicValue=adapter.match(/value: \{ capability: "issued"[^\n]+/g) ?? [];

@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ListToolsRequestSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpServer, descriptors, toolCatalog, parseToolCall } from "../dist/mcp/index.js";
-import { conform, ContractBreach, repairFor, refusal } from "../dist/mcp/results.js";
+import { conform, ContractBreach, repairFor, refusal, refuseInput } from "../dist/mcp/results.js";
 import { checkCardOutputContract, checkMemoryContract, checkOutputContract, checkToolDescriptors } from "../scripts/check-structure.mjs";
 
 async function withClient(run, invoke, advertised) {
@@ -95,4 +95,19 @@ test("card contract enforcement rejects public grants, private errors and swallo
  assert.throws(()=>checkCardOutputContract(adapter,card.replace("cardOutput.safeParse(reply.structuredContent)",'cardOutput.safeParse(reply._meta["scoat/cardFailure"])'),contract));
  assert.throws(()=>checkCardOutputContract(adapter,card,contract.replaceAll("../mcp/outputs.js","./local.js")));
  assert.throws(()=>checkCardOutputContract(adapter+"JSON.stringify({})",card,contract));
+});
+
+test("input refusals distinguish missing and wrong type without exposing supplied secrets", () => {
+ for (const [input, problem] of [[{op:"read"}, "missing"], [{op:"read",hunt:123}, "wrong-type"], [{op:"read",hunt:{secret:"SECRET-WRONG-TYPE"}}, "wrong-type"]]) {
+  let result;
+  try { parseToolCall("scoat_hunt", input); assert.fail("Expected invalid input"); }
+  catch (error) { assert.ok(error instanceof z.ZodError); result = refuseInput("scoat_hunt", error); }
+  assert.deepEqual(result.structuredContent.error.repair.issues, [{path:"hunt",problem}]);
+  assert.equal(JSON.stringify(result).includes("SECRET-WRONG-TYPE"), false);
+ }
+});
+
+test("card enforcement rejects missing invocation infrastructure translation", () => {
+ const adapter=fs.readFileSync("src/mcp/authenticated.ts","utf8"), card=fs.readFileSync("src/card/adapter.ts","utf8"), contract=fs.readFileSync("src/card/contracts.ts","utf8"), server=fs.readFileSync("src/server.ts","utf8");
+ for (const text of ["invocationUnavailable = databaseUnavailable(error)", "if (invocationUnavailable !== null)", 'return Response.json({ error: "service_unavailable" }, { status: 503 })']) assert.throws(() => checkCardOutputContract(adapter, card, contract, server.replace(text, "false")));
 });

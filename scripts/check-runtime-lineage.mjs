@@ -87,7 +87,7 @@ export function checkRequestLineage(server) {
  const body = adapter?.arguments[0]?.body?.body;
  const response = body?.[0];
  const refusal = body?.[1];
- const fallback = body?.[2];
+ const fallback = body?.at(-1);
  if (response?.type !== "VariableDeclaration" || !calls(nodesOf(response), "handleRequest").length || refusal?.type !== "IfStatement" || textOf(server, refusal.test) !== "invocationRefusal !== undefined" || !/return Response\.json\(\{ error: "service_unavailable", lineage: invocationRefusal \}, \{ status: 503 \}\)/.test(textOf(server, refusal.consequent)) || fallback?.type !== "ReturnStatement" || fallback.argument?.name !== "response") throw new Error("Translate the invoke refusal to one HTTP 503 after the SDK response resolves; preserve other SDK responses");
 
 }

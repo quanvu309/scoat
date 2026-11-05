@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
 
@@ -98,31 +99,87 @@ export function checkListenHost(server) {
  if (!host || !refusal || !exits78(nodesOf(refusal.consequent)) || !listens.length || listens.some(call => call.arguments[1]?.name !== "host")) throw new Error("Bind only the parsed SCOAT_LISTEN_HOST and exit 78 on a non-literal");
 }
 
+const pgdgInstall = "sudo install -d /usr/share/postgresql-common/pgdg\nsudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc\necho \"deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main\" | sudo tee /etc/apt/sources.list.d/pgdg.list\nsudo apt-get update\nsudo apt-get install -y --no-install-recommends postgresql-client-18\n/usr/lib/postgresql/18/bin/pg_dump --version";
+const aggregateCommand = "node -e 'const keys = [\"quality\", \"protocol\", \"browser\", \"operations\", \"watch-performance\"]; try { const needs = JSON.parse(process.env.NEEDS_JSON); if (needs === null || Array.isArray(needs) || typeof needs !== \"object\" || Object.keys(needs).length !== keys.length || !keys.every(key => Object.hasOwn(needs, key) && needs[key]?.result === \"success\")) process.exit(1); } catch { process.exit(1); }'";
+
+const suiteCommands = {
+ quality: ["npm run typecheck", "npm run lint", "npm test"],
+ protocol: ["npm run db:migrate", "npm run db:migrate", "npm run db:seed -- --fixture ci-p01", "npm run db:seed -- --fixture ci-p01", ...["p01", "p02", "p03", "p04", "p05"].flatMap(scope => ["npm run verify -- " + scope, "npm run perf -- " + scope])],
+ browser: ["npm run verify -- p06", "npm run perf -- p06", "npm run verify -- p07-controls", "npm run verify -- p07-card", "npm run verify -- p08"],
+ operations: ["npm run verify -- p09-lineage", "npm run verify -- p09-recovery", "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"],
+ "watch-performance": ["npm run perf -- p08"]
+};
+const chromiumInstall = "npx playwright install --with-deps chromium";
+const systemdNode = 'sudo ln -sfn "$(command -v node)" /usr/bin/node';
+const mediaInstall = "sudo apt-get install -y --no-install-recommends ffmpeg";
+const same = isDeepStrictEqual;
+const onlyKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => keys.includes(key));
+
 export function checkHostedCoverage(source) {
  const workflow = yaml(source);
- const jobs = Object.values(workflow.jobs);
+ const entries = Object.entries(workflow.jobs ?? {});
+ const jobs = entries.map(([, job]) => job);
  const runs = jobs.flatMap(job => (job.steps ?? []).map(step => step.run ?? ""));
  for (const job of jobs) {
-  if (!Number.isInteger(job["timeout-minutes"]) || job["timeout-minutes"] > 60) throw new Error("Bound every hosted job with timeout-minutes of at most 60");
+  if (job["runs-on"] !== "ubuntu-latest") throw new Error("Use GitHub-hosted standard ubuntu-latest only");
+  if (!Number.isInteger(job["timeout-minutes"]) || job["timeout-minutes"] <= 0 || job["timeout-minutes"] > 60) throw new Error("Bound every hosted job with positive timeout-minutes of at most 60");
   if (job.services?.postgres && job.services.postgres.image !== "postgres:17.6-alpine") throw new Error("Keep the PostgreSQL 17.6 fixture server");
  }
  if (/\/home\/|SCOAT_BASE_APP|p09\/s0/.test(source)) throw new Error("Hosted CI never depends on developer homes, S0 installs or a prebuilt base artifact");
- const required = ["p01", "p02", "p03", "p04", "p05", "p06", "p07-controls", "p07-card", "p08", "p09-lineage", "p09-recovery", "p09-operations", "p09"].map(scope => "npm run verify -- " + scope);
+ const required = Object.values(suiteCommands).flat().filter(command => command.startsWith("npm run verify -- "));
  for (const command of [...required, "npm run perf -- p09"]) if (!runs.some(run => run.split("\n").map(line => line.trim()).includes(command))) throw new Error("Hosted CI runs " + command);
- const install = runs.findIndex(run => /apt\.postgresql\.org/.test(run) && /postgresql-client-18/.test(run));
- const recovery = runs.findIndex(run => /verify -- p09-(lineage|recovery)/.test(run));
- if (install < 0 || install > recovery) throw new Error("Install official PGDG PostgreSQL 18 client tools before the recovery lanes");
- if (!jobs.some(job => job.env?.SCOAT_PG_BIN === "/usr/lib/postgresql/18/bin")) throw new Error("Point SCOAT_PG_BIN at the installed PGDG client tools");
- const browsers = runs.findIndex(run => /playwright install --with-deps chromium/.test(run));
- const firstBrowser = runs.findIndex(run => /verify -- p0[67]/.test(run));
- if (browsers < 0 || browsers > firstBrowser) throw new Error("Install Chromium with its system dependencies before browser lanes");
- for (const job of jobs) {
-  const operations = job.steps.findIndex(step => step.run === "npm run verify -- p09-operations");
-  if (operations < 0) continue;
-  const node = job.steps.findIndex(step => step.uses?.startsWith("actions/setup-node@"));
-  const executable = job.steps.findIndex(step => step.run === 'sudo ln -sfn "$(command -v node)" /usr/bin/node');
-  if (node < 0 || executable <= node || executable >= operations) throw new Error("Provide setup-node's /usr/bin/node executable before systemd verification");
+ for (const [id, job] of entries) {
+  const before = (command, prerequisite, diagnostic) => {
+   const consumer = job.steps.findIndex(step => step.run === command);
+   if (consumer < 0) return;
+   const provider = job.steps.findIndex(step => (step.run ?? "").trim() === prerequisite);
+   if (provider < 0 || provider >= consumer) throw new Error(id + ": " + diagnostic);
+  };
+  for (const command of ["npm run verify -- p09-lineage", "npm run verify -- p09-recovery", "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"]) {
+   before(command, pgdgInstall, "Install official PGDG PostgreSQL 18 client tools before the recovery lanes");
+   if (job.steps.some(step => step.run === command) && job.env?.SCOAT_PG_BIN !== "/usr/lib/postgresql/18/bin") throw new Error(id + ": Point SCOAT_PG_BIN at the installed PGDG client tools");
+  }
+  for (const command of [...suiteCommands.browser, "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"]) before(command, chromiumInstall, "Install Chromium with its system dependencies before browser lanes");
+  before("npm run verify -- p09-operations", systemdNode, "Provide setup-node's /usr/bin/node executable before systemd verification");
+  if (job.steps.some(step => step.run === "npm run verify -- p09-operations")) {
+   const node = job.steps.findIndex(step => step.uses === "actions/setup-node@v4");
+   if (node < 0 || node >= job.steps.findIndex(step => step.run === systemdNode)) throw new Error(id + ": Provide setup-node's /usr/bin/node executable before systemd verification");
+  }
+  before("npm run verify -- p09", mediaInstall, "Install ffmpeg/ffprobe before story media");
  }
+ const suites = Object.keys(suiteCommands);
+ if (!same(Object.keys(workflow.jobs).sort(), [...suites, "foundation"].sort())) throw new Error("Hosted CI has exactly five suites and foundation");
+ if (!onlyKeys(workflow, ["name", "on", "permissions", "concurrency", "jobs"]) || !same(workflow.permissions, { contents: "read" })) throw new Error("Hosted CI uses only the supported workflow form and read-only permissions");
+ if (!onlyKeys(workflow.on, ["push", "pull_request"]) || Object.keys(workflow.on).length !== 2 || workflow.on.pull_request !== null || !same(workflow.on.push, { branches: ["main"] })) throw new Error("Hosted CI uses ordinary pull_request and push main only");
+ if (!same(workflow.concurrency, { group: "${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}", "cancel-in-progress": true })) throw new Error("Scope cancellation by workflow, event and PR or ref");
+ for (const id of suites) {
+  const job = workflow.jobs[id];
+  if (!onlyKeys(job, ["runs-on", "timeout-minutes", "services", "env", "steps"])) throw new Error(id + ": required jobs are unconditional, independent and fail closed");
+  const pg = job.services?.postgres;
+  if (!onlyKeys(job.services, ["postgres"]) || !onlyKeys(pg, ["image", "env", "ports", "options"]) || pg.image !== "postgres:17.6-alpine" || !same(pg.env, { POSTGRES_USER: "scoat", POSTGRES_PASSWORD: "fixture-only", POSTGRES_DB: "scoat" }) || !same(pg.ports, ["5432:5432"]) || pg.options !== '--health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30') throw new Error(id + ": require an isolated PostgreSQL 17.6 fixture service");
+  const env = { DATABASE_URL: "postgres://scoat:fixture-only@localhost:5432/scoat", ...(id === "operations" ? { SCOAT_PG_BIN: "/usr/lib/postgresql/18/bin" } : {}) };
+  if (!same(job.env, env)) throw new Error(id + ": require the fixture DATABASE_URL and matching tool environment");
+  const steps = job.steps;
+  const checkout = steps.findIndex(step => step.uses === "actions/checkout@v4");
+  if (checkout !== 0 || !same(steps[checkout].with, { "fetch-depth": 0 })) throw new Error(id + ": fetch full source/history with fetch-depth: 0 before consumers");
+  const node = steps.findIndex(step => step.uses === "actions/setup-node@v4");
+  if (node !== 1 || !same(steps[node].with, { "node-version": "24.21.0" })) throw new Error(id + ": install pinned Node 24.21.0 before consumers");
+  if (steps[2]?.run !== "npm ci" || steps[3]?.run !== "npm run build") throw new Error(id + ": npm ci and build precede every consumer");
+  for (const command of new Set(suiteCommands[id])) {
+   const count = steps.filter(step => step.run === command).length;
+   if (count !== suiteCommands[id].filter(value => value === command).length || steps.findIndex(step => step.run === command) < 4) throw new Error(id + ": Hosted CI runs " + command + " with its exact repetition count after build");
+  }
+  if (!same(steps.filter(step => suiteCommands[id].includes(step.run)).map(step => step.run), suiteCommands[id])) throw new Error(id + ": required commands retain suite order");
+  const allowed = new Set(["npm ci", "npm run build", ...suiteCommands[id], ...(id === "browser" || id === "operations" ? [chromiumInstall] : []), ...(id === "operations" ? [pgdgInstall, systemdNode, mediaInstall] : [])]);
+  for (const [index, step] of steps.entries()) {
+   if (step.uses !== undefined && index > 1) throw new Error(id + ": source and Node setup occur only once before consumers");
+   if (!onlyKeys(step, ["name", "run", "uses", "with"]) || (step.run !== undefined ? step.uses !== undefined || step.with !== undefined || !allowed.has(step.run.trim()) : !["actions/checkout@v4", "actions/setup-node@v4"].includes(step.uses))) throw new Error(id + ": supported literal steps only; no conditions, overrides, failure swallowing or background commands");
+  }
+ }
+ const foundation = workflow.jobs.foundation;
+ if (!onlyKeys(foundation, ["runs-on", "timeout-minutes", "needs", "if", "steps"]) || !Array.isArray(foundation.needs) || !same([...foundation.needs].sort(), [...suites].sort()) || foundation.if !== "${{ always() }}") throw new Error("foundation requires exactly five needs and always()");
+ const steps = foundation.steps;
+ if (steps?.length !== 2 || !same(steps[0], { uses: "actions/setup-node@v4", with: { "node-version": "24.21.0" } }) || !onlyKeys(steps[1], ["name", "env", "run"]) || !same(steps[1].env, { NEEDS_JSON: "${{ toJSON(needs) }}" }) || steps[1].run?.trim() !== aggregateCommand) throw new Error("foundation runs the exact fail-closed needs predicate after pinned Node");
 }
 
 export function checkLaneTools(lanes) {

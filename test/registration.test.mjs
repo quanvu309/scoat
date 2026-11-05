@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import pg from "pg";
@@ -156,7 +157,7 @@ test("callback-bound clients are deterministic, issuer-bound and immutable acros
   assert.notEqual(rotated.metadata(raw).client_id, result.client_id);
   const retired = new RegisteredClients(authConfigSchema.parse({ ...selected, registrationKeys: [{ version: "second", secret: "s".repeat(64) }] }));
   assert.equal(retired.resolve(result.client_id), undefined);
-  for (const id of [result.client_id.slice(0,-1), result.client_id + "x", result.client_id.replace("v1.","v2."), result.client_id.replace("connection_123", "connection_124"), result.client_id.slice(0,-1) + (result.client_id.endsWith("A") ? "B" : "A"), "unknown"]) assert.equal(clients.resolve(id), undefined);
+  for (const id of [result.client_id.slice(0,-1), result.client_id + "x", result.client_id.replace("v2.","v3."), result.client_id.replace("connection_123", "connection_124"), result.client_id.slice(0,-1) + (result.client_id.endsWith("A") ? "B" : "A"), "unknown"]) assert.equal(clients.resolve(id), undefined);
   const adapter = clients.adapter();
   assert.deepEqual(await adapter.find(result.client_id), resolved);
   assert.equal(await adapter.find("unknown"), undefined);
@@ -184,4 +185,34 @@ test("refusal diagnostics expose bounded field names and no attacker values", ()
   const json = JSON.stringify(diagnostic);
   for (const secret of ["never-print-this", "secret.example", "hidden", "arbitrary"]) assert.equal(json.includes(secret), false);
   assert.equal(clients.refusal(minimal), undefined);
+});
+
+
+test("Claude callbacks return HTTP 201 and remain bound to signed host-tagged clients", async () => {
+  const server = createServer((req, res) => registerClient(req, res, clients));
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    for (const uri of ["https://claude.ai/api/mcp/auth_callback", "http://localhost:1/callback", "http://localhost:65535/callback", "http://127.0.0.1:3118/callback"]) {
+      const response = await fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [uri] }) });
+      assert.equal(response.status, 201, await response.clone().text());
+      const { scope, ...registered } = await response.json();
+      assert.match(registered.client_id, /^scoat-cb\.v2\.first\.(claude|local|ip4)\./);
+      assert.deepEqual(clients.resolve(registered.client_id), registered);
+      assert.deepEqual(registered.redirect_uris, [uri]);
+      assert.equal(clients.resolve(registered.client_id.replace(/\.(claude|local|ip4)\./, ".gpt.")), undefined);
+    }
+    for (const uri of ["https://evil.example/callback", "http://localhost:0/callback", "http://localhost:65536/callback", "http://localhost:03118/callback", "http://127.0.0.2:3118/callback", "http://localhost:3118/callback?x=1", "https://claude.ai/api/mcp/auth_callback/", "https://claude.ai.evil.example/api/mcp/auth_callback"]) {
+      const response = await fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [uri] }) });
+      assert.equal(response.status, 400, uri);
+    }
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+test("v1 signed ChatGPT clients retain exact callback and keyring resolution", () => {
+  const redirect = "https://chatgpt.com/connector/oauth/legacy_connection";
+  const mac = createHmac("sha256", selected.registrationKeys[0].secret).update(JSON.stringify(["scoat-chatgpt-client-v1", selected.issuer, client.client_id, redirect])).digest("base64url");
+  const id = `scoat-cb.v1.first.legacy_connection.${mac}`;
+  assert.deepEqual(clients.resolve(id), publicClient({ client_id: id, redirect_uris: [redirect] }));
+  assert.equal(clients.resolve(id.replace("legacy_connection", "other")), undefined);
 });

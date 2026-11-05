@@ -50,6 +50,19 @@ export async function authLanes(databaseUrl) {
       assert.equal(denied.headers.get("location"), null);
     }
 
+    const hostCallbacks = ["https://claude.ai/api/mcp/auth_callback", "http://localhost:3118/callback", "http://127.0.0.1:65222/callback"];
+    for (const redirect of hostCallbacks) {
+      const response = await fetch(discovery.registration_endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [redirect] }) });
+      assert.equal(response.status, 201, await response.clone().text());
+      const host = await response.json();
+      const session = await f.login(host.client_id, undefined, undefined, false, redirect);
+      assert.equal((await f.rpc(session.token, "tools/list")).status, 200);
+      const wrong = redirect.startsWith("http:") ? redirect.replace(/:[0-9]+/, ":3119") : redirect + "/";
+      const params = new URLSearchParams({ client_id: host.client_id, redirect_uri: wrong, response_type: "code", scope: "openid scoat:read scoat:write", state: "host-binding-negative", resource: f.issuer + "/mcp", code_challenge: createHash("sha256").update("verifier".repeat(8)).digest("base64url"), code_challenge_method: "S256" });
+      const denied = await fetch(f.issuer + "/auth?" + params, { redirect: "manual" });
+      assert.equal(denied.status, 400);
+      assert.equal(denied.headers.get("location"), null);
+    }
     assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_artifacts WHERE model='Client'")).rows[0].count, "0");
     const request = { requestKey: randomUUID(), intent, profile: null };
     const start = await call(one.token, "start", request);
@@ -65,7 +78,7 @@ export async function authLanes(databaseUrl) {
     passed(2, {
       clients: [one.client, two.client],
       sameHunt: true,
-      automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0, callbackBoundCodeExchange: true, wrongCallbackRefusals: 3 },
+      automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0, callbackBoundCodeExchange: true, wrongCallbackRefusals: 6, hostCallbacks },
       loginSteps: one.steps,
     });
     const foreign = await f.login(registration.client_id, "same-email-other-subject");

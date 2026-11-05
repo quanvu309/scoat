@@ -29,13 +29,22 @@ const unsupported = new Set([
   "tls_client_certificate_bound_access_tokens", "dpop_bound_access_tokens", "authorization_signed_response_alg", "authorization_encrypted_response_alg", "authorization_encrypted_response_enc",
   "registration_access_token", "registration_client_uri", "client_id_issued_at", "client_secret_expires_at",
 ]);
-const callback = z.string().max(200).refine(value => value === chatgptRedirect || /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/.test(value)).brand<"ChatgptCallback">();
+export function callbackBinding(value: string) {
+  if (value === chatgptRedirect) return { host: "gpt" as const, part: "stable", redirect: value };
+  const chatgpt = /^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]{1,128})$/.exec(value);
+  if (chatgpt?.[1]) return { host: "gpt" as const, part: chatgpt[1], redirect: value };
+  if (value === "https://claude.ai/api/mcp/auth_callback") return { host: "claude" as const, part: "web", redirect: value };
+  const loopback = /^http:\/\/(localhost|127\.0\.0\.1)(?::([1-9][0-9]{0,4}))?\/callback$/.exec(value);
+  if (!loopback || (loopback[2] && Number(loopback[2]) > 65535)) return undefined;
+  return { host: loopback[1] === "localhost" ? "local" as const : "ip4" as const, part: loopback[2] ?? "default", redirect: value };
+}
+const callback = z.string().max(200).refine(value => callbackBinding(value) !== undefined).brand<"HostCallback">();
 const metadata = z.strictObject({
   redirect_uris: z.tuple([callback]),
   response_types: z.tuple([z.literal("code")]).optional(),
   grant_types: z.array(z.enum(["authorization_code", "refresh_token"])).min(1).max(2).refine(values => values.includes("authorization_code") && new Set(values).size === values.length).optional(),
   token_endpoint_auth_method: z.literal("none").optional(),
-  application_type: z.literal("web").optional(),
+  application_type: z.enum(["web", "native"]).optional(),
   subject_type: z.literal("public").optional(),
   scope: z.string().min(1).max(128).refine(value => {
     const scopes = value.split(" ");
@@ -50,6 +59,8 @@ const metadata = z.strictObject({
   software_id: display.optional(),
   software_version: display.optional(),
 }).catchall(extension).superRefine((value, ctx) => {
+  const binding = callbackBinding(value.redirect_uris[0]);
+  if (value.application_type === "native" && binding?.host !== "local" && binding?.host !== "ip4") ctx.addIssue({ code: "custom", path: ["application_type"], message: "Native clients require loopback callbacks" });
   if (Object.keys(value).length > 40) ctx.addIssue({ code: "custom", message: "Too many metadata members" });
   for (const key of Object.keys(value)) {
     if (key.length > 128 || unsupported.has(key)) ctx.addIssue({ code: "custom", path: [key], message: "Unsupported security metadata" });
@@ -74,31 +85,50 @@ export class RegisteredClients {
     return createHmac("sha256", secret).update(JSON.stringify(["scoat-chatgpt-client-v1", this.#issuer, this.#client.client_id, redirect])).digest("base64url");
   }
 
+  #boundClient(id: string, redirect: string) {
+    const binding = callbackBinding(redirect);
+    return { ...publicClient({ client_id: id, redirect_uris: [redirect] }), ...(binding?.host === "local" || binding?.host === "ip4" ? { application_type: "native" as const } : {}) };
+  }
+
+  #hostMac(secret: string, host: string, redirect: string) {
+    return createHmac("sha256", secret).update(JSON.stringify(["scoat-host-client-v2", this.#issuer, this.#client.client_id, host, redirect])).digest("base64url");
+  }
+
   #clientFor(redirect: z.infer<typeof callback>) {
     if (redirect === chatgptRedirect) return this.#client;
+    const binding = callbackBinding(redirect);
+    if (!binding) throw new Error("Unsupported host callback");
     const key = this.#keys[0];
-    const id = redirect.slice("https://chatgpt.com/connector/oauth/".length);
-    return publicClient({ client_id: `scoat-cb.v1.${key.version}.${id}.${this.#mac(key.secret, redirect)}`, redirect_uris: [redirect] });
+    const id = `scoat-cb.v2.${key.version}.${binding.host}.${binding.part}.${this.#hostMac(key.secret, binding.host, redirect)}`;
+    return this.#boundClient(id, redirect);
   }
 
   metadata(raw: unknown) {
     const parsed = metadata.safeParse(raw);
     if (!parsed.success) return parsed.error.issues.some(issue => issue.path[0] === "redirect_uris")
-      ? { error: "invalid_redirect_uri", error_description: "Only an exact supported ChatGPT callback is accepted" }
+      ? { error: "invalid_redirect_uri", error_description: "Only an exact supported host callback is accepted" }
       : { error: "invalid_client_metadata", error_description: "Unsupported OAuth client metadata" };
     return { ...this.#clientFor(parsed.data.redirect_uris[0]), scope: parsed.data.scope ?? "openid offline_access scoat:read scoat:write" };
   }
 
   resolve(id: string) {
-    const match = /^scoat-cb\.v1\.([A-Za-z0-9_-]{1,8})\.([A-Za-z0-9_-]{1,128})\.([A-Za-z0-9_-]{43})$/.exec(id);
-    if (!match) return undefined;
-    const [, version, connection, mac] = match;
+    const legacy = /^scoat-cb\.v1\.([A-Za-z0-9_-]{1,8})\.([A-Za-z0-9_-]{1,128})\.([A-Za-z0-9_-]{43})$/.exec(id);
+    const current = /^scoat-cb\.v2\.([A-Za-z0-9_-]{1,8})\.(gpt|claude|local|ip4)\.([A-Za-z0-9_-]{1,128})\.([A-Za-z0-9_-]{43})$/.exec(id);
+    if (!legacy && !current) return undefined;
+    const version = legacy?.[1] ?? current?.[1];
     const key = this.#keys.find(value => value.version === version);
-    const parsed = callback.safeParse(`https://chatgpt.com/connector/oauth/${connection}`);
+    const host = current?.[2];
+    const part = current?.[3];
+    const redirect = legacy ? `https://chatgpt.com/connector/oauth/${legacy[2]}`
+      : host === "gpt" ? `https://chatgpt.com/connector/oauth/${part}`
+      : host === "claude" && part === "web" ? "https://claude.ai/api/mcp/auth_callback"
+      : host === "local" || host === "ip4" ? `http://${host === "local" ? "localhost" : "127.0.0.1"}${part === "default" ? "" : ":" + part}/callback` : "";
+    const parsed = callback.safeParse(redirect);
+    const mac = legacy?.[3] ?? current?.[4];
     if (!key || !parsed.success || !mac) return undefined;
-    const expected = this.#mac(key.secret, parsed.data);
+    const expected = legacy ? this.#mac(key.secret, parsed.data) : this.#hostMac(key.secret, host ?? "", parsed.data);
     if (!timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return undefined;
-    return publicClient({ client_id: id, redirect_uris: [parsed.data] });
+    return this.#boundClient(id, parsed.data);
   }
 
   adapter(): Adapter {

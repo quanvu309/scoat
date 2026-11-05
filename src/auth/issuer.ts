@@ -125,6 +125,8 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       state: (ctx, value) => {
         if (!value || ctx.oidc.params?.resource !== resource || ctx.oidc.params?.code_challenge_method !== "S256")
           throw new errors.InvalidRequest("State, resource and PKCE S256 required");
+        const bound = registration?.resolve(String(ctx.oidc.params?.client_id));
+        if (bound && !bound.redirect_uris.includes(String(ctx.oidc.params?.redirect_uri))) throw new errors.InvalidRedirectUri("Registered callback mismatch");
       },
     },
     features: {

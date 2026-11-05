@@ -171,6 +171,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkRefreshPolicy(...["src/auth/issuer.ts","src/auth/registration.ts","src/auth/adapter.ts","src/server.ts","src/auth/link.ts","src/auth/erasure.ts"].map(file => fs.readFileSync(file,"utf8")));
+checkHostRegistration(fs.readFileSync("src/auth/registration.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));
   checkAuthVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
@@ -787,4 +788,9 @@ export function checkRefreshPolicy(issuer, registration, adapter, server, link, 
  if (!registration.includes('grant_types: ["authorization_code", "refresh_token"]') || !issuer.includes('scope: "scoat:read scoat:write offline_access"') || !registration.includes('"offline_access"') || !issuer.includes('["scoat:read", "scoat:write", "offline_access"].includes(value)')) throw new Error("Support offline access and refresh for static and registered clients");
  if (!adapter.includes('["RefreshToken","Grant","Session"].includes(model) ? 2592000') || !server.includes('Bearer scope="scoat:read scoat:write"')) throw new Error("Persist refresh artifacts for 30 days and advertise resource scope");
  if (!link.includes('await deleteAuthentication(client,') || !erasure.includes('DELETE FROM oauth_artifacts WHERE (model,id) IN (SELECT model,id FROM oauth_artifact_owners WHERE account=$1)')) throw new Error("Revoke owned refresh artifacts under link and erasure fences");
+}
+
+export function checkHostRegistration(registration, issuer) {
+  for (const required of ['brand<"HostCallback">', 'https://claude.ai/api/mcp/auth_callback', '(localhost|127\\.0\\.0\\.1)', 'Number(loopback[2]) > 65535', 'scoat-cb.v2.${key.version}.${binding.host}', 'scoat-host-client-v2', 'scoat-chatgpt-client-v1', 'timingSafeEqual', 'Registered clients are immutable and stateless']) if (!registration.includes(required)) throw new Error("Host registration requires typed callbacks, host-tagged immutable signed IDs and v1 keyring compatibility: " + required);
+  if (!issuer.includes('bound && !bound.redirect_uris.includes(String(ctx.oidc.params?.redirect_uri))')) throw new Error("Host registration requires exact signed callback binding, including loopback port");
 }

@@ -139,7 +139,7 @@ export function checkHostedCoverage(source) {
    before(command, pgdgInstall, "Install official PGDG PostgreSQL 18 client tools before the recovery lanes");
    if (job.steps.some(step => step.run === command) && job.env?.SCOAT_PG_BIN !== "/usr/lib/postgresql/18/bin") throw new Error(id + ": Point SCOAT_PG_BIN at the installed PGDG client tools");
   }
-  for (const command of [...suiteCommands.browser, "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"]) before(command, chromiumInstall, "Install Chromium with its system dependencies before browser lanes");
+  for (const command of [...suiteCommands.browser, ...(id === "protocol" ? ["npm run verify -- p05"] : []), "npm run verify -- p09-operations", "npm run perf -- p09", "npm run verify -- p09"]) before(command, chromiumInstall, "Install Chromium with its system dependencies before browser lanes");
   before("npm run verify -- p09-operations", systemdNode, "Provide setup-node's /usr/bin/node executable before systemd verification");
   if (job.steps.some(step => step.run === "npm run verify -- p09-operations")) {
    const node = job.steps.findIndex(step => step.uses === "actions/setup-node@v4");
@@ -170,7 +170,7 @@ export function checkHostedCoverage(source) {
    if (count !== suiteCommands[id].filter(value => value === command).length || steps.findIndex(step => step.run === command) < 4) throw new Error(id + ": Hosted CI runs " + command + " with its exact repetition count after build");
   }
   if (!same(steps.filter(step => suiteCommands[id].includes(step.run)).map(step => step.run), suiteCommands[id])) throw new Error(id + ": required commands retain suite order");
-  const allowed = new Set(["npm ci", "npm run build", ...suiteCommands[id], ...(id === "browser" || id === "operations" ? [chromiumInstall] : []), ...(id === "operations" ? [pgdgInstall, systemdNode, mediaInstall] : [])]);
+  const allowed = new Set(["npm ci", "npm run build", ...suiteCommands[id], ...(id === "browser" || id === "operations" || id === "protocol" ? [chromiumInstall] : []), ...(id === "operations" ? [pgdgInstall, systemdNode, mediaInstall] : [])]);
   for (const [index, step] of steps.entries()) {
    if (step.uses !== undefined && index > 1) throw new Error(id + ": source and Node setup occur only once before consumers");
    if (!onlyKeys(step, ["name", "run", "uses", "with"]) || (step.run !== undefined ? step.uses !== undefined || step.with !== undefined || !allowed.has(step.run.trim()) : !["actions/checkout@v4", "actions/setup-node@v4"].includes(step.uses))) throw new Error(id + ": supported literal steps only; no conditions, overrides, failure swallowing or background commands");

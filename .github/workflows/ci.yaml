@@ -151,7 +151,10 @@ jobs:
       - run: npm run verify -- p09-operations
       - run: npm run perf -- p09
       - name: Install ffmpeg for P09 story media
-        run: sudo apt-get install -y --no-install-recommends ffmpeg
+        timeout-minutes: 10
+        run: |
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
       - run: npm run verify -- p09
   watch-performance:
     runs-on: ubuntu-latest

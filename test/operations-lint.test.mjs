@@ -68,6 +68,10 @@ test("hosted CI covers P07 and P09 lanes with PGDG tools and no developer instal
  assert.throws(() => checkWorkflow(replaced(workflow, "postgresql-client-18\n", "postgresql-client\n")), /PGDG/);
  assert.throws(() => checkWorkflow(replaced(workflow, "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n", "      SCOAT_PG_BIN: /usr/lib/postgresql/18/bin\n      SCOAT_BASE_APP: /home/runner/base\n")), /developer homes/);
  assert.throws(() => checkWorkflow(replaced(workflow, "timeout-minutes: 60", "timeout-minutes: 240")), /timeout-minutes/);
+ assert.throws(() => checkWorkflow(replaced(workflow, "        timeout-minutes: 10\n", "")), /Bound ffmpeg/);
+ assert.throws(() => checkWorkflow(replaced(workflow, "        timeout-minutes: 10\n", "        timeout-minutes: 30\n")), /Bound ffmpeg/);
+ assert.throws(() => checkWorkflow(replaced(workflow, "          sudo env DEBIAN_FRONTEND=noninteractive apt-get update\n", "")), /Install ffmpeg/);
+ assert.throws(() => checkWorkflow(replaced(workflow, "          sudo env DEBIAN_FRONTEND=noninteractive apt-get install", "          sudo apt-get install")), /Install ffmpeg/);
  assert.throws(() => checkWorkflow(replaced(workflow, "      - run: npm run perf -- p09\n", "")), /perf -- p09/);
  assert.throws(() => checkWorkflow(original("9705fec", ".github/workflows/ci.yaml")), /Hosted CI runs npm run verify -- auth-ui/);
  assert.throws(() => checkWorkflow(replaced(workflow, '        run: sudo ln -sfn "$(command -v node)" /usr/bin/node\n', '        run: node --version\n')), /\/usr\/bin\/node executable/);

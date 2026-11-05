@@ -1,0 +1,10 @@
+import os from "node:os";
+import path from "node:path";
+import { withDatabase } from "./durable-database.mjs";
+import { controlLanes, controlRaceLanes } from "./control-lanes.mjs";
+import { evidence } from "./auth-evidence.mjs";
+process.env.SCOAT_EVIDENCE_DIR ??= path.join(os.homedir(),"tmp/scoat-delivery/p07","controls-"+Date.now());
+const report=await evidence("controls");
+const result=await withDatabase(async url=>({...await controlLanes(url),contention:await controlRaceLanes(url)}));
+await report.save("receipt.json",{...report.identity,base:"36095c9f6dce0eb6dbdf63151821ba0ee5566e18",...result});
+console.log(JSON.stringify({status:"PASS_LOCAL_ONLY",evidence:report.root,...result}));

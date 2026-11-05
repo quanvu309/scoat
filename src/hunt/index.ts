@@ -1,3 +1,6 @@
+import { verifiedControl } from "../controls/codec.js";
+import type { VerifiedControl } from "../controls/codec.js";
+import { agentRequestKey } from "./request-key.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { digest, StoreFailure } from "./postgres.js";
@@ -6,7 +9,7 @@ import { nonempty, offerIdSchema, compatibilitySchema, parseEvidence, validatePr
 import { priceQuotes, pickBest } from "./pricing.js";
 import { renderView } from "./view.js";
 import type { AccountScope } from "../domain.js";
-import type { Agent, Compatibility, Failure, HuntId, Instant, Intent, NonEmpty, Offer, OfferInput, Person, Profile, Proof, Quote, ReadyLink, ReleaseId, RequestKey, Result, RowId, RowRevision, Selection, } from "../domain.js";
+import type { Agent, Compatibility, Failure, HuntId, Instant, Intent, NonEmpty, Offer, OfferInput, Profile, Proof, Quote, ReadyLink, ReleaseId, RequestKey, Result, RowId, RowRevision, Selection, } from "../domain.js";
 import type { Knowledge, Release, Row } from "../knowledge/index.js";
 import type { Delivery } from "../delivery/index.js";
 import type { HuntStore } from "./store.js";
@@ -48,13 +51,14 @@ export type HuntRequest = { readonly op: "compatibility"; readonly requestKey: R
     readonly hunt: HuntId;
     readonly selection: Selection | null;
 };
+export type ControlOutcome = {hunt:HuntId; action:Control; status:"applied"|"unchanged"|"finished"};
 export type Control = {
     readonly kind: "stop";
 } | {
     readonly kind: "skip";
     readonly row: RowId;
 };
-export type SlotCompletion = { readonly kind: "pending" } | { readonly kind: "checked"; readonly checked?: string; readonly proof: NonEmpty<Proof>; readonly offers: readonly Offer["id"][] } | { readonly kind: "gap"; readonly reason: string };
+export type SlotCompletion = { readonly kind: "pending" } | { readonly kind: "checked"; readonly checked?: string | undefined; readonly proof: NonEmpty<Proof>; readonly offers: readonly Offer["id"][] } | { readonly kind: "gap"; readonly reason: string };
 export type RowView = Readonly<{
     row: Row;
     revision: RowRevision;
@@ -137,6 +141,7 @@ export class Hunts {
         }
     }
     async run({ agent, request, now }: { agent: Agent; request: HuntRequest; now: Instant }): Promise<HuntResult<HuntReply | { readonly hunts: readonly HuntView[]; readonly next?: HuntId | null }>> {
+        if ("requestKey" in request && !agentRequestKey.safeParse(request.requestKey).success) return failure("invalid", "Agent request key is invalid or reserved");
         let start: { release: Release } | null = null;
         if (request.op === "start") {
             try {
@@ -221,25 +226,32 @@ export class Hunts {
             return { ok: true, value: { view: projection(fresh,now) } };
         });
     }
-    async control({ person, hunt, requestKey, control, now }: { person: Person; hunt: HuntId; requestKey: RequestKey; control: Control; now: Instant }): Promise<Result<HuntReply>> {
-        return this.execute({ ...person, hunt, accountFence: "shared", huntFence: control.kind === "stop" ? "exclusive" : "shared", rows: control.kind === "skip" ? [control.row] : [], request: { key: requestKey, digest: digest({ hunt, control }) } }, async tx => {
+    async control({ confirmed }: { confirmed: VerifiedControl }): Promise<Result<ControlOutcome>> {
+        const value = verifiedControl(confirmed);
+        const { hunt, action:control, account, incarnation } = value.intent;
+        const key = z.string().startsWith("person:").brand<"PersonReceiptKey">().parse("person:"+value.nonce);
+        return this.execute<ControlOutcome>({ account, incarnation, hunt, accountFence:"shared", huntFence:control.kind === "stop" ? "exclusive" : "shared", rows:control.kind === "skip" ? [control.row] : [], request:{key,digest:digest(value)} },async tx=>{
+            const clock = await tx.databaseTime();
+            if(clock.milliseconds >= value.deadline) return failure("forbidden","Control confirmation expired");
             const state = await tx.snapshot(hunt);
-            if (!state) return failure("missing","Hunt unavailable");
-            if (state.final) return failure("conflict","Hunt is finished");
-            if (control.kind === "stop") await tx.putHunt({ ...state.hunt, stopRequestedAt: now });
-            else {
-                const row = state.rows.find(row => row.row === control.row);
-                if (!row) return failure("invalid","Unknown row");
-                if (!row.skippedByPerson) await tx.putRow({ ...row, skippedByPerson: now, revision: z.number().brand<"RowRevision">().parse(row.revision+1) });
+            if(!state) return failure("missing","Hunt unavailable");
+            if(state.final) return {ok:true,value:{hunt,action:control,status:"finished"}};
+            let changed=false;
+            if(control.kind === "stop") {
+                if(state.hunt.stopRequestedAt === null) { await tx.putHunt({...state.hunt,stopRequestedAt:clock.instant}); changed=true; }
+            } else {
+                const row=state.rows.find(row=>row.row===control.row);
+                if(!row) return failure("invalid","Unknown row");
+                if(!row.skippedByPerson) { await tx.putRow({...row,skippedByPerson:clock.instant,revision:z.number().brand<"RowRevision">().parse(row.revision+1)}); changed=true; }
             }
-            const fresh = await tx.snapshot(hunt);
-            if (!fresh) throw new Error("Lost hunt");
-            return { ok: true, value: { view: projection(fresh,now) } };
+            return {ok:true,value:{hunt,action:control,status:changed ? "applied" : "unchanged"}};
         });
     }
-    async inspect({ person, hunt, now }: { person: Person; hunt: HuntId; now?: Instant }): Promise<Result<HuntView>> {
-        const reply = await this.run({ agent: { ...person, kind: "agent", client: "trusted-inspect" }, request: { op: "read", hunt }, now: now ?? z.iso.datetime().brand<"UtcInstant">().parse(new Date().toISOString()) });
-        return reply.ok && "view" in reply.value ? { ok: true, value: reply.value.view } : reply.ok ? failure("missing","Missing view") : reply;
+    async view({ account, hunt, now }: { account: AccountScope; hunt: HuntId; now: Instant }): Promise<Result<HuntView>> {
+        return this.execute({...account,hunt,accountFence:"shared",huntFence:"shared",rows:[]},async tx=>{
+            const state=await tx.snapshot(hunt);
+            return state ? {ok:true,value:projection(state,now)} : failure("missing","Hunt unavailable");
+        });
     }
     async finished({ account, hunt }: { account: AccountScope; hunt: HuntId }): Promise<Result<HuntView>> {
         return this.execute({ ...account, hunt, accountFence: "shared", huntFence: "shared", rows: [] }, async tx => {

@@ -7,8 +7,8 @@ import { z } from "zod";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
-  const adapter = file.startsWith("src/mcp/") || file === "src/server.ts" || file === "src/card/index.ts";
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const adapter = file.startsWith("src/mcp/") || file === "src/server.ts" || file === "src/card/adapter.ts";
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   for (const item of ast.program.body) {
     if (item.type === "ImportDeclaration") {
       if (/\/(arch|fixtures)\//.test(item.source.value)) throw new Error(`${file}: keep design and fixture imports out of production source`);
@@ -35,9 +35,10 @@ export function checkWorkflow(source) {
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]s$/.test(file)) {
+    if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]sx?$/.test(file)) {
       const source = fs.readFileSync(file, "utf8");
       checkSdkImports(file, source);
+      checkControlImports(file,source);
       checkScratchAllocation(file, source);
     }
   }
@@ -49,12 +50,11 @@ export function checkDependencyPair(pkg) {
   if (pkg.dependencies["@modelcontextprotocol/ext-apps"] !== "1.7.5" || pkg.dependencies["@modelcontextprotocol/sdk"] !== "1.32.2") throw new Error("P01 spike supports ext-apps 1.7.5 with SDK 1.32.2; rerun compatibility spike before changing pins");
 }
 export function checkPersonBoundary(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
-  const fn = ast.program.body.find(item => item.type === "ExportNamedDeclaration" && item.declaration?.type === "FunctionDeclaration" && item.declaration.id?.name === "person")?.declaration;
-  if (!fn || fn.body.body.length !== 1 || fn.body.body[0].type !== "ThrowStatement") throw new Error("Person must always throw until separately verified same-account browser confirmation enables controls");
+  const ast=parse(source,{sourceType:"module",plugins:["typescript"]});
+  if(astNodes(ast).some(node=>node.type==="Identifier" && node.name==="person")) throw new Error("Legacy person mint must be removed; browser verification owns authority");
 }
 export function checkHostConfig(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const found = new Set();
   const arrays = new Map(astNodes(ast).filter(node=>node.type==="VariableDeclarator" && ["allowedHosts","allowedOrigins"].includes(node.id?.name)).map(node=>[node.id.name,node.init]));
   function exactSocketTemplate(element, prefix) {
@@ -99,7 +99,7 @@ export function checkHostConfig(source) {
   for (const name of ["allowedHosts", "allowedOrigins"]) if (!found.has(name)) throw new Error(`Use exact loopback socket localPort in ${name}`);
 }
 export function checkRegistryAdapter(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && (node.callee?.name === "registerAppTool" || node.callee?.property?.name === "registerTool")) throw new Error("Use registry-derived ListToolsRequestSchema handler; SDK 1.x normalizes root unions to empty objects");
@@ -141,6 +141,8 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkBrowserFlowClock(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/flows.ts", "utf8"));
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));
+  checkControlPrerequisites(fs.readFileSync("src/hunt/index.ts", "utf8"),fs.readFileSync("src/mcp/index.ts", "utf8"));
+  checkControlVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md","utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md","utf8"),fs.readFileSync("scripts/verify.mjs","utf8"));
   checkMemoryVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"),fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"));
   checkPublicAuthority(fs.readFileSync("src/index.ts", "utf8"));
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
@@ -171,6 +173,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkDependencyPair(JSON.parse(fs.readFileSync("package.json", "utf8")));
   const adapter = fs.readFileSync("src/mcp/index.ts", "utf8");
   checkPersonBoundary(adapter);
+  checkBrowserControls(fs.readFileSync("src/controls/codec.ts","utf8"),fs.readFileSync("src/hunt/index.ts","utf8"));
   checkRegistryAdapter(adapter);
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
@@ -178,7 +181,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
 }
 
 export function checkKnowledgeTypes(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (["TSParameterProperty", "TSEnumDeclaration", "TSModuleDeclaration"].includes(node.type)) throw new Error("Knowledge must use erasable TypeScript for Node strip-only tests; declare fields explicitly");
@@ -188,9 +191,10 @@ export function checkKnowledgeTypes(source) {
 }
 
 export function checkHuntAuthority(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
+    if (["TSTypeAliasDeclaration","TSInterfaceDeclaration"].includes(node.type) && node.id?.name === "Person") throw new Error("Replace structural Person with nominal verified control authority");
     if (node.type === "TSPropertySignature" && node.key?.name === "stackProof") throw new Error("Replace unbound stackProof with exact-set compatibility authority");
     if (node.type === "TSPropertySignature" && node.key?.name === "__brand") throw new Error("Derive identifier brands from validated schemas using z.$brand");
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
@@ -199,7 +203,7 @@ export function checkHuntAuthority(source) {
 }
 
 export function checkCandidateSearch(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && node.callee?.property?.name === "sort" && JSON.stringify(node.arguments).includes('"name":"key"')) throw new Error("Precompute candidate rank keys before sorting");
@@ -210,7 +214,7 @@ export function checkCandidateSearch(source) {
 }
 
 export function checkViewCoverage(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const finishable = ast.program.body.find(node => node.declaration?.id?.name === "finishable")?.declaration;
   if (finishable && !finishable.params.some(parameter => parameter.name === "release")) throw new Error("Finishability requires pinned release recipes to detect missing whole rows");
   if (finishable && !finishable.params.some(parameter => parameter.name === "originalSeller")) throw new Error("Finishability requires originalSeller to exclude the original shop from other-seller coverage");
@@ -229,13 +233,13 @@ function astNodes(root) {
   return result;
 }
 export function checkCodeAuthority(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const evidence = ast.program.body.find(node => node.declaration?.id?.name === "parseEvidence")?.declaration;
   if (evidence && !astNodes(evidence).some(node => node.type === "CallExpression" && node.callee?.name === "isOfficialSource")) throw new Error("Validate retailer-tested code against isOfficialSource and the pinned release; origin labels are not authority");
 }
 export function checkScratchAllocation(file, source) {
   if (file === "scripts/scratch.mjs") return;
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if ((node.type === "ImportSpecifier" && node.imported?.name === "mkdtemp") || (node.type === "CallExpression" && (node.callee?.name === "mkdtemp" || node.callee?.property?.name === "mkdtemp"))) throw new Error(`${file}: use scratchDirectory so an absent ~/tmp parent is created before allocation`);
@@ -244,12 +248,12 @@ export function checkScratchAllocation(file, source) {
   visit(ast.program);
 }
 export function checkScenarioProjection(domain, hunt) {
-  const domainNodes = astNodes(parse(domain, { sourceType: "module", plugins: ["typescript"] }));
+  const domainNodes = astNodes(parse(domain, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   for (const conditional of domainNodes.filter(node => node.type === "TSPropertySignature" && node.key?.name === "conditional")) {
     const fields = new Set(astNodes(conditional.typeAnnotation).filter(node => node.type === "TSPropertySignature").map(node => node.key?.name));
     if (["selection", "backLater", "perks"].some(field => !fields.has(field))) throw new Error("Each conditional scenario must retain selection, backLater and perks from its authorized offer set");
   }
-  const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript"] }));
+  const huntNodes = astNodes(parse(hunt, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   const view = huntNodes.find(node => node.type === "TSTypeAliasDeclaration" && node.id?.name === "HuntView");
   if (view && !astNodes(view).some(node => node.type === "TSPropertySignature" && node.key?.name === "quotes")) throw new Error("Retain all quotes in HuntView so structured and text renderers share every scenario");
 }
@@ -260,7 +264,7 @@ export function checkDurableFences(source) {
 }
 
 export function checkStartReplay(source) {
-  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] });
   const method = astNodes(ast).find(node => node.type === "ClassMethod" && node.key?.name === "run");
   const calls = astNodes(method).filter(node => node.type === "CallExpression");
   const replay = calls.find(node => node.callee?.property?.name === "priorReceipt");
@@ -269,7 +273,7 @@ export function checkStartReplay(source) {
 }
 
 export function checkDurableCommands(source) {
-  const nodes = astNodes(parse(source, { sourceType: "module", plugins: ["typescript"] }));
+  const nodes = astNodes(parse(source, { sourceType: "module", plugins: ["typescript", "jsx"] }));
   if (nodes.some(node => node.type === "CallExpression" && node.callee?.name === "finishable")) throw new Error("Use canonical HuntView.progress for the finish decision so inferred seller coverage agrees with the rendered view");
 }
 
@@ -313,10 +317,10 @@ export function checkRemoteBoundary(source) {
 }
 export function checkPublicAuthority(source) {
   const nodes = parsedNodes(source);
-  const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/auth(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
+  const authorityImports = new Set(nodes.filter(node => node.type === "ImportDeclaration" && node.importKind !== "type" && /\/(?:auth|controls)(?:\/|$)/.test(node.source.value)).flatMap(node => node.specifiers.filter(specifier => specifier.importKind !== "type").map(specifier => specifier.local.name)));
   for (const node of nodes) {
     if (node.exportKind === "type") continue;
-    if (((node.type === "ExportDefaultDeclaration" || node.type === "ExportNamedDeclaration") && astNodes(node.declaration).some(part => part.type === "Identifier" && authorityImports.has(part.name))) || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/auth(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
+    if (((node.type === "ExportDefaultDeclaration" || node.type === "ExportNamedDeclaration") && astNodes(node.declaration).some(part => part.type === "Identifier" && authorityImports.has(part.name))) || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && /\/(?:auth|controls)(?:\/|$)/.test(node.source?.value ?? "")) || (node.type === "ExportSpecifier" && node.exportKind !== "type" && (authorityImports.has(node.local?.name) || ["authenticate","person","principalFor","resolveIdentity","mount"].includes(node.local?.name)))) throw new Error("Keep runtime principal constructors and authority adapters out of the public barrel; use named value exports");
   }
 }
 export function checkGrantRenewal(source) {
@@ -506,4 +510,64 @@ export function checkBrowserFlowClock(issuer,flows) {
 }
 export function checkMemoryVerification(skill,index) {
  if (!skill.split("---")[1]?.includes("P06") || !skill.split("## Completion")[0].includes("features/memory.md") || !skill.includes("For identity linking, also load [memory and erasure](features/memory.md)") || !index.includes("[memory and erasure](memory.md)")) throw new Error("Route Memory, linking and erasure changes to features/memory.md");
+}
+
+export function checkControlPrerequisites(hunt,wire) {
+ const nodes=parsedNodes(hunt);
+ const run=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="run");
+ const guard=run?.body.body[0];
+ const test=guard?.test;
+ const parse=test?.right?.argument?.object;
+ const returned=guard?.consequent;
+ const valid=guard?.type==="IfStatement" && test?.type==="LogicalExpression" && test.operator==="&&"
+  && test.left.type==="BinaryExpression" && test.left.operator==="in" && test.left.left.value==="requestKey" && test.left.right.name==="request"
+  && test.right.type==="UnaryExpression" && test.right.operator==="!" && test.right.argument.property?.name==="success"
+  && parse?.type==="CallExpression" && member(parse.callee,"agentRequestKey","safeParse") && parse.arguments.length===1 && member(parse.arguments[0],"request","requestKey")
+  && returned?.type==="ReturnStatement" && returned.argument.callee?.name==="failure" && returned.argument.arguments[0]?.value==="invalid";
+ const wireNodes=parsedNodes(wire);
+ const input=wireNodes.find(node=>node.type==="VariableDeclarator" && node.id.name==="huntInput");
+ const keys=astNodes(input).filter(node=>node.type==="ObjectProperty" && node.key.name==="requestKey");
+ if (!valid || keys.length!==4 || keys.some(node=>node.value.name!=="agentRequestKey")) throw new Error("Reserve person receipt keys at the live wire and first agent domain boundary");
+ const control=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="control");
+ const stop=astNodes(control).find(node=>node.type==="IfStatement" && node.test.type==="BinaryExpression" && member(node.test.left,"control","kind") && node.test.right.value==="stop");
+ const preserved=stop?.consequent.body?.[0];
+ if (preserved?.type!=="IfStatement" || preserved.test.operator!=="===" || preserved.test.left?.property?.name!=="stopRequestedAt" || !member(preserved.test.left?.object,"state","hunt") || preserved.test.right?.type!=="NullLiteral" || (preserved.consequent?.expression ?? preserved.consequent?.body?.[0]?.expression)?.type!=="AwaitExpression" || !member((preserved.consequent.expression ?? preserved.consequent.body?.[0]?.expression).argument?.callee,"tx","putHunt")) throw new Error("Preserve the first accepted Stop timestamp");
+}
+
+export function checkBrowserControls(codec,hunt) {
+ const nodes=parsedNodes(codec);
+ const issue=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="issue");
+ const deadline=astNodes(issue).find(node=>node.type==="ObjectProperty" && node.key.name==="deadline");
+ if(deadline?.value.type!=="BinaryExpression" || !member(deadline.value.left?.callee,"Math","floor") || deadline.value.left.arguments[0]?.name!=="databaseTime") throw new Error("Round database milliseconds before signing the strict integer deadline");
+ const verify=nodes.find(node=>node.type==="ClassMethod" && node.key.name==="verify");
+ const constructions=nodes.filter(node=>node.type==="NewExpression" && node.callee.name==="Authority");
+ if(constructions.length!==1 || constructions[0].start<verify?.start || constructions[0].end>verify?.end) throw new Error("Only verified browser confirmation constructs authority");
+ const authorityUses=new Set(nodes.flatMap(node=>node.type==="ClassDeclaration" && node.id?.name==="Authority"?[node.id]:node.type==="TSTypeReference" && node.typeName.name==="Authority"?[node.typeName]:[]));
+ authorityUses.add(constructions[0].callee);
+ if(nodes.some(node=>node.type==="Identifier" && node.name==="Authority" && !authorityUses.has(node))) throw new Error("Only verified browser confirmation constructs authority; never alias or reflect its constructor");
+ const authority=nodes.find(node=>node.type==="ClassDeclaration" && node.id?.name==="Authority");
+ const constructor=authority?.body.body.find(node=>node.type==="ClassMethod" && node.kind==="constructor");
+ const enrollments=nodes.filter(node=>node.type==="CallExpression" && member(node.callee,"valid","add"));
+ if(enrollments.length!==1 || enrollments[0].start<constructor?.start || enrollments[0].end>constructor?.end || enrollments[0].arguments.length!==1 || enrollments[0].arguments[0].type!=="ThisExpression") throw new Error("Enroll only this authority inside its constructor");
+ const guard=nodes.find(node=>node.type==="FunctionDeclaration" && node.id.name==="verifiedControl");
+ const first=guard?.body.body[0];
+ if(first?.type!=="IfStatement" || first.test.type!=="UnaryExpression" || !member(first.test.argument?.callee,"valid","has") || first.consequent.type!=="ThrowStatement") throw new Error("Check runtime authority identity before storage");
+ const control=parsedNodes(hunt).find(node=>node.type==="ClassMethod" && node.key.name==="control");
+ const initial=control?.body.body[0]?.declarations?.[0]?.init;
+ if(initial?.callee?.name!=="verifiedControl") throw new Error("Check runtime authority identity before storage");
+ if(!astNodes(control).some(node=>node.type==="AwaitExpression" && member(node.argument?.callee,"tx","databaseTime"))) throw new Error("Check control expiry with transaction database time");
+}
+
+export function checkControlVerification(skill,index,runner) {
+ if(!skill.split("---")[1]?.includes("P07 browser-authorized Stop and Skip") || !skill.split("## Completion")[0].includes("features/controls.md") || !index.includes("[browser controls](controls.md)") || !runner.includes('process.argv[2] === "p07-controls"') || !runner.includes('import("./verify-controls.mjs")')) throw new Error("Route browser controls to features/controls.md and the runnable p07-controls branch");
+}
+
+export function checkControlImports(file,source) {
+ if(!file.startsWith("src/mcp/"))return;
+ const nodes=parsedNodes(source);
+ if(nodes.some(node=>node.type==="ImportExpression" || node.type==="CallExpression" && node.callee.type==="Import")) throw new Error("MCP cannot import codec authority dynamically; keep imports static and auditable");
+ if(nodes.some(node=>(node.type==="ExportNamedDeclaration" || node.type==="ExportAllDeclaration") && node.source?.value.includes("/controls/"))) throw new Error("MCP cannot import codec authority through re-exports");
+ for(const node of nodes.filter(node=>node.type==="ImportDeclaration" && node.source.value.includes("/controls/"))) {
+  if(node.specifiers.some(item=>(node.importKind!=="type" && item.importKind!=="type") || item.imported?.name!=="ControlLinksFor"))throw new Error("MCP cannot import codec authority; accept only the control link function type");
+ }
 }

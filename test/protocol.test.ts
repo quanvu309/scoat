@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { launch, connect } from "../scripts/driver.mjs";
-import { toolCatalog, dispatch, person, schemas } from "../dist/mcp/index.js";
+import { toolCatalog, dispatch, schemas } from "../dist/mcp/index.js";
 
 test("HTTP transport rejects foreign Origins and accepts native and loopback clients", async () => {
   const server = await launch();
@@ -71,7 +71,7 @@ test("ordinary HTTP client sees app-only tool but cannot authorize it", async ()
     assert.equal(guide.structuredContent.rows.length, 8);
   } finally { if (client) await client.close(); await server.close(); }
   assert.deepEqual(server.logs, []);
-  await assert.rejects(person({ grant: "arbitrary", hunt: "h" }), /authorization unavailable/);
+  assert.equal("person" in await import("../dist/mcp/index.js"),false);
 });
 test("pinned SDK exposes app-only metadata to an ordinary raw Client", async () => {
   const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");

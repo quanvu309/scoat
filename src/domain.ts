@@ -106,12 +106,6 @@ export type Agent = Readonly<{
     client: string;
     kind: "agent";
 }>;
-export type Person = Readonly<{
-    incarnation: Incarnation;
-    account: AccountId;
-    kind: "person";
-    grant: Id<"AppGrant">;
-}>;
 export type Failure = Readonly<{
     code: "invalid" | "forbidden" | "missing" | "conflict" | "key-reused" | "incomplete" | "unproven";
     message: string;

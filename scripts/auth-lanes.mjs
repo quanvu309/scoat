@@ -3,7 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { authFixture } from "./auth-fixture.mjs";
 const read = (result) => {
   assert.ok(!result.isError, JSON.stringify(result));
-  return result.structuredContent;
+  return result._meta?.["scoat/readCapability"] ?? result.structuredContent;
 };
 export async function authLanes(databaseUrl) {
   const f = await authFixture(databaseUrl);
@@ -273,12 +273,10 @@ export async function authLanes(databaseUrl) {
         })
       ).isError,
     );
-    const contested = read(
-      await f.tool(active.token, "scoat_card", {
-        op: "open",
-        hunt: view.hunt,
-      }),
-    );
+    const opened = await f.tool(active.token, "scoat_card", {op:"open",hunt:view.hunt});
+    const contested = read(opened);
+    assert.equal(opened.structuredContent,undefined);
+    assert(!JSON.stringify(opened.content).includes(contested.grant));
     const renewals = await Promise.all(
       [1, 2].map(() =>
         f.tool(active.token, "scoat_card", {
@@ -290,11 +288,12 @@ export async function authLanes(databaseUrl) {
     );
     assert.equal(renewals.filter((result) => result.isError).length, 1);
     assert.equal(
-      renewals.filter((result) => result.structuredContent?.grant).length,
+      renewals.filter((result) => result._meta?.["scoat/readCapability"]?.grant).length,
       1,
     );
     passed(7, {
       expiredReadDenied: true,
+      capabilityPrivateMetadataOnly: true,
       renewedSameBinding: true,
       revokedReadDenied: true,
       concurrentRenewalSingleWinner: true,
@@ -447,12 +446,12 @@ export async function authLanes(databaseUrl) {
     assert.equal((await f.rpc(linkedLogin.token, "tools/list")).status, 401);
     await assert.rejects(
       capabilities.open(priorPrincipal, view.hunt),
-      /Inactive account incarnation/,
+      /revoked/,
     );
     for (const op of ["read", "renew", "revoke"])
       await assert.rejects(
         capabilities.use(priorPrincipal, view.hunt, priorGrant.grant, op),
-        /Inactive account incarnation/,
+        /revoked/,
       );
     const version = (await f.store.pool.query("SHOW server_version")).rows[0]
       .server_version;

@@ -36,7 +36,7 @@ try {
  for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "phone", width: 390, height: 844 }]) {
   const page = await browser.newPage({ viewport });
   page.on("pageerror", error => errors.push(error.message));
-  for (const entry of [...browserCases.map(item => ({ id: item.id, url: "/cases/" + item.id })), { id: "landing", url: "/" }, { id: "connect-chatgpt", url: "/connect/#chatgpt" }, { id: "connect-claude", url: "/connect/#claude" }]) {
+  for (const entry of [...browserCases.filter(item => !beforeRoot || !item.fixtureOnly).map(item => ({ id: item.id, url: "/cases/" + item.id, fixtureOnly: Boolean(item.fixtureOnly) })), { id: "landing", url: "/" }, { id: "connect-chatgpt", url: "/connect/#chatgpt" }, { id: "connect-claude", url: "/connect/#claude" }]) {
    await page.goto("about:blank");
    const response = await page.goto(base + entry.url);
    assert.equal(response.status(), 200, entry.id);
@@ -76,7 +76,7 @@ try {
    await page.evaluate(() => document.activeElement?.blur());
    const file = path.join(root, `${entry.id}-${viewport.name}.png`);
    await page.screenshot({ path: file, fullPage: true });
-   receipts.push({ page: entry.id, viewport: viewport.name, ...measurement, screenshot: file });
+   receipts.push({ page: entry.id, viewport: viewport.name, fixtureOnly: Boolean(entry.fixtureOnly), ...measurement, screenshot: file });
   }
   await page.close();
  }

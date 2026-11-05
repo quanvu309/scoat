@@ -49,3 +49,9 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-permissions { display: grid; gap: .75rem; padding-inline-start: 1.25rem; margin-block: .5rem 1.5rem; }
 .account-permissions li::marker { color: var(--primary); }
 .account-content button[value="erase"], .account-content button[value="deny"] { background: var(--card); border-color: var(--border); color: var(--foreground); }
+.account-content button.account-secondary { background: var(--card); border-color: var(--border); color: var(--foreground); }
+.account-content .account-code { font: 1.5rem var(--font-mono); letter-spacing: .4em; text-align: center; }
+.account-content .account-after-form { margin-block-start: 1rem; }
+.account-resend { margin-block-start: 1.5rem; padding-block-start: 1.25rem; border-block-start: 1px solid var(--border); }
+.account-resend form { margin-block-start: .75rem; }
+.account-resend p:last-child { margin-block: .5rem 0; }

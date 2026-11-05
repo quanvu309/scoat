@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { parse } from "parse5";
 import { sendPage, pageHead, refusalPage } from "../dist/browser/page.js";
-import { consent, enroll, link } from "../dist/browser/views.js";
+import { consent, enroll, link, emailEntry, emailCode } from "../dist/browser/views.js";
 
 function elements(html) {
  const result = [];
@@ -48,5 +48,42 @@ test("enrollment and linking keep browser-bound native confirmations", () => {
   assert.equal(form.attrs.find(attr => attr.name === "method").value, "post");
   assert.equal(form.attrs.find(attr => attr.name === "action").value, action);
   assert.ok(nodes.some(node => node.tagName === "input" && node.attrs.some(attr => attr.name === "value" && attr.value === "bound-confirmation")));
+ }
+});
+test("email entry safely retains the address and retry action after a mail failure", () => {
+ const html = emailEntry({ email: 'alex+<test>"@example.com', csrf: 'bound"csrf', action: "/future/email", state: "mail-failed" });
+ const nodes = elements(html);
+ const attr = (node, name) => node.attrs?.find(item => item.name === name)?.value;
+ const form = nodes.find(node => node.tagName === "form");
+ assert.equal(attr(form, "action"), "/future/email");
+ assert.equal(attr(form, "method"), "post");
+ assert.equal(attr(nodes.find(node => attr(node, "name") === "email"), "value"), 'alex+<test>"@example.com');
+ assert.equal(attr(nodes.find(node => attr(node, "name") === "csrf"), "value"), 'bound"csrf');
+ assert.ok(html.includes("Try sending again"));
+ assert.ok(nodes.some(node => attr(node, "role") === "alert"));
+ assert.ok(!nodes.some(node => node.tagName === "test"));
+});
+test("code states keep challenge-bound verification and resend separate", () => {
+ const input = { email: "alex@example.com", csrf: "csrf-bound", challenge: "browser-bound", verifyAction: "/future/verify", resendAction: "/future/resend", changeEmailHref: "/future/email" };
+ const attr = (node, name) => node.attrs?.find(item => item.name === name)?.value;
+ for (const state of ["ready", "invalid", "resent", "expired", "too-many-attempts"]) {
+  const nodes = elements(emailCode({ ...input, state }));
+  const forms = nodes.filter(node => node.tagName === "form");
+  const inactive = state === "expired" || state === "too-many-attempts";
+  assert.deepEqual(forms.map(node => attr(node, "action")), inactive ? [input.resendAction] : [input.verifyAction, input.resendAction]);
+  for (const form of forms) {
+   assert.equal(attr(form, "method"), "post");
+   assert.ok(form.childNodes.some(node => node.tagName === "input" && attr(node, "name") === "challenge" && attr(node, "value") === input.challenge));
+   assert.ok(form.childNodes.some(node => node.tagName === "input" && attr(node, "name") === "csrf" && attr(node, "value") === input.csrf));
+  }
+  const code = nodes.find(node => attr(node, "name") === "code");
+  assert.equal(Boolean(code), !inactive);
+  if (code) {
+   assert.equal(attr(code, "autocomplete"), "one-time-code");
+   assert.equal(attr(code, "inputmode"), "numeric");
+   assert.equal(attr(code, "pattern"), "[0-9]{6}");
+   assert.equal(attr(code, "maxlength"), "6");
+   assert.equal(attr(code, "aria-invalid"), state === "invalid" ? "true" : undefined);
+  }
  }
 });

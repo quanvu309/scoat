@@ -6,6 +6,27 @@ type Observation = z.infer<typeof observationSchema>;
 const escapeHtml = (value: string) => value.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 const escape = escapeHtml;
 const pounds = (pence: number) => "GBP " + (pence / 100).toFixed(2);
+type EmailEntry = { email: string; csrf: string; action: `/${string}`; state: "ready" | "mail-failed" };
+type EmailCode = {
+ email: string;
+ csrf: string;
+ challenge: string;
+ verifyAction: `/${string}`;
+ resendAction: `/${string}`;
+ changeEmailHref: `/${string}`;
+ state: "ready" | "invalid" | "resent" | "expired" | "too-many-attempts";
+};
+export function emailEntry(input: EmailEntry): string {
+ const failed = input.state === "mail-failed";
+ return `<title>${failed ? "Let’s try sending that again" : "Welcome to Scoat"}</title><p>Sign in or create your account with your email. We’ll send you a six-digit code. No password to remember.</p>${failed ? '<div class="account-notice" role="alert"><strong>Your code couldn’t be sent</strong><p>Check your email address and try again. You haven’t been signed in.</p></div>' : ""}<form method="post" action="${escapeHtml(input.action)}"><input type="hidden" name="csrf" value="${escapeHtml(input.csrf)}"><label for="email">Email address</label><input id="email" type="email" name="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="254" value="${escapeHtml(input.email)}" placeholder="you@example.com" required><button>${failed ? "Try sending again" : "Continue with email"}</button></form><p class="account-help account-after-form">Keep this page open. You’ll enter the code here.</p>`;
+}
+export function emailCode(input: EmailCode): string {
+ const inactive = input.state === "expired" || input.state === "too-many-attempts";
+ const title = input.state === "expired" ? "Your code has expired" : input.state === "too-many-attempts" ? "Let’s use a new code" : "Check your email";
+ const notice = input.state === "expired" ? "Codes expire after 10 minutes. Request a new one below to continue." : input.state === "too-many-attempts" ? "There have been too many attempts. For your security, this code can’t be used again. Request a new code to continue." : input.state === "invalid" ? "That code didn’t match. Check the six digits in your latest email and try again." : input.state === "resent" ? "A new code is on its way. Use the code in your latest email." : "";
+ const hidden = `<input type="hidden" name="csrf" value="${escapeHtml(input.csrf)}"><input type="hidden" name="challenge" value="${escapeHtml(input.challenge)}">`;
+ return `<title>${title}</title><p>${inactive ? "Continue signing in to" : "Enter the six-digit code sent to"}<br><strong>${escapeHtml(input.email)}</strong></p>${notice ? `<div class="account-notice" role="${input.state === "resent" ? "status" : "alert"}">${notice}</div>` : ""}${inactive ? "" : `<form method="post" action="${escapeHtml(input.verifyAction)}">${hidden}<label for="code">Six-digit code</label><input class="account-code" id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" aria-describedby="code-help" required${input.state === "invalid" ? ' aria-invalid="true"' : ""}><p id="code-help" class="account-help">Your code works once and expires in 10 minutes.</p><button>Verify and continue</button></form>`}<div class="account-resend"><p class="account-help">${inactive ? "Need a fresh code?" : "No email? Check your spam folder, or send a new code."}</p><form method="post" action="${escapeHtml(input.resendAction)}">${hidden}<button class="account-secondary">${inactive ? "Send a new code" : "Resend code"}</button></form><p><a href="${escapeHtml(input.changeEmailHref)}">Use a different email</a></p></div>`;
+}
 export function eraseStatus() {
  return `<title>Check your erasure result</title><p>Enter the status secret you saved before erasing your account. You do not need to sign in. Completed results remain available for 24 hours.</p><form method="post" action="/account/erase-status"><label>Status secret <input type="password" name="status" maxlength="128" required autocomplete="off"></label><button>Check erasure result</button></form>`;
 }

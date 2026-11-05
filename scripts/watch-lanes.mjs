@@ -397,7 +397,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
    await popup.getByRole("button", { name: "Start watching" }).click();
    const blocked = await popup.evaluate(() => document.querySelector("input[name=recipient]").validity.valueMissing);
    assert.equal(blocked, true);
-   assert.equal(await popup.title(), "Confirm Scoat price watch");
+   assert.equal(await popup.title(), "Confirm Scoat price watch · Scoat");
    await popup.screenshot({ path: path.join(evidence, "p08-review-8-move-consent.png"), fullPage: true });
    await popup.getByLabel(/Send alerts for all my watches/).check();
    await popup.getByRole("button", { name: "Start watching" }).click();

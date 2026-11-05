@@ -20,7 +20,25 @@ export async function authLanes(databaseUrl) {
     transcript.push({ lane, status: "PASS", fixtureOnly: true, ...data });
   try {
     assert.equal((await f.rpc(null, "tools/list")).status, 401);
-    const one = await f.login();
+    const one = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
+    assert.equal(typeof one.refresh, "string", "code exchange must issue a refresh token");
+    const refresh = async (login, value = login.refresh) => {
+      const response = await fetch(f.issuer + "/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: login.client, grant_type: "refresh_token", refresh_token: value, resource: f.issuer + "/mcp" }) });
+      return { status: response.status, body: await response.json() };
+    };
+    const renewable = await f.login("host-one", "refresh-only", "offline_access scoat:read scoat:write");
+    const renewablePrincipal = await f.authenticate(renewable.token);
+    const lifetimes = await f.store.pool.query("SELECT model,extract(epoch FROM expires_at-now()) AS seconds FROM oauth_artifacts WHERE model=ANY($1) AND id IN (SELECT id FROM oauth_artifact_owners WHERE account=$2)", [["Grant", "Session", "RefreshToken"], renewablePrincipal.agent.account]);
+    for (const model of ["Grant", "Session", "RefreshToken"]) assert.ok(lifetimes.rows.some(row => row.model === model && Number(row.seconds) > 29 * 86400), model + " must outlive access tokens");
+    await f.store.pool.query("UPDATE oauth_artifacts SET expires_at=now()-interval '1 second',payload=jsonb_set(payload,'{exp}',to_jsonb(floor(extract(epoch FROM now()))::bigint-1)) WHERE model='AccessToken' AND payload->>'accountId'=$1", [renewablePrincipal.agent.account]);
+    assert.equal((await f.rpc(renewable.token, "tools/list")).status, 401);
+    const refreshedTokens = await refresh(renewable);
+    assert.equal(refreshedTokens.status, 200, JSON.stringify(refreshedTokens.body));
+    assert.notEqual(refreshedTokens.body.refresh_token, renewable.refresh);
+    assert.equal((await f.rpc(refreshedTokens.body.access_token, "tools/list")).status, 200);
+    assert.equal((await refresh(renewable)).body.error, "invalid_grant");
+    assert.equal((await refresh(renewable, refreshedTokens.body.refresh_token)).body.error, "invalid_grant");
+    passed("refresh", { controlledAccessExpiry: true, rotation: true, reusedTokenAndGrantRefused: true, parentLifetimeDays: 30 });
     const discovery = await (await fetch(f.issuer + "/.well-known/oauth-authorization-server")).json();
     assert.equal(discovery.registration_endpoint, f.issuer + "/reg");
     assert.deepEqual(discovery.code_challenge_methods_supported, ["S256"]);
@@ -41,7 +59,7 @@ export async function authLanes(databaseUrl) {
     });
     assert.equal(scopedResponse.status, 201);
     const scoped = await scopedResponse.json();
-    assert.deepEqual(scoped.grant_types, ["authorization_code"]);
+    assert.deepEqual(scoped.grant_types, ["authorization_code", "refresh_token"]);
     const scopedLogin = await f.login(scoped.client_id, undefined, undefined, false, callback);
     for (const wrong of ["https://chatgpt.com/connector/oauth/another_connection", "https://attacker.example/cb", "https://chatgpt.com/connector_platform_oauth_redirect"]) {
       const params = new URLSearchParams({ client_id: scoped.client_id, redirect_uri: wrong, response_type: "code", scope: "openid scoat:read scoat:write", state: "binding-negative", resource: f.issuer + "/mcp", code_challenge: createHash("sha256").update("verifier".repeat(8)).digest("base64url"), code_challenge_method: "S256" });
@@ -50,6 +68,23 @@ export async function authLanes(databaseUrl) {
       assert.equal(denied.headers.get("location"), null);
     }
 
+    for (const callback of ["https://claude.ai/api/mcp/auth_callback", "http://localhost:54321/callback", "http://127.0.0.1:54322/callback", "http://localhost/callback"]) {
+      const response = await fetch(discovery.registration_endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [callback] }) });
+      assert.equal(response.status, 201);
+      const registered = await response.json();
+      const redirect = callback.startsWith("http:") ? callback.replace(/(?::[0-9]+)?\/callback$/, ":54323/callback") : callback;
+      const login = await f.login(registered.client_id, undefined, "offline_access scoat:read scoat:write", false, redirect);
+      assert.equal(typeof login.refresh, "string");
+      assert.equal((await refresh(login)).status, 200);
+      for (const wrong of [callback + "/extra", "https://attacker.example/callback", callback.replace("localhost", "127.0.0.1").replace("claude.ai", "chatgpt.com")].filter(value => value !== callback)) {
+        const denied = await fetch(f.issuer + "/auth?" + new URLSearchParams({ client_id: registered.client_id, redirect_uri: wrong, response_type: "code", scope: "openid", state: "wrong-callback", resource: f.issuer + "/mcp", code_challenge: "A".repeat(43), code_challenge_method: "S256" }), { redirect: "manual" });
+        assert.equal(denied.status, 400);
+        assert.equal(denied.headers.get("location"), null);
+      }
+    }
+    const foreignRegistration = await fetch(discovery.registration_endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://attacker.example/callback"] }) });
+    assert.equal(foreignRegistration.status, 400);
+    passed("claude", { hostedAndLoopbackCodeExchanges: 4, portIndependentLoopbackOnly: true, callbackSubstitutionRefused: true });
     assert.equal((await f.store.pool.query("SELECT count(*) FROM oauth_artifacts WHERE model='Client'")).rows[0].count, "0");
     const request = { requestKey: randomUUID(), intent, profile: null };
     const start = await call(one.token, "start", request);
@@ -68,7 +103,7 @@ export async function authLanes(databaseUrl) {
       automaticRegistration: { status: registered.status, client: registration.client_id, clientArtifacts: 0, callbackBoundCodeExchange: true, wrongCallbackRefusals: 3 },
       loginSteps: one.steps,
     });
-    const foreign = await f.login(registration.client_id, "same-email-other-subject");
+    const foreign = await f.login(registration.client_id, "same-email-other-subject", "offline_access scoat:read scoat:write");
     assert.equal((await call(foreign.token, "list")).value.hunts.length, 0);
     passed(3, {
       distinctSubjectIsolated: true,
@@ -184,7 +219,8 @@ export async function authLanes(databaseUrl) {
     assert.match(wrongResource.headers.get("location") ?? await wrongResource.text(), /invalid_target/);
     const metadata = await (await fetch(f.issuer + "/.well-known/openid-configuration")).json();
     assert.deepEqual(metadata.response_types_supported, ["code"]);
-    assert.deepEqual(metadata.grant_types_supported, ["authorization_code"]);
+    assert.ok(metadata.scopes_supported.includes("offline_access"));
+    assert.deepEqual(metadata.grant_types_supported, ["authorization_code", "refresh_token"]);
     for (const key of ["userinfo_endpoint", "end_session_endpoint", "pushed_authorization_request_endpoint", "dpop_signing_alg_values_supported"]) assert.equal(metadata[key], undefined);
     const substituted = await fetch(
       f.issuer +
@@ -433,6 +469,7 @@ export async function authLanes(databaseUrl) {
       "same-email-other-subject",
     );
     assert.equal(linked.status, 200, JSON.stringify(linked));
+    assert.equal((await refresh(foreign)).body.error, "invalid_grant");
     assert.equal((await f.rpc(foreign.token, "tools/list")).status, 401);
     await assert.rejects(() => f.store.transact({ ...movedPrincipal.agent, hunt: null, row: null, request: null }, async () => true), /Inactive account incarnation/);
     const { authenticatedDispatch } = await import("../dist/mcp/authenticated.js");
@@ -468,6 +505,7 @@ export async function authLanes(databaseUrl) {
     } finally {
       await f.store.pool.query("ALTER TABLE unavailable_oauth_artifacts RENAME TO oauth_artifacts");
     }
+    const eraseRefresh = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
     const priorPrincipal = await f.authenticate(active.token);
     const capabilities = new ReadGrants(f.store.pool);
     const priorGrant = await capabilities.open(priorPrincipal, view.hunt);
@@ -475,6 +513,7 @@ export async function authLanes(databaseUrl) {
       "UPDATE hunt_accounts SET erased=true WHERE account=$1",
       [account],
     );
+    assert.equal((await refresh(eraseRefresh)).body.error, "invalid_grant");
     assert.equal((await f.rpc(active.token, "tools/list")).status, 401);
     assert.equal((await f.rpc(linkedLogin.token, "tools/list")).status, 401);
     await assert.rejects(

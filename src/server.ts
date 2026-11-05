@@ -174,7 +174,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery }
         return;
       }
       res.writeHead(401, {
-        "www-authenticate": `Bearer resource_metadata="${auth.issuer}/.well-known/oauth-protected-resource/mcp"`,
+        "www-authenticate": `Bearer scope="scoat:read scoat:write offline_access", resource_metadata="${auth.issuer}/.well-known/oauth-protected-resource/mcp"`,
       });
       res.end();
       return;

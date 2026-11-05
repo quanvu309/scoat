@@ -119,7 +119,7 @@ test("P05 review guards reject the reproduced boundary bypasses", async () => {
   assert.throws(() => checkConsentDecision('const ok=["allow","deny"].includes(submitted.get("decision") ?? ""); await provider.interactionFinished(req,res,{consent:{}});'), /explicit allow or deny/);
   assert.throws(() => checkConsentDecision(issuer.replace("!decision.success", "false")), /explicit allow or deny/);
   assert.throws(() => checkAuthorizationPolicy('const provider = new Provider(issuer, {}); if(url.pathname === "/auth" && !url.searchParams.get("state")) throw new Error("invalid");'), /parsed-parameter/);
-  assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid"],', 'scopes: ["openid", "offline_access"],')), /shipped authorization-code/);
+  assert.throws(() => checkAuthorizationPolicy(issuer.replace('scopes: ["openid", "offline_access"],', 'scopes: ["openid"],')), /shipped authorization-code/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('userinfo: { enabled: false }', 'userinfo: { enabled: true }')), /unused issuer endpoints/);
   assert.throws(() => checkAuthorizationPolicy(issuer.replace('registration: { enabled: false }', 'registration: { enabled: true }')), /unused issuer endpoints/);
   assert.throws(() => checkLinkRetirement(link.replace('"UPDATE hunt_accounts SET erased=true,erased_at=now() WHERE account=$1 AND incarnation=$2"', '"SELECT 1"')), /Retire the old account/);
@@ -244,4 +244,16 @@ test("P06 exposes browser recovery and rejects links started before erasure", as
  assert.throws(()=>checkEraseRecovery(issuer.slice(0,confirmationStart)+confirmation.replace(',"cache-control":"no-store"',"")),/confirmation status secret with no-store/);
  assert.doesNotThrow(()=>checkEraseRecovery(issuer));
  assert.doesNotThrow(()=>checkLinkSuppression(issuer,link));
+});
+
+
+test("connection policy rejects removed refresh and host guarantees", async () => {
+  const { checkConnectionPolicy } = await import("../scripts/check-structure.mjs");
+  const sources = ["src/auth/issuer.ts", "src/auth/registration.ts", "src/auth/adapter.ts", "src/server.ts"].map(file => readFileSync(file, "utf8"));
+  assert.doesNotThrow(() => checkConnectionPolicy(...sources));
+  for (const [index, before, after] of [[0, "rotateRefreshToken: true", "rotateRefreshToken: false"], [0, "RefreshToken: 2592000", "RefreshToken: 900"], [0, "Grant: 2592000", "Grant: 3600"], [0, "Session: 2592000", "Session: 3600"], [1, 'grant_types: ["authorization_code", "refresh_token"]', 'grant_types: ["authorization_code"]'], [1, "https://claude.ai/api/mcp/auth_callback", "https://foreign.example/callback"], [1, "scoat-chatgpt-client-v1", "retired"], [2, '? 2592000', '? 3600'], [3, 'scope="scoat:read scoat:write offline_access"', '']]) {
+    const changed = [...sources]; changed[index] = changed[index].replaceAll(before, after);
+    assert.notEqual(changed[index], sources[index]);
+    assert.throws(() => checkConnectionPolicy(...changed), /refresh|callback/);
+  }
 });

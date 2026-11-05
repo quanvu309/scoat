@@ -9,7 +9,7 @@ import { eraseAccount } from "../dist/accounts/erasure.js";
 export async function erasureLanes(databaseUrl) {
  const f = await authFixture(databaseUrl);
  try {
-  const one = await f.login();
+  const one = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
   const principal = await f.authenticate(one.token), scope=[principal.agent.account,principal.agent.incarnation];
   const other = await f.login("host-two","other-erasure-subject");
   const otherPrincipal = await f.authenticate(other.token);
@@ -50,6 +50,10 @@ export async function erasureLanes(databaseUrl) {
   const erased=await confirm(f,f.issuer+"/account/erase","/account/erase","erase");
   assert.equal(erased.result.status,200,await erased.result.clone().text());
   const receipt=await erased.result.json();
+  assert.equal(typeof one.refresh,"string");
+  const refreshed=await fetch(f.issuer+"/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:one.client,grant_type:"refresh_token",refresh_token:one.refresh,resource:f.issuer+"/mcp"})});
+  assert.equal(refreshed.status,400);
+  assert.equal((await refreshed.json()).error,"invalid_grant");
   assert.equal(receipt.counts.memory_profiles,1);
   for (const table of ["memory_items","memory_commands","oauth_read_grants","durable_hunts","hunt_rows","hunt_offers","hunt_compatibility","hunt_compatibility_members","hunt_receipts"]) assert.ok(receipt.counts[table]>0,table);
   assert.equal(receipt.retention.suppressionDays,31);

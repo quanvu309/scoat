@@ -121,6 +121,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     clientAuthMethods: ["none"],
     scopes: ["openid", "offline_access"],
     rotateRefreshToken: true,
+    issueRefreshToken: async (_ctx, client) => client.grantTypeAllowed("refresh_token"),
     extraParams: {
       state: (ctx, value) => {
         if (!value || ctx.oidc.params?.resource !== resource || ctx.oidc.params?.code_challenge_method !== "S256")

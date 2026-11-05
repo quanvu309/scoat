@@ -263,7 +263,6 @@ export async function authFixture(databaseUrl, options = {}) {
       redirect_uri: redirect,
       response_type: "code",
       scope: "openid " + scope,
-      ...(scope.includes("offline_access") ? { prompt: "consent" } : {}),
       resource: issuer + "/mcp",
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),

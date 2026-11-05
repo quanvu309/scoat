@@ -18,14 +18,26 @@ export async function loginBrowser(databaseUrl, evidence) {
  }}), browser=await chromium.launch();
  let client;
  try {
-  const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
+  const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
+  async function capture(name) {
+   for (const viewport of [{name:"desktop",width:1440,height:900},{name:"phone",width:390,height:844}]) {
+    await page.setViewportSize({width:viewport.width,height:viewport.height});
+    const button=page.locator('form[action="/login/send"] button, form[action="/login/complete"] button').filter({visible:true}).first();
+    const bounds=await button.boundingBox();
+    assert.ok(bounds && bounds.y>=0 && bounds.y+bounds.height<=viewport.height,"login submit fits "+viewport.name);
+    await page.screenshot({path:path.join(evidence,name+"-"+viewport.name+".png"),fullPage:true});
+   }
+   await page.setViewportSize({width:1440,height:900});
+  }
   await page.goto(f.issuer+"/login");
+  await capture("login-entry");
   await page.screenshot({path:path.join(evidence,"a2-1-email.png"),fullPage:true});
   await page.getByLabel("Email",{exact:true}).fill(f.addressFor());
   const sent=page.waitForResponse(response=>response.url()===f.issuer+"/login/send"&&response.request().method()==="POST");
   await page.getByRole("button",{name:"Send code",exact:true}).click();
   assert.equal((await sent).status(),200);
   await page.getByLabel("Code",{exact:true}).waitFor();
+  await capture("login-code");
   await page.screenshot({path:path.join(evidence,"a2-2-code.png"),fullPage:true});
   await page.getByLabel("Code",{exact:true}).fill(f.mail.at(-1).text.match(/[0-9]{6}/)[0]);
   await page.getByRole("button",{name:"Sign in",exact:true}).click();

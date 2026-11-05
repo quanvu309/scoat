@@ -49,3 +49,9 @@ test("visual coverage rejects the historical browser job without an auth matrix"
  assert.throws(() => checkBrowserVisual({ ...inputs, driver: "" }), /Route verify/);
  assert.throws(() => checkBrowserVisual({ ...inputs, skill: inputs.skill.replace("auth and connection UI", "other UI") }), /verify-scoat header/);
 });
+
+test("shared pages cover the real login seam while mail retains its delivery payload", () => {
+ assert.doesNotThrow(() => checkBrowserPages({"src/browser/login.ts": read("src/browser/login.ts"), "src/auth/login.ts": read("src/auth/login.ts")}));
+ const historical = execFileSync("git", ["show", "518c343:src/browser/login.ts"], {encoding:"utf8"});
+ assert.throws(() => checkBrowserPages({"src/browser/login.ts": historical}), /src\/browser\/views.ts/);
+});

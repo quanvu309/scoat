@@ -6,12 +6,12 @@ const prepared = { kind: "ready", hunt: "hunt-preview", target, suggestedPence: 
 const observation = { kind: "comparable", itemPence: 7800, deliveryPence: 350, amountPence: 8150 };
 const recipient = { address: "r***@example.com", previous: null, moving: false, moveRecipient: false, otherActive: 0 };
 const issued = { state: "Searching", finished: false, forms: [{ token: confirmation, nonce: "preview-nonce", action: { kind: "stop" } }, { token: confirmation, nonce: "preview-skip", action: { kind: "skip", row: "student" } }] };
-const email = { email: "alex@example.com", csrf: "preview-csrf", action: "/fixture/email" };
-const code = { email: email.email, csrf: email.csrf, challenge: "preview-challenge", verifyAction: "/fixture/verify", resendAction: "/fixture/resend", changeEmailHref: "/cases/email-entry" };
 export const browserCases = [
- { id: "email-entry", view: "emailEntry", args: [{ ...email, email: "", state: "ready" }], fixtureOnly: true },
- { id: "email-mail-failed", view: "emailEntry", args: [{ ...email, state: "mail-failed" }], fixtureOnly: true },
- ...["ready", "invalid", "resent", "expired", "too-many-attempts"].map(state => ({ id: "email-code-" + state, view: "emailCode", args: [{ ...code, state }], fixtureOnly: true })),
+ { id: "login-entry", view: "emailEntry", args: [{ state: "preview-state", failed: false }] },
+ { id: "login-send-failed", view: "emailEntry", args: [{ state: "preview-state", failed: true }] },
+ { id: "login-code", view: "emailCode", args: [{ state: "preview-state", invalid: false }] },
+ { id: "login-invalid", view: "emailCode", args: [{ state: "preview-state", invalid: true }] },
+ { id: "login-signed-in", view: "signedIn", args: [] },
  { id: "consent", view: "consent", args: [{ params: { client_id: "scoat-chatgpt", scope: "openid scoat:read scoat:write offline_access" } }, "preview-csrf", { name: "ChatGPT", origin: "https://chatgpt.com", refreshAllowed: true }] },
  { id: "consent-claude", view: "consent", args: [{ params: { client_id: "scoat-claude", scope: "scoat:read" } }, "preview-csrf", { name: "Claude", origin: "https://claude.ai", refreshAllowed: true }] },
  { id: "enroll", view: "enroll", args: [confirmation] },

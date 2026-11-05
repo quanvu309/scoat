@@ -51,8 +51,9 @@ try {
      const a = luminance(style.color), b = luminance(style.backgroundColor);
      return (Math.max(a, b) + .05) / (Math.min(a, b) + .05) < 4.5;
     });
+    const submit = document.querySelector('form[action^="/login/"] button')?.getBoundingClientRect();
     const decisions = document.querySelector('.account-decisions, form[action="/account/erase"], form[action="/account/erase-status"]')?.getBoundingClientRect();
-    return { lowContrastActions,
+    return { lowContrastActions, submit: submit ? { top: submit.top, bottom: submit.bottom, viewport: innerHeight } : null,
     decisions: decisions ? {top: decisions.top, bottom: decisions.bottom, viewport: innerHeight} : null,
     overflow: document.documentElement.scrollWidth > innerWidth,
     heading: document.querySelectorAll("h1").length,

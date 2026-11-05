@@ -49,7 +49,7 @@ function walk(dir) {
       checkSdkImports(file, source);
       checkControlImports(file,source);
       checkScratchAllocation(file, source);
-      if (file.startsWith("src/auth/") || file === "src/server.ts") checkBrowserPages({ [file]: source });
+      if (file.startsWith("src/auth/") || file === "src/server.ts" || file === "src/browser/login.ts") checkBrowserPages({ [file]: source });
     }
   }
 }
@@ -168,7 +168,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkBrowserDocument(fs.readFileSync("src/browser/page.ts", "utf8"));
   checkBrowserVisual({ workflow: fs.readFileSync(".github/workflows/ci.yaml", "utf8"), driver: fs.readFileSync("scripts/verify.mjs", "utf8"), skill: fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), selector: fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), index: fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8") });
   checkBrowserOutcomes(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
-  checkBrowserPages(Object.fromEntries(["src/auth/issuer.ts", "src/server.ts"].map(file => [file, fs.readFileSync(file, "utf8")])));
+  checkBrowserPages(Object.fromEntries(["src/auth/issuer.ts", "src/server.ts", "src/browser/login.ts"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkBrowserTokens(fs.readFileSync("landing/public/ui.css", "utf8"), Object.fromEntries(["landing/public/styles.css", "landing/public/connect.css", "landing/public/account.css"].map(file => [file, fs.readFileSync(file, "utf8")])), Object.fromEntries(["landing/public/index.html", "landing/public/connect/index.html"].map(file => [file, fs.readFileSync(file, "utf8")])));
   checkEraseRecovery(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkSuppression(fs.readFileSync("src/auth/issuer.ts", "utf8"),fs.readFileSync("src/auth/link.ts", "utf8"));

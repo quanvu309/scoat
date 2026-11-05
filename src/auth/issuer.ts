@@ -221,7 +221,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     } satisfies Principal;
   }
   function loginPage(res: ServerResponse, state: string, message = "Enter your email to receive a sign-in code.") {
-    res.writeHead(200, watchHeaders);
+    pageHead(res, 200, watchHeaders);
     res.end(renderLoginPage(state, message));
   }
   async function loginRedirect(res: ServerResponse, context: z.infer<typeof contextSchema>) {
@@ -234,7 +234,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
     const secret = await login.establish(subject);
     res.setHeader("set-cookie", `__Host-scoat-session=${secret}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
     if (!uid) {
-      res.writeHead(200, watchHeaders);
+      pageHead(res, 200, watchHeaders);
       res.end(signedInPage());
       return;
     }

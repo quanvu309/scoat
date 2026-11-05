@@ -563,7 +563,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
           });
           return {forms,finished:hunt.finished === true,state:hunt.finished ? "Finished; its saved result stays unchanged." : hunt.stopped ? "Stop was already requested." : "Hunt is open."};
         });
-        
+
         pageHead(res, 200, {"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"same-origin","content-security-policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'","set-cookie":issued.forms.map(form=>`__Host-scoat-control-${form.nonce}=${form.browser}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=180`)});
         sendPage(res, pages.control(intent, issued, watches, issuer, actual));
         return;

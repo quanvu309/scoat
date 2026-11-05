@@ -57,3 +57,13 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-resend p:last-child { margin-block: .5rem 0; }
 
 .account-content .account-decisions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.account-card:has(form[action="/account/erase"], form[action="/account/erase-status"]) .account-content { font-size: 1rem; line-height: 1.5; }
+.account-card:has(form[action="/account/erase"]) .account-content p { margin-block-end: .75rem; }
+.account-card:has(form[action="/account/erase"]) .account-notice { margin-block: .75rem; }
+.account-card:has(form[action="/account/erase"]) .account-notice p:last-child { margin-block-end: 0; }
+.account-card:has(form[action="/account/erase"]) form { margin-block-start: .75rem; }
+@media (max-width: 44rem) {
+ .account-main:has(form[action="/account/erase"], form[action="/account/erase-status"]) { padding-block: 1rem; }
+ .account-card:has(form[action="/account/erase"], form[action="/account/erase-status"]) { padding: 1.25rem; }
+}

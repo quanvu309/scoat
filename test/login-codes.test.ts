@@ -29,8 +29,8 @@ test("email codes bind flow and purpose, expire, cap attempts, serialize consump
     return {raw:state,state:digest,browser:row.data.browser,start:row.data.initiatedAt};
    };
    const clear = () => f.store.pool.query("DELETE FROM login_mail_budget");
-   const send = async (address="person@example.invalid",ip="fixture-ip") => {
-    await clear(); const value=await flow(); assert.equal(await login.send(value.state,value.browser,"login",address,ip),true); return {...value,code:mail.code};
+   const send = async (address="person@example.invalid") => {
+    await clear(); const value=await flow(); assert.equal(await login.send(value.state,value.browser,"login",address),true); return {...value,code:mail.code};
    };
    let value=await send();
    const stored=(await f.store.pool.query("SELECT code_digest FROM login_challenges WHERE state=$1",[value.state])).rows[0];
@@ -47,25 +47,25 @@ test("email codes bind flow and purpose, expire, cap attempts, serialize consump
    await f.store.pool.query("UPDATE login_challenges SET expires_at=clock_timestamp()-interval '1 second' WHERE state=$1",[value.state]);
    assert.equal(await login.consume(value.state,value.browser,"login",value.code),null);
    value=await send();
-   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid","fixture-ip"),true);
+   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid"),true);
    assert.equal((await f.store.pool.query("SELECT data->>'initiatedAt' AS start FROM oauth_browser_flows WHERE state=$1",[value.state])).rows[0].start,String(value.start));
    if (value.code !== mail.code) assert.equal(await login.consume(value.state,value.browser,"login",value.code),null);
    const results=await Promise.all([login.consume(value.state,value.browser,"login",mail.code),login.consume(value.state,value.browser,"login",mail.code)]);
    assert.equal(results.filter(Boolean).length,1);
    value=await send(); mail.result={kind:"ambiguous",reason:"deadline"};
-   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid","fixture-ip"),false);
+   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid"),false);
    assert.equal(await login.consume(value.state,value.browser,"login",mail.code),null);
-   mail.result={kind:"rejected",status:429}; assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid","fixture-ip"),false);
+   mail.result={kind:"rejected",status:429}; assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid"),false);
    assert.equal(await login.consume(value.state,value.browser,"login",mail.code),null);
    mail.result={kind:"accepted",id:"fixture"}; await clear();
-   for(let attempt=0;attempt<3;attempt++) assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid","fixture-ip"),true);
-   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid","fixture-ip"),false);
+   for(let attempt=0;attempt<3;attempt++) assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid"),true);
+   assert.equal(await login.send(value.state,value.browser,"login","person@example.invalid"),false);
    await clear();
-   for(let attempt=0;attempt<10;attempt++) assert.equal(await login.send(value.state,value.browser,"login",`person${attempt}@example.invalid`,"fixture-ip"),true);
-   assert.equal(await login.send(value.state,value.browser,"login","tail@example.invalid","fixture-ip"),false);
+   for(let attempt=0;attempt<11;attempt++) assert.equal(await login.send(value.state,value.browser,"login",`person${attempt}@example.invalid`),true);
+   assert.equal(await login.send(value.state,value.browser,"login","tail@example.invalid"),true);
    await clear();
    await f.store.pool.query("INSERT INTO login_mail_budget(bucket,window_start,used) VALUES('daily',date_trunc('day',clock_timestamp()),80)");
-   assert.equal(await login.send(value.state,value.browser,"login","new@example.invalid","another-ip"),false);
+   assert.equal(await login.send(value.state,value.browser,"login","new@example.invalid"),false);
    await clear();
    const enumeration=await flow();
    const sendHttp=(email:string)=>f.browser(f.issuer+"/login/send",{method:"POST",headers:{origin:f.issuer},body:new URLSearchParams({state:enumeration.raw,email})});

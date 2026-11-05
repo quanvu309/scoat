@@ -171,7 +171,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkGrantRenewal(fs.readFileSync("src/auth/grants.ts", "utf8"));
   checkConsentDecision(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkAuthorizationPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"));
-  checkLoginCodes(...["src/auth/login.ts","src/auth/issuer.ts","src/auth/erasure.ts","src/auth/flows.ts","src/auth/config.ts","package.json"].map(file=>fs.readFileSync(file,"utf8")));
+  checkLoginCodes(...["src/auth/login.ts","src/auth/issuer.ts","src/auth/erasure.ts","src/auth/flows.ts","src/auth/config.ts","package.json","src/auth/adapter.ts"].map(file=>fs.readFileSync(file,"utf8")));
   checkConnectionPolicy(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/auth/registration.ts", "utf8"), fs.readFileSync("src/auth/adapter.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
   checkBrowserLink(fs.readFileSync("src/auth/issuer.ts", "utf8"));
   checkLinkRetirement(fs.readFileSync("src/auth/link.ts", "utf8"));

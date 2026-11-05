@@ -5,6 +5,6 @@ import { authLanes } from "../scripts/auth-lanes.mjs";
 test("compiled HTTPS OAuth MCP durable behavior and negative boundary lanes", async () => {
   await withDatabase(async (databaseUrl: string) => {
     const result = await authLanes(databaseUrl);
-    assert.equal(result.transcript.length, 12);
+    assert.equal(result.transcript.length, 13);
   });
 });

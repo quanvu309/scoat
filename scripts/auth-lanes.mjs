@@ -22,6 +22,22 @@ export async function authLanes(databaseUrl) {
     assert.equal((await f.rpc(null, "tools/list")).status, 401);
     const one = await f.login("host-one", undefined, "offline_access scoat:read scoat:write");
     assert.equal(typeof one.refresh, "string", "code exchange must issue a refresh token");
+    const delayed = await f.login("host-one", undefined, undefined, true);
+    const flowState = createHash("sha256").update(delayed.body.get("state")).digest("hex");
+    const delayedFlow = (await f.store.pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1", [flowState])).rows[0].data;
+    const aged = await f.store.pool.query("UPDATE oauth_artifacts SET expires_at=expires_at-interval '6 minutes',payload=jsonb_set(payload,'{exp}',to_jsonb((payload->>'exp')::bigint-360)) WHERE model='Interaction' AND id=$1 RETURNING id", [delayedFlow.context.uid]);
+    assert.equal(aged.rowCount, 1);
+    let delayedResponse = await f.browser(delayed.callback, { method: delayed.method, headers: { origin: f.issuer }, body: delayed.body });
+    assert.equal(delayedResponse.status, 303, "A valid code after six minutes must preserve the OAuth continuation: " + await delayedResponse.clone().text());
+    for (let step = 0; step < 5 && delayedResponse.status === 303; step++) delayedResponse = await f.browser(new URL(delayedResponse.headers.get("location"), f.issuer));
+    assert.equal(delayedResponse.status, 200);
+    assert.match(await delayedResponse.text(), /Allow/);
+    assert.equal(delayed.interactionCookies.length, 2);
+    for (const cookie of delayed.interactionCookies) {
+      const expires = cookie.match(/expires=([^;]+)/i)?.[1];
+      assert.ok(expires && Date.parse(expires) - Date.now() > 19 * 60 * 1000, "Interaction and resume cookies must outlive the email flow");
+    }
+    passed("late-code", { interactionAgedSeconds: 360, consentReached: true, interactionCookieLifetimeSeconds: 1200 });
     const refresh = async (login, value = login.refresh) => {
       const response = await fetch(f.issuer + "/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: login.client, grant_type: "refresh_token", refresh_token: value, resource: f.issuer + "/mcp" }) });
       return { status: response.status, body: await response.json() };

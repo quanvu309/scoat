@@ -160,7 +160,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       Grant: 2592000,
       RefreshToken: 2592000,
       IdToken: 900,
-      Interaction: 300,
+      Interaction: 1200,
       Session: 2592000,
     },
     interactions: {
@@ -252,7 +252,7 @@ export async function createIssuer(raw: unknown, pool: pg.Pool, controls?: {code
       const row = (await pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1 AND expires_at>clock_timestamp()", [digest(state)])).rows[0];
       const flow = flowSchema.parse(row?.data);
       if (!browser || digest(browser) !== flow.browser) throw new Error("Browser binding mismatch");
-      const sent = await login.send(digest(state), flow.browser, flow.context.stage, submitted.get("email") ?? "", req.socket.remoteAddress ?? "unknown");
+      const sent = await login.send(digest(state), flow.browser, flow.context.stage, submitted.get("email") ?? "");
       loginPage(res, state, sent ? "Check your email for a code. Enter it below." : "A code could not be sent. Try again later.");
       return;
     }

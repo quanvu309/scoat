@@ -263,12 +263,13 @@ export async function authFixture(databaseUrl, options = {}) {
       code_challenge_method: "S256",
     });
     let url = issuer + "/auth?" + params;
-    const steps = [];
+    const steps = [], interactionCookies = [];
     for (let n = 0; n < 30 && !url.startsWith(redirect); n++) {
       let response = await browser(url);
+      interactionCookies.push(...response.headers.getSetCookie().filter(cookie => /^_interaction(?:_resume)?=/.test(cookie)));
       steps.push({ path: new URL(url).pathname, status: response.status });
       if (response.status === 200 && (await response.clone().text()).includes('action="/login/send"')) {
-        if (pauseAtCallback) return prepareCode(response);
+        if (pauseAtCallback) return { ...await prepareCode(response), interactionCookies };
         response = await codeLogin(response);
       }
       if (response.status === 200 && (await response.clone().text()).includes('action="/account/enroll"')) {

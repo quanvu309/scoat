@@ -37,7 +37,7 @@ export class Login {
  hash(value: string): string {
   return createHmac("sha256", this.key).update(value).digest("hex");
  }
- async send(state: string, browser: string, purpose: string, rawAddress: string, ip: string): Promise<boolean> {
+ async send(state: string, browser: string, purpose: string, rawAddress: string): Promise<boolean> {
   const address = addressSchema.safeParse(rawAddress);
   if (!address.success) return false;
   const code = randomInt(0, 1000000).toString().padStart(6, "0");
@@ -49,7 +49,7 @@ export class Login {
    if (suppressed.rowCount) return null;
    await client.query("DELETE FROM login_mail_budget WHERE window_start<clock_timestamp()-interval '2 days'");
    await client.query("DELETE FROM login_suppression WHERE expires_at<=clock_timestamp()");
-   const buckets = [{ key: "daily", period: "day", limit: 80 }, { key: "address:" + this.hash(address.data), period: "hour", limit: 3 }, { key: "ip:" + this.hash(ip), period: "hour", limit: 10 }];
+   const buckets = [{ key: "daily", period: "day", limit: 80 }, { key: "address:" + this.hash(address.data), period: "hour", limit: 3 }];
    for (const bucket of buckets) {
     const usage = await client.query("SELECT used FROM login_mail_budget WHERE bucket=$1 AND window_start=date_trunc($2,clock_timestamp())", [bucket.key, bucket.period]);
     if (Number(usage.rows[0]?.used ?? 0) >= bucket.limit) return null;

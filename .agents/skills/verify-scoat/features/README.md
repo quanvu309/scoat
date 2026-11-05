@@ -2,6 +2,7 @@
 
 - After transport, registry, strict input, denied control or static app-resource changes, load [foundation](foundation.md): P01 HTTP lanes, restart checks and unresolved host/confirmation gates.
 - After release validation/publication, lookup, checklist, source-freshness or generated-guidance changes, load [knowledge](knowledge.md): ten P02 scenarios, immutable pins and local performance measurements.
+- After evidence, exact-set compatibility, discount arithmetic or HuntView changes, load [hunt](hunt.md): ten P03 compiled lanes and bounded performance with separate model-agent, host and runner gates.
 - After shared MCP adapter or driver changes, load both references and run both branches.
 
 Shopping, account memory, OAuth, watches and interactive cards remain outside the implemented surface. Real-host support requires separate session evidence.

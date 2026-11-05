@@ -8,6 +8,7 @@ import { checkServerIdentity } from "node:tls";
 import { constants, tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { pipeline } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import { authConfigSchema } from "./auth/config.js";
@@ -176,7 +177,24 @@ function supervise(config: RuntimeConfig): void {
  flusher.unref();
  let listener: Server | null = null;
  let stopping = false;
+ let failure = 0;
  let workerArtifact: string | null = null;
+ const stop = (status = 0): void => {
+  if (status !== 0) failure = status;
+  if (stopping) return;
+  stopping = true;
+  listener?.close();
+  listener?.closeIdleConnections();
+  child.kill("SIGTERM");
+  setTimeout(() => child.kill("SIGKILL"), stopDeadlineMs).unref();
+ };
+ const bind = (server: Server, listening?: () => void): void => {
+  server.once("error", () => {
+   event({ event: "runtime_listener_refused", role: config.role });
+   stop(1);
+  });
+  server.listen(config.port, config.edgeHost, listening);
+ };
  const ready = (fields: Record<string, unknown>): void => {
   discard();
   event({ event: "runtime_ready", role: config.role, revision: config.revision, ...fields });
@@ -187,7 +205,7 @@ function supervise(config: RuntimeConfig): void {
    const announced = serverMessageSchema.safeParse(message);
    if (!announced.success || listener) return;
    listener = edge(config, announced.data.port);
-   listener.listen(config.port, config.edgeHost, () => {
+   bind(listener, () => {
     const address = listener?.address();
     ready({ port: address && typeof address !== "string" ? address.port : config.port });
    });
@@ -210,10 +228,14 @@ function supervise(config: RuntimeConfig): void {
    res.writeHead(workerArtifact ? 200 : 503, { "content-type": "application/json" });
    res.end(JSON.stringify(workerArtifact ? { ready: true, role: "worker", artifact: workerArtifact, revision: config.revision } : { ready: false, role: "worker" }));
   });
-  listener.listen(config.port, config.edgeHost);
+  bind(listener);
  }
- child.once("exit", (code, signal) => {
-  const status = exitCode(code, signal);
+ child.once("error", () => {
+  event({ event: "runtime_child_refused", role: config.role });
+  stop(1);
+ });
+ child.once("close", (code, signal) => {
+  const status = failure || exitCode(code, signal);
   event({ event: "runtime_stopped", role: config.role, code: status, requested: stopping });
   listener?.close();
   listener?.closeAllConnections();
@@ -221,14 +243,7 @@ function supervise(config: RuntimeConfig): void {
   process.exit(status);
  });
  for (const name of ["SIGINT", "SIGTERM"] as const)
-  process.on(name, () => {
-   if (stopping) return;
-   stopping = true;
-   listener?.close();
-   listener?.closeIdleConnections();
-   child.kill("SIGTERM");
-   setTimeout(() => child.kill("SIGKILL"), stopDeadlineMs).unref();
-  });
+  process.on(name, () => stop());
 }
 
 function edge(config: RuntimeConfig, innerPort: number): Server {
@@ -251,8 +266,11 @@ function edge(config: RuntimeConfig, innerPort: number): Server {
    delete headers.origin;
   }
   const upstream = tlsRequest({ host: "127.0.0.1", port: innerPort, method: req.method, path: req.url, headers, setHost: false, servername, ca, checkServerIdentity: verifyIssuer, rejectUnauthorized: true, minVersion: "TLSv1.3", agent, timeout: 20000 }, response => {
+   upstream.setTimeout(0);
    res.writeHead(response.statusCode ?? 502, forwardable(response.headers));
-   response.pipe(res);
+   pipeline(response, res, error => {
+    if (error) event({ event: "edge_response_interrupted" });
+   });
   });
   upstream.on("timeout", () => upstream.destroy(new Error("upstream timeout")));
   upstream.on("error", () => {

@@ -35,6 +35,17 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: docker build --build-arg RAILWAY_GIT_COMMIT_SHA="$(git rev-parse HEAD)" --tag scoat-ci .
+      - run: >-
+          docker run --rm --network none --entrypoint node scoat-ci --input-type=module -e 'const state = await (await import("./dist/release.js")).verifyRelease(); if (state.kind !== "verified") process.exit(1); console.log(state.release.digest);'
+      - run: |-
+          for role in server worker; do
+            status=0
+            output=$(timeout 30s docker run --rm --network none --env SCOAT_RUNTIME_ROLE="$role" scoat-ci 2>&1) || status=$?
+            printf '%s\n' "$output"
+            test "$status" -eq 78
+            printf '%s\n' "$output" | grep -F runtime_configuration_refused
+          done
   protocol:
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkLaneTools, checkDeployUnits, checkOperationsVerification, checkRailwayRuntime } from "../scripts/check-operations.mjs";
+import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkLaneTools, checkDeployUnits, checkOperationsVerification, checkRailwayRuntime, checkDockerContext } from "../scripts/check-operations.mjs";
 import { checkWorkflow } from "../scripts/check-structure.mjs";
 
 const read = file => readFileSync(new URL("../" + file, import.meta.url), "utf8");
@@ -146,4 +146,12 @@ test("Railway runtime pins its image, re-originates pinned TLS to Node and keeps
   [manifest(m => { delete m.services.server.variables.SCOAT_TLS_CERT_PEM; }), /match the supervisor/],
   [manifest(m => { m.services.worker.variables.DATABASE_URL = { source: "value", value: "postgres://u:p@h/d" }; }), /carries no committed value/],
  ]) assert.throws(() => checkRailwayRuntime(mutated), pattern);
+});
+
+test("Docker context admits exactly the copied public assets; the real 9aa8317 exclusion fails", () => {
+ const context = { dockerfile: read("Dockerfile"), dockerignore: read(".dockerignore") };
+ assert.doesNotThrow(() => checkDockerContext(context));
+ assert.throws(() => checkDockerContext({ ...context, dockerignore: original("9aa8317", ".dockerignore") }), /exactly the Dockerfile landing assets/);
+ for (const dockerignore of [context.dockerignore.replace("!landing/public/fonts\n", ""), context.dockerignore + "!landing/src\n", context.dockerignore + "!landing/public/*\n"]) assert.throws(() => checkDockerContext({ ...context, dockerignore }), /exactly the Dockerfile landing assets/);
+ assert.throws(() => checkDockerContext({ ...context, dockerfile: context.dockerfile.replace("landing/public/favicon.svg", "landing/public/extra.svg") }), /exactly the Dockerfile landing assets/);
 });

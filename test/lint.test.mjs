@@ -85,7 +85,8 @@ test("scratch lint rejects the original GitHub runner failure", () => {
 
 test("P05 evidence rejects the original shallow hosted checkout", () => {
   const workflow = readFileSync(new URL("../.github/workflows/ci.yaml", import.meta.url), "utf8");
-  const original = workflow.replace("        with:\n          fetch-depth: 0\n", "");
+  const start = workflow.indexOf("  protocol:\n");
+  const original = workflow.slice(0, start) + workflow.slice(start).replace("        with:\n          fetch-depth: 0\n", "");
   assert.notEqual(original, workflow);
   assert.throws(() => checkWorkflow(original), /fetch-depth: 0/);
   assert.doesNotThrow(() => checkWorkflow(workflow));

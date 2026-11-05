@@ -229,3 +229,23 @@ Live seller checks, live checkout, commercial hosts, a real IdP, Resend delivery
 - `npm run verify -- p09-operations`: O1–O8 receipt under `~/tmp/scoat-delivery/p09/s3/operations-*/receipt.json`.
 - `npm run verify -- p09-lineage` and `npm run verify -- p09-recovery`: lineage and recovery gates.
 - `npm run perf -- p09`: the scripted eight-row public MCP hunt to a persisted final HuntView and a queued watch notification, with readiness and worker digest, written to `p09-perf.json`; then per-transaction lineage overhead and release verification samples, written to `perf.json`. Local fixture timings only.
+
+## Hosted CI suites
+
+`.github/workflows/ci.yaml` schedules five independent `ubuntu-latest` suites. Each checks out full history, installs Node 24.21.0 and dependencies, builds its own source, and uses its own PostgreSQL 17.6 fixture service. Commands run sequentially inside each runner.
+
+| Suite | Commands | Additional tools |
+| --- | --- | --- |
+| quality | typecheck, lint, tests | None |
+| protocol | Two migrations, two fixture seeds, verify/perf P01–P05 | None |
+| browser | verify/perf P06, verify P07 controls/card and P08 | Chromium and system libraries |
+| operations | verify P09 lineage/recovery/operations, perf P09, verify P09 story | PGDG18 with matching SCOAT_PG_BIN, Chromium, systemd Node link, ffmpeg/ffprobe |
+| watch-performance | perf P08 | None |
+
+The separate watch-performance runner keeps that measurement sequential and independent of browser work. Independent services and builds avoid shared fixture state. YAML remains the execution schedule; there is no cache, build transfer or receipt upload.
+
+Ordinary pull requests and pushes to main run these suites. Cancellation is scoped to workflow, event and PR or ref. The final `foundation` job uses `always()` and accepts exactly the five expected needs, each with result `success`. Missing, malformed, skipped, failed or cancelled inputs fail. Cancellation can prevent completion; it cannot produce a successful aggregate.
+
+Developer commands remain `npm run verify -- <selector>` and `npm run perf -- <selector>`. When changing hosted steps, update the existing `checkWorkflow(source)` / `checkHostedCoverage(source)` contract and `test/hosted-ci.test.mjs`. The checker accepts literal steps with preceding tools on the same runner and rejects conditional execution, environment overrides and failure swallowing. Tests execute the predicate from the workflow itself and preserve historical failure diagnostics.
+
+Local lint and tests establish this contract. A completed hosted run is still required to establish runner reproducibility; this change makes no production, speed or cost claim and changes no branch protection.

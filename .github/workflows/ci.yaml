@@ -1,9 +1,107 @@
 name: Foundation and knowledge
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  foundation:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: scoat
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: scoat
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://scoat:fixture-only@localhost:5432/scoat
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+  protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: scoat
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: scoat
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://scoat:fixture-only@localhost:5432/scoat
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: npm ci
+      - run: npm run build
+      - run: npm run db:migrate
+      - run: npm run db:migrate
+      - run: npm run db:seed -- --fixture ci-p01
+      - run: npm run db:seed -- --fixture ci-p01
+      - run: npm run verify -- p01
+      - run: npm run perf -- p01
+      - run: npm run verify -- p02
+      - run: npm run perf -- p02
+      - run: npm run verify -- p03
+      - run: npm run perf -- p03
+      - run: npm run verify -- p04
+      - run: npm run perf -- p04
+      - run: npm run verify -- p05
+      - run: npm run perf -- p05
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: scoat
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: scoat
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://scoat:fixture-only@localhost:5432/scoat
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run verify -- p06
+      - run: npm run perf -- p06
+      - run: npm run verify -- p07-controls
+      - run: npm run verify -- p07-card
+      - run: npm run verify -- p08
+  operations:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -27,30 +125,7 @@ jobs:
           node-version: 24.21.0
       - run: npm ci
       - run: npm run build
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-      - run: npm run db:migrate
-      - run: npm run db:migrate
-      - run: npm run db:seed -- --fixture ci-p01
-      - run: npm run db:seed -- --fixture ci-p01
-      - run: npm run verify -- p01
-      - run: npm run perf -- p01
-      - run: npm run verify -- p02
-      - run: npm run perf -- p02
-      - run: npm run verify -- p03
-      - run: npm run perf -- p03
-      - run: npm run verify -- p04
-      - run: npm run perf -- p04
-      - run: npm run verify -- p05
-      - run: npm run perf -- p05
       - run: npx playwright install --with-deps chromium
-      - run: npm run verify -- p06
-      - run: npm run perf -- p06
-      - run: npm run verify -- p07-controls
-      - run: npm run verify -- p07-card
-      - run: npm run verify -- p08
-      - run: npm run perf -- p08
       - name: Install official PGDG PostgreSQL 18 client tools
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -68,3 +143,41 @@ jobs:
       - name: Install ffmpeg for P09 story media
         run: sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run verify -- p09
+  watch-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: scoat
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: scoat
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U scoat" --health-interval 1s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://scoat:fixture-only@localhost:5432/scoat
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: npm ci
+      - run: npm run build
+      - run: npm run perf -- p08
+  foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [quality, protocol, browser, operations, watch-performance]
+    if: ${{ always() }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - name: Require every suite to succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const keys = ["quality", "protocol", "browser", "operations", "watch-performance"]; try { const needs = JSON.parse(process.env.NEEDS_JSON); if (needs === null || Array.isArray(needs) || typeof needs !== "object" || Object.keys(needs).length !== keys.length || !keys.every(key => Object.hasOwn(needs, key) && needs[key]?.result === "success")) process.exit(1); } catch { process.exit(1); }'

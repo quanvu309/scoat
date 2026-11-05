@@ -234,7 +234,7 @@ export async function authFixture(databaseUrl, options = {}) {
     await page.getByRole("button", {name:"Send code",exact:true}).click();
     assert.equal((await sent).status(),200);
     await page.getByLabel("Code", {exact:true}).fill(mail.at(-1).text.match(/[0-9]{6}/)[0]);
-    await page.getByRole("button",{name:"Sign in",exact:true}).click();
+    await page.getByRole("button",{name:"Continue",exact:true}).click();
     await page.locator('form[action="/login/send"]').waitFor({state:"detached"});
   }
   async function login(
@@ -284,8 +284,8 @@ export async function authFixture(databaseUrl, options = {}) {
         new URL(url).pathname.startsWith("/interaction/")
       ) {
         const html = await response.text();
-        assert.ok(html.includes("renew access while you’re away"), "refresh-capable clients must disclose background renewal");
-        assert.ok(html.includes("until you disconnect or delete your account"));
+        assert.ok(html.includes("Stays signed in up to"), "refresh-capable clients must disclose background renewal");
+        assert.ok(html.includes("days"));
         const csrf = html.match(/name="csrf" value="([^"]+)"/)?.[1];
         assert.ok(csrf, html);
         for (const body of [

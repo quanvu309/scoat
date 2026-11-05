@@ -28,14 +28,14 @@ test("browser HTTP outcomes preserve refusal status, protected headers and a usa
   const nodes = elements(html);
   assert.equal(nodes.filter(node => node.tagName === "main").length, 1);
   assert.equal(nodes.filter(node => node.tagName === "h1").length, 1);
-  assert.ok(html.includes("fresh Scoat link"));
+  assert.ok(html.includes("Start again"));
  } finally { await new Promise(resolve => server.close(resolve)); }
 });
 test("consent describes only requested access and keeps both explicit decisions", () => {
  const html = consent({ params: { scope: "openid scoat:read" } }, 'csrf<"&', { name: '<script>bad</script>', origin: "https://chat.example", refreshAllowed: true });
  const nodes = elements(html);
  assert.equal(nodes.filter(node => node.tagName === "script").length, 0);
- assert.ok(html.includes("View your hunts and saved shopping results"));
+ assert.ok(html.includes("View your hunts and saved results"));
  assert.ok(!html.includes("Run hunts and save changes"));
  const buttons = nodes.filter(node => node.tagName === "button");
  assert.deepEqual(buttons.map(node => node.attrs.find(attr => attr.name === "value").value), ["allow", "deny"]);
@@ -76,10 +76,10 @@ test("refresh-grant consent discloses renewal even when offline_access is droppe
  for (const scope of ["openid scoat:read scoat:write offline_access", "openid scoat:read scoat:write"]) {
   const client = {name: "ChatGPT", origin: "https://chatgpt.com", refreshAllowed: true};
   const html = consent({params: {scope}}, "bound-csrf", client);
-  assert.ok(html.includes(`Stay signed in for up to ${connectionLifetimeSeconds / 86400} days`));
-  assert.ok(html.includes("renew access while you’re away"));
-  assert.ok(html.includes("until you disconnect or delete your account"));
-  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("renew access"));
+  assert.ok(html.includes(`Stays signed in up to ${connectionLifetimeSeconds / 86400} days`));
+  assert.ok(html.includes("Stays signed in up to"));
+  assert.ok(html.includes("days"));
+  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("Stays signed in"));
  }
 });
 

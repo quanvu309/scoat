@@ -40,7 +40,7 @@ export async function loginBrowser(databaseUrl, evidence) {
   await capture("login-code");
   await page.screenshot({path:path.join(evidence,"a2-2-code.png"),fullPage:true});
   await page.getByLabel("Code",{exact:true}).fill(f.mail.at(-1).text.match(/[0-9]{6}/)[0]);
-  await page.getByRole("button",{name:"Sign in",exact:true}).click();
+  await page.getByRole("button",{name:"Continue",exact:true}).click();
   await page.getByRole("button",{name:"Create account",exact:true}).waitFor();
   await page.screenshot({path:path.join(evidence,"a2-3-enroll.png"),fullPage:true});
   await page.getByRole("button",{name:"Create account",exact:true}).click();

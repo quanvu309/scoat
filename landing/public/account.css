@@ -1,21 +1,11 @@
+.account-header { max-inline-size: 74rem; margin-inline: auto; }
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); background: var(--secondary); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
-.account-header, .account-footer { max-inline-size: 74rem; margin-inline: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 .account-brand { display: inline-flex; align-items: center; gap: .625rem; font-size: 1.25rem; font-weight: 650; text-decoration: none; color: var(--foreground); }
 .account-brand > svg { inline-size: 2.5rem; block-size: 2.5rem; }
-.account-home { display: inline-flex; gap: .75rem; align-items: center; min-block-size: 2.75rem; font-size: .875rem; color: var(--muted-foreground); text-decoration: none; }
-.account-main { max-inline-size: 67rem; margin-inline: auto; padding-block: clamp(2.5rem, 9vh, 6rem); display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1fr); align-items: start; gap: clamp(2rem, 7vw, 6rem); }
-.account-context { padding-block-start: 2.5rem; }
-.account-eyebrow, .account-card-label { font-size: .6875rem; font-weight: 650; letter-spacing: .12em; color: var(--primary); }
-.account-context h2 { margin-block: 1.5rem; font-size: clamp(2.25rem, 4vw, 3.5rem); font-weight: 550; line-height: 1.08; letter-spacing: -.055em; }
-.account-context > p { max-inline-size: 30ch; color: var(--muted-foreground); font-size: 1rem; line-height: 1.75; }
-.account-journey { padding: 0; margin-block-start: 3rem; list-style: none; counter-reset: journey; display: grid; gap: 1.25rem; }
-.account-journey li { counter-increment: journey; display: flex; gap: .75rem; align-items: center; color: var(--muted-foreground); font-size: .8125rem; }
-.account-journey li::before { content: counter(journey, decimal-leading-zero); font: .6875rem var(--font-mono); color: var(--primary); border: 1px solid var(--border); border-radius: 50%; inline-size: 1.75rem; block-size: 1.75rem; display: grid; place-items: center; }
-.account-card { min-inline-size: 0; padding: clamp(1.5rem, 3vw, 2.5rem); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: 0 12px 40px -24px color-mix(in oklch, var(--foreground) 20%, transparent); }
-.account-card-label { display: flex; align-items: center; gap: .5rem; margin-block-end: 1.75rem; }
-.account-dot { inline-size: .375rem; block-size: .375rem; border-radius: 50%; background: var(--primary); }
+.account-main { max-inline-size: 26rem; margin-inline: auto; padding-block: clamp(2.5rem, 9vh, 6rem); display: grid;  align-items: start; gap: clamp(2rem, 7vw, 6rem); }
+.account-card { min-inline-size: 0; }
 .account-card h1 { margin: 0; font-size: clamp(1.75rem, 3vw, 2.125rem); font-weight: 560; letter-spacing: -.04em; line-height: 1.15; text-wrap: balance; overflow-wrap: anywhere; }
 .account-content { margin-block-start: 1.25rem; font-size: .9375rem; line-height: 1.7; overflow-wrap: anywhere; }
 .account-content p { margin-block: 0 1.25rem; color: var(--muted-foreground); }
@@ -37,18 +27,11 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-content dd { margin: 0; }
 .account-notice { padding: 1rem; margin-block: 1.5rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--secondary); }
 .account-notice p:last-child { margin-block-end: 0; }
-.account-footnote { margin-block-start: 1.75rem; padding-block-start: 1.25rem; border-block-start: 1px solid var(--border); color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; }
-.account-footer { padding-block: 1.5rem; color: var(--muted-foreground); font-size: .6875rem; line-height: 1.6; }
 :focus-visible { outline: 3px solid var(--ring); outline-offset: 4px; }
-@media (hover: hover) and (pointer: fine) { .account-content button:hover, .ui-button:hover { filter: brightness(.95); } .account-home:hover { color: var(--foreground); } }
 @media (prefers-reduced-motion: no-preference) { .account-content button, .ui-button { transition: filter var(--duration-micro) var(--ease-micro); } }
-@media (max-width: 44rem) { .account-main { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-block: 2rem; } .account-context { display: none; } .account-context h2 { font-size: 2.125rem; margin-block: .75rem; } .account-context h2 br { display: none; } .account-context > p { max-inline-size: 36ch; margin-block: .75rem 0; font-size: .875rem; } .account-journey { display: none; } .account-card { border-radius: 1rem; } .account-card-label { margin-block-end: 1.25rem; } .account-footer { font-size: .6875rem; gap: .25rem; } }
 
-.account-client { display: block; margin-block: .5rem .125rem; font-size: 1.125rem; }
 .account-notice > span:last-child, .account-help { font-size: .8125rem; }
-.account-permissions { display: grid; gap: .75rem; padding-inline-start: 1.25rem; margin-block: .5rem 1.5rem; }
-.account-permissions li::marker { color: var(--primary); }
-.account-content button[value="erase"], .account-content button[value="deny"] { background: var(--card); border-color: var(--border); color: var(--foreground); }
+.account-content button[value="deny"] { background: var(--card); border-color: var(--border); color: var(--foreground); }
 .account-content button.account-secondary { background: var(--card); border-color: var(--border); color: var(--foreground); }
 .account-content .account-code { font: 1.5rem var(--font-mono); letter-spacing: .4em; text-align: center; }
 .account-content .account-after-form { margin-block-start: 1rem; }
@@ -65,5 +48,8 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-card:has(form[action="/account/erase"]) form { margin-block-start: .75rem; }
 @media (max-width: 44rem) {
  .account-main:has(form[action="/account/erase"], form[action="/account/erase-status"]) { padding-block: 1rem; }
- .account-card:has(form[action="/account/erase"], form[action="/account/erase-status"]) { padding: 1.25rem; }
+
 }
+
+.account-resend { margin-block-start: .75rem; padding: 0; border: 0; }
+.account-resend summary { color: var(--primary); font-size: .8125rem; text-decoration: underline; }

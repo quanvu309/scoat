@@ -1,3 +1,4 @@
+if (process.argv[2] === "p09") { await import("./verify-story.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p09-operations") { await import("./verify-operations.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p09-recovery") { await import("./verify-recovery.mjs"); process.exit(process.exitCode ?? 0); }
 if (process.argv[2] === "p09-lineage") { await import("./verify-lineage.mjs"); process.exit(process.exitCode ?? 0); }

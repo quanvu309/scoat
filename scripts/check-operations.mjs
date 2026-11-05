@@ -107,7 +107,7 @@ export function checkHostedCoverage(source) {
   if (job.services?.postgres && job.services.postgres.image !== "postgres:17.6-alpine") throw new Error("Keep the PostgreSQL 17.6 fixture server");
  }
  if (/\/home\/|SCOAT_BASE_APP|p09\/s0/.test(source)) throw new Error("Hosted CI never depends on developer homes, S0 installs or a prebuilt base artifact");
- const required = ["p01", "p02", "p03", "p04", "p05", "p06", "p07-controls", "p07-card", "p08", "p09-lineage", "p09-recovery", "p09-operations"].map(scope => "npm run verify -- " + scope);
+ const required = ["p01", "p02", "p03", "p04", "p05", "p06", "p07-controls", "p07-card", "p08", "p09-lineage", "p09-recovery", "p09-operations", "p09"].map(scope => "npm run verify -- " + scope);
  for (const command of [...required, "npm run perf -- p09"]) if (!runs.some(run => run.split("\n").map(line => line.trim()).includes(command))) throw new Error("Hosted CI runs " + command);
  const install = runs.findIndex(run => /apt\.postgresql\.org/.test(run) && /postgresql-client-18/.test(run));
  const recovery = runs.findIndex(run => /verify -- p09-(lineage|recovery)/.test(run));

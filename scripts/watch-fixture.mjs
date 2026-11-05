@@ -62,8 +62,8 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
  const capture = await child(new URL("./mail-capture.mjs", import.meta.url), { ...process.env, CAPTURE_DIRECTORY: root, CAPTURE_KEY: root + "/seller-key.pem", CAPTURE_CERT: root + "/seller-cert.pem", CAPTURE_API_KEY: mailKey }, value => value.port);
  const mailOrigin = "https://localhost:" + capture.message.port;
  const accepted = [];
- const waiters = [];
- capture.process.on("message", value => { if (value.accepted) { accepted.push(value); for (const waiter of waiters.filter(item => item.key === value.accepted)) { waiters.splice(waiters.indexOf(waiter), 1); waiter.resolve(value); } } });
+ const waiters = [], next = [];
+ capture.process.on("message", value => { if (value.accepted) { accepted.push(value); for (const resolve of next.splice(0)) resolve(value); for (const waiter of waiters.filter(item => item.key === value.accepted)) { waiters.splice(waiters.indexOf(waiter), 1); waiter.resolve(value); } } });
  let config, bundle, isolatedUrl;
  const serverEnv = {};
  const f = await authFixture(databaseUrl, {
@@ -94,6 +94,8 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
   admitted,
   watches: pause => new Watches({ admitted, delivery, config, enqueue: producer, ...(pause ? { pause } : {}) }),
   waitAccepted: key => new Promise(resolve => { const found = accepted.find(item => item.accepted === key); if (found) resolve(found); else waiters.push({ key, resolve }); }),
+  nextAccepted: () => new Promise(resolve => { next.push(resolve); }),
+  workerProcess: () => worker?.process ?? null,
   async hold(milliseconds) { await fetch(mailOrigin + "/control", { method: "POST", body: JSON.stringify({ holdMilliseconds: milliseconds }) }); },
   async deliveries() { return (await (await fetch(mailOrigin + "/deliveries")).text()).split("\n").filter(Boolean).map(line => JSON.parse(line)); },
   async requests() { return (await readFile(path.join(root, "requests.jsonl"), "utf8").catch(() => "")).split("\n").filter(Boolean).map(line => JSON.parse(line)); },

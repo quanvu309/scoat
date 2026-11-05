@@ -6,6 +6,7 @@ import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
 import { checkPerfStory } from "./check-perf.mjs";
+import { checkMigrationAdmission, checkJournalReadiness, checkRequestLineage } from "./check-runtime-lineage.mjs";
 import { checkReadiness, checkReleaseOwner, checkPoolOwner, checkListenHost, checkHostedCoverage, checkLaneTools, checkDeployUnits, checkOperationsVerification } from "./check-operations.mjs";
 import { checkLineageFence, checkLineageBegin, checkLineageIdentity, checkRuntimeAdmission, checkRecoveryAuthority, checkRecoveryVerification, checkLineageVerification, checkRecoveryDocumentation } from "./check-lineage.mjs";
 
@@ -140,6 +141,10 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+  const runtimeLineage = { database: fs.readFileSync("scripts/database.mjs", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), journal: fs.readFileSync("src/db/journal.ts", "utf8") };
+  checkMigrationAdmission(runtimeLineage);
+  checkJournalReadiness({ readiness: fs.readFileSync("src/readiness.ts", "utf8"), lineage: runtimeLineage.lineage, journal: runtimeLineage.journal });
+  checkRequestLineage(fs.readFileSync("src/server.ts", "utf8"));
   const lineageSources = [];
   const collectSources = directory => { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const file = directory + "/" + entry.name; if (entry.isDirectory()) collectSources(file); else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts")) lineageSources.push({ file, source: fs.readFileSync(file, "utf8") }); } };
   collectSources("src");

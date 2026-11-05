@@ -141,7 +141,7 @@ export async function authFixture(databaseUrl, options = {}) {
     lifecycleKeyVersion: "disposable-fixture",
     cookieKeys: [randomBytes(32).toString("hex")],
     jwks,
-    ...(options.registration ? { registrationClientId: "scoat-chatgpt" } : {}),
+    ...(options.registration ? { registrationClientId: "scoat-chatgpt", registrationKeys: [{ version: "fixture", secret: randomBytes(32).toString("hex") }] } : {}),
     clients: ["host-one", "host-two"].map((client_id) => ({
       client_id,
       redirect_uris: ["https://client.example/cb"],
@@ -250,10 +250,11 @@ export async function authFixture(databaseUrl, options = {}) {
     subject = "upstream-subject-A",
     scope = "scoat:read scoat:write",
     pauseAtCallback = false,
+    registeredRedirect,
   ) {
     identity = subject;
     jar.clear();
-    const redirect = config.clients.find(value => value.client_id === client)?.redirect_uris[0];
+    const redirect = registeredRedirect ?? config.clients.find(value => value.client_id === client)?.redirect_uris[0];
     assert.ok(redirect);
     const verifier = randomBytes(32).toString("base64url"),
       state = randomBytes(32).toString("hex");

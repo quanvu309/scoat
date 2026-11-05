@@ -73,7 +73,7 @@ export async function erasureLanes(databaseUrl) {
   const {Memory}=await import("../dist/memory/index.js");
   await assert.rejects(new Memory(f.store.pool,f.issuer,false).run({...principal.agent,session:principal.session},command),/Inactive account/);
   const status=erased.html.match(/<code>([^<]+)<\/code>/)?.[1]; assert.ok(status);
-  const recoveryPath=erased.html.match(/href="([^"]+)"[^>]*>check the erasure result/)?.[1];
+  const recoveryPath=erased.html.match(/href="([^"]+)"[^>]*>Check erasure result/)?.[1];
   assert.equal(recoveryPath,"/account/erase-status");
   const recoveryUrl=new URL(recoveryPath,f.issuer);
   const recoveryPage=await fetch(recoveryUrl);

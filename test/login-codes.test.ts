@@ -23,7 +23,7 @@ test("email codes bind flow and purpose, expire, cap attempts, serialize consump
     const response = await f.browser(f.issuer+"/login");
     assert.match(response.headers.get("cache-control") ?? "",/no-store/);
     const html = await response.text(), state = html.match(/name="state" value="([^"]+)"/)?.[1];
-    assert.ok(state); assert.match(html,/inputmode="numeric"/); assert.match(html,/autocomplete="one-time-code"/);
+    assert.ok(state); assert.match(html,/inputmode="email"/); assert.match(html,/autocomplete="email"/);
     const digest = createHash("sha256").update(state).digest("hex");
     const row = (await f.store.pool.query("SELECT data FROM oauth_browser_flows WHERE state=$1",[digest])).rows[0];
     return {raw:state,state:digest,browser:row.data.browser,start:row.data.initiatedAt};
@@ -70,7 +70,11 @@ test("email codes bind flow and purpose, expire, cap attempts, serialize consump
    const enumeration=await flow();
    const sendHttp=(email:string)=>f.browser(f.issuer+"/login/send",{method:"POST",headers:{origin:f.issuer},body:new URLSearchParams({state:enumeration.raw,email})});
    const known=await sendHttp("person@example.invalid"),unknown=await sendHttp("fresh@example.invalid");
-   assert.equal(known.status,unknown.status);assert.equal(await known.text(),await unknown.text());
+   assert.equal(known.status,unknown.status);
+   const codeHtml = await known.text();
+   assert.equal(codeHtml,await unknown.text());
+   assert.match(codeHtml,/inputmode="numeric"/);
+   assert.match(codeHtml,/autocomplete="one-time-code"/);
    const missing = await f.browser(f.issuer+"/login/send",{method:"POST",headers:{origin:"https://foreign.invalid"},body:new URLSearchParams({state:"forged",email:"person@example.invalid"})});
    assert.equal(missing.status,403);
   } finally { await f.close(); }

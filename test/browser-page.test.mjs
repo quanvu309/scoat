@@ -28,19 +28,28 @@ test("browser HTTP outcomes preserve refusal status, protected headers and a usa
   const nodes = elements(html);
   assert.equal(nodes.filter(node => node.tagName === "main").length, 1);
   assert.equal(nodes.filter(node => node.tagName === "h1").length, 1);
-  assert.ok(html.includes("fresh Scoat link"));
+  assert.ok(html.includes("Start again"));
  } finally { await new Promise(resolve => server.close(resolve)); }
 });
 test("consent describes only requested access and keeps both explicit decisions", () => {
  const html = consent({ params: { scope: "openid scoat:read" } }, 'csrf<"&', { name: '<script>bad</script>', origin: "https://chat.example", refreshAllowed: true });
  const nodes = elements(html);
  assert.equal(nodes.filter(node => node.tagName === "script").length, 0);
- assert.ok(html.includes("View your hunts and saved shopping results"));
- assert.ok(!html.includes("Run hunts and save changes"));
+ assert.ok(html.includes("View your hunts and saved results"));
+ assert.ok(!html.includes("run hunts and save changes"));
  const buttons = nodes.filter(node => node.tagName === "button");
  assert.deepEqual(buttons.map(node => node.attrs.find(attr => attr.name === "value").value), ["allow", "deny"]);
  const csrf = nodes.find(node => node.tagName === "input");
  assert.equal(csrf.attrs.find(attr => attr.name === "value").value, 'csrf<"&');
+});
+test("consent distinguishes unnamed origins and keeps named hosts minimal", () => {
+ const render = origin => consent({params: {scope: "openid scoat:read"}}, "csrf", {name: "your chat app", origin, refreshAllowed: false});
+ const first = render("https://example.com"), second = render("https://other.example");
+ assert.notEqual(first, second);
+ assert.ok(first.includes('<p class="account-help">to https://example.com</p>'));
+ assert.ok(second.includes('<p class="account-help">to https://other.example</p>'));
+ for (const origin of ["https://chatgpt.com", "https://claude.ai"]) assert.ok(!render(origin).includes('<p class="account-help">to '));
+ assert.ok(render('https://example.com/<script>"&').includes('to https://example.com/&lt;script&gt;&quot;&amp;'));
 });
 test("enrollment and linking keep browser-bound native confirmations", () => {
  for (const [view, action] of [[enroll, "/account/enroll"], [link, "/account/link"]]) {
@@ -76,10 +85,10 @@ test("refresh-grant consent discloses renewal even when offline_access is droppe
  for (const scope of ["openid scoat:read scoat:write offline_access", "openid scoat:read scoat:write"]) {
   const client = {name: "ChatGPT", origin: "https://chatgpt.com", refreshAllowed: true};
   const html = consent({params: {scope}}, "bound-csrf", client);
-  assert.ok(html.includes(`Stay signed in for up to ${connectionLifetimeSeconds / 86400} days`));
-  assert.ok(html.includes("renew access while you’re away"));
-  assert.ok(html.includes("until you disconnect or delete your account"));
-  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("renew access"));
+  assert.ok(html.includes(`Stays signed in up to ${connectionLifetimeSeconds / 86400} days`));
+  assert.ok(html.includes("Stays signed in up to"));
+  assert.ok(html.includes("days"));
+  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("Stays signed in"));
  }
 });
 

@@ -194,14 +194,14 @@ test("unconfigured mail refuses browser and MCP activation while existing watche
    assert.equal(response.headers.get("cache-control"), "no-store");
    assert.match(await response.text(), /Price watches are not configured/);
    const proposed = await w.f.tool(login.token, "scoat_memory", { op: "watch", requestKey: randomUUID(), hunt: "unconfigured", target: { currency: "GBP", pence: 6000 } });
-   assert.equal(proposed.structuredContent.reason, "service-unconfigured");
+   assert.equal(proposed.structuredContent.value.reason, "service-unconfigured");
    assert.equal((await w.pool.query("SELECT count(*)::integer AS n FROM watches")).rows[0].n, 0);
    assert.equal(watches.available, false);
    assert.deepEqual(await watches.prepare(scope, "unconfigured"), { kind: "unavailable", reason: "service-unconfigured" });
    await assert.rejects(retryTransaction(w.pool, client => watches.activate(client, { scope })), error => error.reason === "service-unconfigured");
    const seeded = await w.seedWatch(scope);
    const stopped = await w.f.tool(login.token, "scoat_memory", { op: "unwatch", requestKey: randomUUID(), watch: seeded.watch });
-   assert.equal(stopped.structuredContent.kind, "unwatched");
+   assert.equal(stopped.structuredContent.value.kind, "unwatched");
    assert.equal((await w.pool.query("SELECT status FROM watches WHERE id=$1", [seeded.watch])).rows[0].status, "cancelled");
   } finally { await w.close(); }
  });

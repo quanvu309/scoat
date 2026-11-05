@@ -62,10 +62,10 @@ test("ordinary HTTP client sees app-only tool but cannot authorize it", async ()
     assert.deepEqual(listed.tools.find(tool => tool.name === "scoat_card")._meta.ui.visibility, ["app"]);
     const result = await client.callTool({ name: "scoat_card", arguments: { op: "act", hunt: "h", grant: "arbitrary", requestKey: "k", action: { kind: "stop" } } });
     assert.equal(result.isError, true);
-    assert.equal(result.structuredContent, undefined);
+    assert.equal(result.structuredContent.error.code, "invalid-input");
     const invalid = await client.callTool({ name: "scoat_hunt", arguments: { op: "list", account: "forged" } });
     assert.equal(invalid.isError, true);
-    assert.equal(invalid.structuredContent, undefined);
+    assert.equal(invalid.structuredContent.error.code, "invalid-input");
     const guide = await client.callTool({ name: "scoat_guide", arguments: { job: "best-benefit", shop: null } });
     assert.equal(guide.structuredContent.ok, true);
     assert.equal(guide.structuredContent.rows.length, 8);

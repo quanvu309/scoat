@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
-import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
+import { schemas, toolCatalog, promptInput, descriptors } from "../dist/mcp/index.js";
 import { publicSourceUrl } from "../dist/knowledge/index.js";
 import { z } from "zod";
 import { checkAcceptanceAuthority, checkFixtureWorker, checkAcceptanceVerification, checkAcceptanceLinkCapture } from "./check-acceptance.mjs";
@@ -188,6 +188,9 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkScenarioProjection(fs.readFileSync("src/domain.ts", "utf8"), fs.readFileSync("src/hunt/index.ts", "utf8"));
   checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
+  const entries = Object.fromEntries(descriptors().map(entry => [entry.name, entry]));
+  checkOutputContract(entries, fs.readFileSync("src/mcp/index.ts", "utf8"), fs.readFileSync("src/mcp/results.ts", "utf8"));
+  checkToolDescriptors(entries, toolCatalog, fs.readFileSync("src/mcp/index.ts", "utf8"));
   checkWire(z.toJSONSchema(promptInput, { target: "draft-7" }));
   for (const file of fs.readdirSync("knowledge/releases")) if (file.endsWith(".json")) checkReleaseSources(JSON.parse(fs.readFileSync(`knowledge/releases/${file}`, "utf8")));
   checkTools(Object.keys(toolCatalog));
@@ -673,7 +676,7 @@ export function checkWatchRecipient(watches) {
 }
 export function checkWatchEntry(codec, contract, dispatch, renderer) {
  if (/watch\s*:/.test(codec)) throw new Error("Derive the canonical watch entry from the Memory watch aggregate, not a fixed codec reason");
- if (!/watch:z\.discriminatedUnion\("available",\[z\.strictObject\(\{available:z\.literal\(true\),url:https\}\)/.test(contract)) throw new Error("Card controls must carry the canonical watch link when available");
+ if (!/watch:z\.discriminatedUnion\("available",\[z\.strictObject\(\{available:z\.literal\(true\),url:https\}\)/.test(contract.replace(/\s/g, ""))) throw new Error("Card controls must carry the canonical watch link when available");
  if (!/watch: watchEntry\(/.test(dispatch) || !/controls\.watch\.available \? "Watch price: " \+ controls\.watch\.url/.test(dispatch)) throw new Error("Text and card controls must share one canonical watch entry");
  if (/Watch unavailable<\/button>/.test(renderer) || !/open\(controls\.watch\.url\)/.test(renderer)) throw new Error("The live card must open the canonical watch link");
 }
@@ -765,16 +768,68 @@ export function checkWatchVerification(skill, index, runner) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkCardOutputContract(fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/adapter.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
+ checkMemoryContract(fs.readFileSync("src/memory/index.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"));
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
  checkWatchErasure(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("src/accounts/erasure.ts", "utf8"));
  checkWatchLockOrder(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchRecipient(fs.readFileSync("src/memory/watches.ts", "utf8"));
- checkWatchEntry(fs.readFileSync("src/controls/codec.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/renderer.tsx", "utf8"));
+ checkWatchEntry(fs.readFileSync("src/controls/codec.ts", "utf8"), fs.readFileSync("src/mcp/outputs.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/renderer.tsx", "utf8"));
  checkWatchActivation(fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/server.ts", "utf8"));
  checkWatchBoundary(fs.readFileSync("src/auth/issuer.ts", "utf8"), fs.readFileSync("src/memory/watches.ts", "utf8"), fs.readFileSync("src/memory/index.ts", "utf8"));
  checkWatchWorker(fs.readFileSync("src/worker.ts", "utf8"), fs.readFileSync("src/delivery/index.ts", "utf8"));
  checkPublicFetch(fs.readFileSync("src/delivery/fetch.ts", "utf8"));
  checkWatchResponses(fs.readFileSync("src/delivery/index.ts", "utf8"), fs.readFileSync("src/auth/issuer.ts", "utf8"));
  checkWatchVerification(fs.readFileSync(".agents/skills/verify-scoat/SKILL.md", "utf8"), fs.readFileSync(".agents/skills/verify-scoat/features/README.md", "utf8"), fs.readFileSync("scripts/verify.mjs", "utf8"));
+}
+
+export function checkOutputContract(entries, adapter, gate) {
+ for (const [name, entry] of Object.entries(entries)) {
+  if (!entry.outputSchema && ["scoat_guide", "scoat_hunt", "scoat_memory", "scoat_card"].includes(name)) throw new Error("Declare the full success/error output contract");
+  if (!entry.outputSchema) continue;
+  const schema = entry.outputSchema;
+  if (schema.type !== "object" || schema.$schema !== "http://json-schema.org/draft-07/schema#" || !schema.oneOf?.some(branch => branch.properties?.ok?.const === false)) throw new Error("Declare a draft-7 object-root success/error union");
+  checkWire(schema);
+ }
+ if (!adapter.includes("return conform(name, await invoke(call))") || !adapter.includes("return conform(name, refuseInput(name, error))")) throw new Error("Route every known tool result through conform");
+ if (!gate.includes("output.safeParse(wire)") || !gate.includes("JSON.stringify(wire)") || !gate.includes("throw new ContractBreach()")) throw new Error("Validate and serialize every output at the gate");
+}
+export function checkToolDescriptors(entries, catalog, adapter) {
+ if (!adapter.includes('io: "input"')) throw new Error("Emit input schemas in input mode");
+ const expected = { scoat_guide: [true, false, true, false], scoat_hunt: [false, true, undefined, false], scoat_memory: [false, true, false, true], scoat_card: [false, true, false, false] };
+ for (const [name, entry] of Object.entries(entries)) {
+  const hints = expected[name], annotations = entry.annotations;
+  if (!hints || ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].some((key, index) => annotations?.[key] !== hints[index])) throw new Error("Publish honest whole-tool annotations");
+  if (!entry.title || !entry.description || entry.execution) throw new Error("Publish titles and operation descriptions without Tasks");
+  const input = catalog[name].input;
+  if (!("options" in input)) continue;
+  const operations = input.options.map(option => option.shape.op.value);
+  if (operations.some(op => !new RegExp(`\\b${op}\\b`).test(entry.description))) throw new Error("Describe every operation from its input owner");
+  if (input.options.some(option => "requestKey" in option.shape) && entry.annotations.readOnlyHint) throw new Error("Mixed write tools cannot claim read-only");
+ }
+}
+
+export function checkMemoryContract(source, adapter) {
+ for (const code of ["invalid-cursor", "missing-item", "key-reused", "session-mismatch", "expired"]) {
+  if (!source.includes('new MemoryRefusal("' + code + '")')) throw new Error("Use typed Memory refusals for expected failures");
+ }
+ if (!source.includes('throw new Error("Saved item integrity failure")')) throw new Error("Keep corrupt saved items as server faults");
+ if (!adapter.includes("if (!(error instanceof MemoryRefusal)) throw error")) throw new Error("Propagate unexpected Memory infrastructure failures");
+ if (!adapter.includes("structuredContent: { ok: true, value }") || !adapter.includes('value.kind === "confirmation-required"') || !adapter.includes('value.kind === "unwatched"')) throw new Error("Envelope Memory results and distinguish proposals from immediate cancellation");
+}
+
+export function checkCardOutputContract(adapter, card, contract, server = fs.readFileSync("src/server.ts", "utf8")) {
+ const capture = server.indexOf("invocationUnavailable = databaseUnavailable(error)");
+ const handled = server.indexOf("await transport.handleRequest(request, { parsedBody: body })");
+ const gate = server.indexOf("if (invocationUnavailable !== null)", handled);
+ const translation = server.indexOf('return Response.json({ error: "service_unavailable" }, { status: 503 })', gate);
+ if (capture < 0 || handled < capture || gate < handled || translation < gate || translation > server.indexOf("return response;", handled)) throw new Error("Translate typed invocation infrastructure failures after SDK handling to sanitized HTTP 503");
+ if (!adapter.includes("if (!(error instanceof ReadGrantFailure)) throw error")) throw new Error("Propagate card lineage and infrastructure failures");
+ if (!adapter.includes('value: { capability: "issued", expiresAt: capability.expiresAt.toISOString() }') || !adapter.includes('_meta: { "scoat/readCapability": capability }')) throw new Error("Keep capability grants private and declare only public expiry");
+ const publicValue=adapter.match(/value: \{ capability: "issued"[^\n]+/g) ?? [];
+ if (publicValue.some(value => /\bgrant\b/.test(value))) throw new Error("Never publish a card grant");
+ if ([adapter,card].some(source => source.includes('"scoat/cardFailure"')) || !card.includes("cardOutput.safeParse(reply.structuredContent)")) throw new Error("Read card errors from the shared structured contract");
+ if (!contract.includes('huntSnapshot as snapshotSchema } from "../mcp/outputs.js"')) throw new Error("Share the snapshot output owner with the card");
+ if (adapter.includes("JSON.stringify(")) throw new Error("Serialize public results only at conform");
 }

@@ -21,7 +21,7 @@ export async function launch() {
 }
 export async function connect(base) {
   const client = new Client({ name: "scoat-p01-driver", version: "1.0.0" });
-  try { await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", base))); }
+  try { await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", base), { requestInit: { headers: { connection: "close" } } })); }
   catch (error) { await client.close(); throw error; }
   return client;
 }

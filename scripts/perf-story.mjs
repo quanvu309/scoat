@@ -21,7 +21,7 @@ async function scriptedHunt(call) {
  const timed = async (op, tool, args) => {
   const started = performance.now();
   const result = await call(tool, args);
-  calls.push({ op, ms: performance.now() - started, isError: result.isError === true, ok: result.structuredContent?.ok === true });
+  calls.push({ op, ms: performance.now() - started, isError: result.isError === true, ok: result.structuredContent?.ok === true, contentBytes: Buffer.byteLength(JSON.stringify(result.content)) });
   return result;
  };
  const started = performance.now();
@@ -111,6 +111,7 @@ export async function measureStory({ warmBatches = 5, huntsPerBatch = 3, healthP
    const login = await fixture.f.login("host-one");
    client = new Client({ name: "scoat-perf-p09", version: "1.0.0" });
    await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", fixture.f.issuer), { requestInit: { headers: { authorization: "Bearer " + login.token } } }));
+   const discoveryBytes = Buffer.byteLength(JSON.stringify(await client.listTools()));
    const call = (tool, args) => client.callTool({ name: tool, arguments: args });
    conditions.identity.setEmail({ email: "p09-perf-" + randomBytes(6).toString("hex") + "@example.test", email_verified: true });
    const batches = [];
@@ -132,7 +133,7 @@ export async function measureStory({ warmBatches = 5, huntsPerBatch = 3, healthP
     assert.equal(activation.status, 200, activationText.slice(0, 600));
     assert.ok(activationText.includes("Watch active"), activationText.slice(0, 600));
     const activationMs = performance.now() - activationStarted;
-    const item = (await call("scoat_memory", { op: "read", collection: "watches" })).structuredContent.items.find(value => value.hunt === watched.hunt);
+    const item = (await call("scoat_memory", { op: "read", collection: "watches" })).structuredContent.value.items.find(value => value.hunt === watched.hunt);
     assert.equal(item.status, "active");
     assert.equal(item.baseline.pence, 7000);
     conditions.seller.setPence(5620);
@@ -170,7 +171,7 @@ export async function measureStory({ warmBatches = 5, huntsPerBatch = 3, healthP
    const totals = (await conditions.read("SELECT count(*)::integer AS alerts, count(*) FILTER (WHERE state = 'accepted')::integer AS accepted, count(DISTINCT provider_key)::integer AS keys FROM watch_alerts"))[0];
    const finalHealth = await healthSamples(fixture.f.issuer, 1);
    return {
-    role, settings, manifest, workerDigest: worker.artifact, startHealth: startHealth.last.body, finalHealth: finalHealth.last.body,
+    discoveryBytes, role, settings, manifest, workerDigest: worker.artifact, startHealth: startHealth.last.body, finalHealth: finalHealth.last.body,
     batches,
     repeat: { deliveriesBefore: deliveriesBefore.length, deliveriesAfter: deliveries.length, requestsBefore, requestsAfter: requests, maxAcceptancesPerKey: Math.max(...Object.values(perKey)), deliveredKeys: Object.keys(perKey).sort(), alertKeys, totals },
     fixtureCounts: { hunts: batches.length * huntsPerBatch, watches: batches.length, rowsPerHunt: 8, slotsPerHunt: 11, plans, workerConcurrency: 4, mcpClients: 1 },

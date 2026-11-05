@@ -90,7 +90,7 @@ const result=await withDatabase(async databaseUrl=>{
   assert.equal(f.initial.controls.watch.available,false);
   await frame.getByRole("button",{name:"Why no price watch?"}).click();
   await frame.getByText(f.initial.controls.watch.reason).waitFor();
-  const unconfigured=(await f.memory({op:"watch",requestKey:randomUUID(),hunt:f.initial.value.view.hunt,target:{currency:"GBP",pence:6000}})).structuredContent;
+  const unconfigured=(await f.memory({op:"watch",requestKey:randomUUID(),hunt:f.initial.value.view.hunt,target:{currency:"GBP",pence:6000}})).structuredContent.value;
   assert.equal(unconfigured.kind,"watch-unavailable");
   assert.equal(unconfigured.reason,"service-unconfigured");
   assert(!("url" in unconfigured));

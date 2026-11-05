@@ -60,7 +60,7 @@ export async function lifecycleLanes(databaseUrl) {
   const reserved=(await f.store.pool.query("SELECT command,key FROM memory_commands WHERE account=$1",[scope.account])).rows[0];
   assert.equal(reserved.command,null); assert.equal(reserved.key,proposal.requestKey);
   await assert.rejects(memory.run(caller,proposal),/expired/);
-  await assert.rejects(memory.run(caller,{op:"read",collection:"saved",after:Buffer.from(JSON.stringify({account:randomUUID(),incarnation:scope.incarnation,collection:"saved",after:""})).toString("base64url")}),/scope mismatch/);
+  await assert.rejects(memory.run(caller,{op:"read",collection:"saved",after:Buffer.from(JSON.stringify({account:randomUUID(),incarnation:scope.incarnation,collection:"saved",after:""})).toString("base64url")}),error => error.code === "invalid-cursor");
   const holder=await f.store.pool.connect(), observer=await f.store.pool.connect();
   let conflict;
   try {

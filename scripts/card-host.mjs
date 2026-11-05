@@ -9,9 +9,9 @@ bridge.onopenlink=async({url})=>{opened.push(url);window.open(url,"_blank");retu
 bridge.oncalltool=async params=>{
  const start=performance.now();calls.push({op:params.arguments.op,at:start});
  if(delay) await new Promise(resolve=>setTimeout(resolve,delay));
- if(mode==="outage") return {isError:true,content:[],_meta:{"scoat/cardFailure":{code:"transient"}}};
+ if(mode==="outage") return {isError:true,content:[],structuredContent:{ok:false,error:{code:"transient",message:"Local bridge response lost",next:"Retry the authenticated card connection.",repair:{kind:"none"}}}};
  const result=await (await fetch("/tool",{method:"POST",body:JSON.stringify(params)})).json();
- if(mode==="lose-renew" && params.arguments.op==="renew" && !result.isError && result._meta?.["scoat/readCapability"]?.grant) {mode="live";lostRenewals++;return {isError:true,content:[],_meta:{"scoat/cardFailure":{code:"transient"}}};}
+ if(mode==="lose-renew" && params.arguments.op==="renew" && !result.isError && result._meta?.["scoat/readCapability"]?.grant) {mode="live";lostRenewals++;return {isError:true,content:[],structuredContent:{ok:false,error:{code:"transient",message:"Local bridge response lost",next:"Retry the authenticated card connection.",repair:{kind:"none"}}}};}
  if(replyOverride && params.arguments.op==="read") result.structuredContent=replyOverride;
  if(mode==="old" && params.arguments.op==="read") result.structuredContent=await (await fetch("/initial")).json();
  const secret=result._meta?.["scoat/readCapability"];

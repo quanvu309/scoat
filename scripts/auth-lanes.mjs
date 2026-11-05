@@ -307,7 +307,8 @@ export async function authLanes(databaseUrl) {
     );
     const opened = await f.tool(active.token, "scoat_card", {op:"open",hunt:view.hunt});
     const contested = read(opened);
-    assert.equal(opened.structuredContent,undefined);
+    assert.deepEqual(opened.structuredContent,{ok:true,value:{capability:"issued",expiresAt:contested.expiresAt}});
+    assert(!JSON.stringify(opened.structuredContent).includes(contested.grant));
     assert(!JSON.stringify(opened.content).includes(contested.grant));
     const renewals = await Promise.all(
       [1, 2].map(() =>

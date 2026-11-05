@@ -35,7 +35,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   const login = await f.login();
   const principal = await f.authenticate(login.token);
   const scope = { account: principal.agent.account, incarnation: principal.agent.incarnation };
-  const memory = async request => { const result = await f.tool(login.token, "scoat_memory", request); assert.ok(!result.isError, JSON.stringify(result)); return result.structuredContent; };
+  const memory = async request => { const result = await f.tool(login.token, "scoat_memory", request); assert.ok(!result.isError, JSON.stringify(result)); return result.structuredContent.value; };
   const finishedHunt = async (withStudent) => {
    const start = await f.tool(login.token, "scoat_hunt", { op: "start", requestKey: randomUUID(), profile: null, intent: { product: { kind: "url", url: productUrl }, variant: "4GB", shop: null, budget: null } });
    assert.ok(start.structuredContent.ok, JSON.stringify(start));

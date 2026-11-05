@@ -70,7 +70,11 @@ test("email codes bind flow and purpose, expire, cap attempts, serialize consump
    const enumeration=await flow();
    const sendHttp=(email:string)=>f.browser(f.issuer+"/login/send",{method:"POST",headers:{origin:f.issuer},body:new URLSearchParams({state:enumeration.raw,email})});
    const known=await sendHttp("person@example.invalid"),unknown=await sendHttp("fresh@example.invalid");
-   assert.equal(known.status,unknown.status);assert.equal(await known.text(),await unknown.text());
+   assert.equal(known.status,unknown.status);
+   const codeHtml = await known.text();
+   assert.equal(codeHtml,await unknown.text());
+   assert.match(codeHtml,/inputmode="numeric"/);
+   assert.match(codeHtml,/autocomplete="one-time-code"/);
    const missing = await f.browser(f.issuer+"/login/send",{method:"POST",headers:{origin:"https://foreign.invalid"},body:new URLSearchParams({state:"forged",email:"person@example.invalid"})});
    assert.equal(missing.status,403);
   } finally { await f.close(); }

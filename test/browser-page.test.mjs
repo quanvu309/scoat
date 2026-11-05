@@ -42,6 +42,15 @@ test("consent describes only requested access and keeps both explicit decisions"
  const csrf = nodes.find(node => node.tagName === "input");
  assert.equal(csrf.attrs.find(attr => attr.name === "value").value, 'csrf<"&');
 });
+test("consent distinguishes unnamed origins and keeps named hosts minimal", () => {
+ const render = origin => consent({params: {scope: "openid scoat:read"}}, "csrf", {name: "your chat app", origin, refreshAllowed: false});
+ const first = render("https://example.com"), second = render("https://other.example");
+ assert.notEqual(first, second);
+ assert.ok(first.includes('<p class="account-help">to https://example.com</p>'));
+ assert.ok(second.includes('<p class="account-help">to https://other.example</p>'));
+ for (const origin of ["https://chatgpt.com", "https://claude.ai"]) assert.ok(!render(origin).includes('<p class="account-help">to '));
+ assert.ok(render('https://example.com/<script>"&').includes('to https://example.com/&lt;script&gt;&quot;&amp;'));
+});
 test("enrollment and linking keep browser-bound native confirmations", () => {
  for (const [view, action] of [[enroll, "/account/enroll"], [link, "/account/link"]]) {
   const nodes = elements(view("bound-confirmation"));

@@ -1,0 +1,116 @@
+{
+  "id": "gb-method-2026-11-04",
+  "market": "GB",
+  "publishedAt": "2026-11-04T00:00:00Z",
+  "rows": [
+    {
+      "id": "shop-price",
+      "place": "shop-price",
+      "label": "Shop Price",
+      "method": "Check the exact variant, price, delivery and stock on the shop page.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "other-sellers",
+      "place": "other-sellers",
+      "label": "Other Sellers",
+      "method": "Check four distinct comparable sellers; record unavailable searches as named gaps.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "facts": []
+    },
+    {
+      "id": "student",
+      "place": "student",
+      "label": "Student",
+      "method": "Ask about declaration; find primary eligibility and verification steps.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "membership",
+      "place": "membership",
+      "label": "Membership",
+      "method": "Check declared memberships and joining requirements without assuming enrolment.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "codes",
+      "place": "codes",
+      "label": "Codes",
+      "method": "Check seller-issued codes first; label third-party codes untested.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "cashback",
+      "place": "cashback",
+      "label": "Cashback",
+      "method": "Check public cashback terms, exclusions and tracking requirements.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "price-match",
+      "place": "price-match",
+      "label": "Price Match",
+      "method": "Check primary price-match policy and exact variant restrictions.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    },
+    {
+      "id": "card-perks",
+      "place": "card-perks",
+      "label": "Card Perks",
+      "method": "Check public card perks and activation steps; no partner access or bank-linked offers.",
+      "proofRequired": "Source URL and observed UTC time; applicability, status and validity.",
+      "stopRule": "Checked with evidence, person-skipped, or named gap.",
+      "slots": [
+        0
+      ],
+      "facts": []
+    }
+  ],
+  "shops": [
+    {
+      "id": "nike",
+      "label": "Nike",
+      "status": "unsupported",
+      "reason": "No fresh primary-source verification in this release; student schemes, codes, membership and official domains are unavailable curated facts. Verify public sources during the hunt.",
+      "refreshOwner": "Scoat knowledge maintainers"
+    }
+  ],
+  "facts": []
+}

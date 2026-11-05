@@ -1,28 +1,18 @@
 ---
 name: verify-scoat
-description: Verify Scoat's current P01 compiled HTTP/MCP foundation, schemas, denied controls and fixture resource. Use after foundation changes; does not verify shopping, OAuth, watches or real hosts.
+description: Verify Scoat after changes to P01 HTTP/MCP transport, registry schemas, denied controls or fixture resources, or P02 release validation, publication, checklist construction or generated guidance. Covers compiled local service behavior; excludes real-host support, shopping, OAuth, watches and interactive cards.
 ---
 
-## Launch
+## Choose the verification branch
 
-From the repo root on Node 24, run `npm ci` and `npm run build`. The driver launches the real compiled `dist/server.js` on an ephemeral loopback port and closes it. No database or email dependency is needed for this current HTTP surface. For an interactive local process, run `npm start`; `/healthz` on port 3000 reports `phase: P01` and `ready: true`. Stop that specific process after use.
+1. Run `npm ci` and `npm run build` from the repository root on Node 24. Stop and report FAIL if either command fails.
+2. For HTTP transport, registry, authorization denial, fixture app or driver changes, load [foundation](features/foundation.md). It defines the P01 lanes and their existing host/confirmation limits.
+3. For release validation, publication, lookup, checklist or renderer changes, load [knowledge](features/knowledge.md). It defines P02 scenarios, immutable-pin checks and source auditing.
+4. For shared adapter or driver changes, run both branches. Read the [feature index](features/README.md) only when ownership is unclear.
+5. Run the branch commands, `npm run typecheck`, `npm run lint` and `npm test`. Use pstack-run for noisy finite checks. Retain its result JSON and logs under `~/tmp`.
 
-## Doctor
+## Completion and evidence
 
-Run `npm run verify -- doctor`. Expect UK/GBP P01 process readiness with shopping and auth unavailable. Failure means the build or HTTP startup must be fixed before driving.
+Record the exact committed head and clean worktree status with command receipts. PASS means every required assertion in that branch executed successfully against that head. FAIL means a command or assertion failed; include the saved error evidence. UNTESTED means a required environment or session was unavailable; name it without converting another probe into a pass. A command's zero exit alone does not discharge explicitly untested gates.
 
-## Drive
-
-Run `npm run verify -- p01 --lane 2` for the registry feature in [features](features/README.md), or `npm run verify -- p01` for all declared lanes. The raw MCP Client reaches the compiled server through HTTP. Run `npm test -- test/protocol.test.ts` for the pinned compatibility probe and `npm run lint` for structural prevention checks. `npm run perf -- p01` records local raw timings; it cannot establish a speedup over the absent trunk endpoint.
-
-## Evidence
-
-Keep the driver's printed evidence path under `~/tmp/scoat-delivery/p01/`. Each lane includes inputs and observed results in `transcript.json`; `summary.json` records source identity and gates. Use only synthetic input. Lanes 6/7 are UNTESTED and lane 8 PARTIAL until real host/browser sessions exist. No screenshots, host pass or successful shopping result can be inferred from this fixture.
-
-## Cleanup
-
-The driver closes clients and terminates only its own child server, including the restart lane. Evidence survives automatically. Confirm the printed summary and lane transcript still exist after return. Do not remove evidence or kill other servers. The fixture HTTP feature creates no database, Compose project or persistent account.
-
-## Helpers
-
-`node scripts/verify.mjs p01 --lane 2` is the direct equivalent of the npm drive command. Later phase owners must extend the map only after their public interfaces work.
+Return each requested check, its PASS/FAIL/UNTESTED state, and the evidence path. Completion requires an entry for every selected branch scenario, static check, test suite and performance gate. Do not claim full verification while a required gate is UNTESTED. The drivers close their own clients, servers and temporary publication directories. Retain evidence and leave unrelated processes and data alone.

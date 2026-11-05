@@ -86,26 +86,13 @@ Design intent moved out of the code. The code has no comments; names and interfa
 
 ## src/knowledge/index.ts
 
-- **Fact**: Curated by the Scoat team from public sources. Agents never write facts.
-- **RowRecipe**: One recipe per checklist row. `slots` > 1 means N distinct sellers, not N checks of one seller.
-- **Release**: Immutable release: playbooks and facts publish together, so a hunt pins one id and never mixes revisions.
-- **Guide**: What the agent reads. The MCP prompt, the resource, the guide tool and the skill file are all this.
-- **renderGuide**: The only renderer of playbook text. Prompts, resources, scoat_guide and SKILL.md exports call it.
-- **renderGuide**: TODO Render rows in order with method, proof required and stop rule; include shop facts with source dates.
-- **renderGuide**: TODO Tell every worker: read the hunt before each external search; obey the directive.
-- **renderGuide**: TODO Claude Code / Codex section: rows may be split across subagents, one row per subagent.
-- **checklist**: The only constructor of a checklist. Profile never silently removes a row; inapplicable rows need a proved "none".
-- **isOfficialSource**: Code provenance is decided by attested domains, never by a caller flag. Code-site codes are always untested.
-- **publish**: Team-only. Rejects a release with dangling fact ids, duplicate rows, a missing place, or expired facts. Never an MCP tool.
-- **publish**: TODO Validate: every Place covered once, fact references resolve, distinct-seller rows have slots >= 1,
-- **publish**: TODO stacking facts reference existing facts, validUntil in the future. Content-address the id.
-- **read**: "latest" is for discovery only; hunts always read their pinned id.
+P02 implements this module. See the P02 immutable knowledge section below for validation, publication, rendering and provenance.
 
 ## src/mcp/index.ts
 
 P01 now implements strict wire contracts and unavailable/forbidden dispatch. Request types, tool names, descriptions and schemas derive from `toolCatalog`. The SDK's high-level listing loses root discriminated unions; the MCP adapter therefore installs registry-derived list/call request handlers and emits draft-7 object schemas with strict union branches. Invalid inputs receive a fixed error before dispatch, without reflecting private input. Domain functions remain SDK-free and are not called until their implementation phases.
 
-`person()` and `authenticate()` fail closed. App visibility and result metadata are not authentication. See [host support](host-support.md) for the observed compatibility and blocked host gates. The fixture HTML is embedded in the compiled MCP module and served as an MCP App resource; it is not the P07 interactive card. Prompts and knowledge resources remain unavailable until P02.
+`person()` and `authenticate()` fail closed. App visibility and result metadata are not authentication. See [host support](host-support.md) for the observed compatibility and blocked host gates. The fixture HTML is embedded in the compiled MCP module and served as an MCP App resource; it is not the P07 interactive card. P02 adds the shared knowledge prompt and immutable Markdown resources described below.
 
 ## src/memory/index.ts
 
@@ -144,3 +131,31 @@ npm run db:seed -- --fixture p01-lane1
 `db:migrate` runs the checked-in Drizzle migration journal under an advisory lock. `db:seed` inserts one idempotent UK/GBP fixture-lane marker and prints the stored row. Neither creates fake account identities or shopping results. Both require the explicit lane DSN. The HTTP foundation does not require these dependencies yet. Mailpit captures local email only; P01 sends none. The seller's `/product` route is fixture data, not a production recheck transport; it is never imported into `src/`. A future recheck adapter must stay fixture-only. Stop dependencies with `docker compose -p scoat-p01-lane1 down -v` using the same selected ports/environment. Remove only the lane's volumes. Docker/Compose execution is untested in environments without Docker.
 
 `npm run start:worker` exits nonzero with an explicit P08-unavailable message. GitHub Actions runs install, build, typecheck, lint, tests, repeated Postgres migrations/seeds, HTTP verification and perf on standard `ubuntu-latest`. No runner registration, caches, uploaded artifacts or external services are configured. CI's fixture passes do not discharge the real-host gates.
+
+## P02 immutable knowledge
+
+`knowledge/releases/gb-method-2026-11-04.json` is the production seed. It contains eight rows and eleven total slots: four distinct other sellers and seven single-slot places. Eligibility never removes a row. Future hunt recording must enforce distinct seller identities and resolve every slot as checked, person-skipped or a named gap. P02 does not implement recording, identity or totals.
+
+### Validate, publish and refresh
+
+Build with `npm run build`. Import `Knowledge`, `validateRelease` and `auditSources` from `dist/knowledge/index.js`. Validate external JSON with `validateRelease(raw, new Date().toISOString())`. Publication runs that validation again. Use `await new Knowledge(directory).publish(raw)` for a writable release directory; omitting the directory uses the checked-in production directory. No model tool exposes publication. Commit reviewed seed releases into `knowledge/releases` for packaged deployment, or persist a writable directory across process restarts. Redeploying only the checked-in files cannot retain unpublished local files.
+
+Publication writes a unique temporary file exclusively, then atomically hard-links the complete file to the final ID with no overwrite. A competing identical publication converges; conflicting content fails. Temporary files are cleaned after publication attempts; crash-left `.pending` files are ignored by lookup. Files must remain on the same filesystem. Atomic visibility and process restart persistence are provided; power-loss durability and external administrator edits are outside this boundary. No database is involved.
+
+The ID must match its filename. Latest is chosen by published timestamp then ID; pins always name an exact ID. Reused IDs are compared after strict schema normalization. Read validates historical files at their publication time, so a once-valid pinned release stays reproducible after expiry. Publication validates against current time. Parsed content is recursively frozen, including row slot arrays and facts; mutations of caller input cannot alter files or prior snapshots.
+
+`renderGuide` provides one canonical Markdown body for tool, prompt, resource and skill exports. It deliberately does not depend on wall clock. Every output warns that pinned facts are historical, requires checking expiry, and excludes unknown/expired claims from confirmed offers. `auditSources` separately takes an explicit current instant and reports freshness without rewriting a pin. `isOfficialSource` also requires an explicit current instant. A student declaration never verifies eligibility. Third-party code facts cannot be published as confirmed.
+
+Published source URLs follow the [production source register](../knowledge/sources/README.md): HTTPS DNS names with lexical nonpublic-host rejection. The boundary does not perform network requests or guarantee DNS reachability. Synthetic fixtures use example-domain URLs and never supply production facts.
+
+### MCP surface
+
+`scoat_guide` returns the canonical method, release ID, complete rows, scoped facts and named shop gap over compiled HTTP. Prompt `hunt-best-benefit` accepts an optional shop. Read the default guide or skill Markdown at `scoat://knowledge/<release>/guide` and `scoat://knowledge/<release>/SKILL.md`. Registration snapshots releases at process startup. Every release present on disk gets its own pinned guide and skill resource; restarts retain old URI content while the default tool and prompt advance to latest. Rendering a historical pin is also supported by `Knowledge.read` plus `renderGuide`. There are exactly four product tools. Hunt, memory, OAuth and person/card controls remain denied or unavailable. Exact Origin protections are unchanged.
+
+The raw prompt handler parses the strict `promptInput` schema before rendering. Unknown arguments and unknown prompt names return invalid-params errors. Tool and prompt boundaries both reject extra fields; high-level SDK prompt registration is banned because it strips them.
+
+### Evidence and limits
+
+`npm test` covers invalid row configurations, duplicate sellers, dangling/expired facts, provenance, declarations, third-party codes, mutation, reused IDs and restart pinning. `npm run verify -- p02` records ten deterministic service/module scenarios, including actual HTTP tool/prompt/resource retrieval. JSON transcripts are primary evidence, not UI screenshots or real-host verification. P01 lanes 6/7 remain UNTESTED and lane 8 PARTIAL. No model-agent lane or UI completion is claimed.
+
+`npm run perf -- p02` measures validation of a synthetic 100-shop release and guide rendering for each of its shops, with eight shared row recipes per shop, in five batches after warmup. Every measured operation validates its output. File I/O, startup, build, installation and network are excluded. P01 has no equivalent operation, so no speedup ratio is meaningful. The local 100 ms budget is checked; the fixed two-vCPU gate remains untested on this host.

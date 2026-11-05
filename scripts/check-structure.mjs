@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { parse as yaml } from "yaml";
-import { schemas, toolCatalog } from "../dist/mcp/index.js";
+import { schemas, toolCatalog, promptInput } from "../dist/mcp/index.js";
+import { publicSourceUrl } from "../dist/knowledge/index.js";
+import { z } from "zod";
 
 export function checkSdkImports(file, source) {
   if (!file.startsWith("src/")) return;
@@ -27,7 +29,11 @@ export function checkWorkflow(source) {
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) walk(file); else if (file.endsWith(".ts")) checkSdkImports(file, fs.readFileSync(file, "utf8"));
+    if (entry.isDirectory()) walk(file); else if (/\.[cm]?[jt]s$/.test(file)) {
+      const source = fs.readFileSync(file, "utf8");
+      checkSdkImports(file, source);
+      checkScratchAllocation(file, source);
+    }
   }
 }
 export function checkTools(names) {
@@ -71,9 +77,14 @@ export function checkRegistryAdapter(source) {
   function visit(node) {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && (node.callee?.name === "registerAppTool" || node.callee?.property?.name === "registerTool")) throw new Error("Use registry-derived ListToolsRequestSchema handler; SDK 1.x normalizes root unions to empty objects");
+    if (node.type === "CallExpression" && node.callee?.property?.name === "registerPrompt") throw new Error("Use strict raw GetPromptRequestSchema parsing; SDK registerPrompt strips unknown argument keys");
     for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
   }
   visit(ast.program);
+}
+
+export function checkReleaseSources(release) {
+  for (const fact of release.facts) publicSourceUrl.parse(fact.source);
 }
 
 export function checkTypeConfig(config) {
@@ -99,7 +110,12 @@ export function checkDriver(source) {
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
   walk("src");
+  walk("scripts");
+  walk("test");
+  checkKnowledgeTypes(fs.readFileSync("src/knowledge/index.ts", "utf8"));
   Object.values(schemas()).forEach(checkWire);
+  checkWire(z.toJSONSchema(promptInput, { target: "draft-7" }));
+  for (const file of fs.readdirSync("knowledge/releases")) if (file.endsWith(".json")) checkReleaseSources(JSON.parse(fs.readFileSync(`knowledge/releases/${file}`, "utf8")));
   checkTools(Object.keys(toolCatalog));
   checkWorkflow(fs.readFileSync(".github/workflows/ci.yaml", "utf8"));
   checkDependencyPair(JSON.parse(fs.readFileSync("package.json", "utf8")));
@@ -109,4 +125,25 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
   checkHostConfig(fs.readFileSync("src/server.ts", "utf8"));
   checkTypeConfig(JSON.parse(fs.readFileSync("tsconfig.json", "utf8")));
   checkDriver(fs.readFileSync("scripts/driver.mjs", "utf8"));
+}
+
+export function checkKnowledgeTypes(source) {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (["TSParameterProperty", "TSEnumDeclaration", "TSModuleDeclaration"].includes(node.type)) throw new Error("Knowledge must use erasable TypeScript for Node strip-only tests; declare fields explicitly");
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
+}
+
+export function checkScratchAllocation(file, source) {
+  if (file === "scripts/scratch.mjs") return;
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript"] });
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if ((node.type === "ImportSpecifier" && node.imported?.name === "mkdtemp") || (node.type === "CallExpression" && (node.callee?.name === "mkdtemp" || node.callee?.property?.name === "mkdtemp"))) throw new Error(`${file}: use scratchDirectory so an absent ~/tmp parent is created before allocation`);
+    for (const value of Object.values(node)) if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === "object") visit(value);
+  }
+  visit(ast.program);
 }

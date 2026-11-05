@@ -1,0 +1,12 @@
+# P02 knowledge verification
+
+Run this branch after changing release schemas, publication/lookup, checklist construction, provenance or any generated guidance format. Build first using the parent skill's common steps.
+
+1. Run `npm run verify -- p02`. Read the printed evidence directory and its `summary.json`.
+2. Check all ten `lane-N.json` receipts: (1) compiled HTTP guide has eight rows/four seller slots; (2) compiled module renders the shop method and explicit source gap; (3) tool, prompt, resource and skill share content; (4) two publications and restarted lookup preserve first-file hashes; (5) incomplete/duplicate seller slots fail; (6) unknown shop retains every row; (7) expired synthetic eligibility fails; (8) third-party code stays untested and promotion fails; (9) skill requires evidence, complete slots, named gaps and server totals; (10) production audit records provenance/owners or unsupported status.
+3. Run `npm run perf -- p02`. Read `perf.json`: five batches must retain raw guide/validation samples, runner metadata and 100 synthetic shops using eight row recipes. Each local p95 must be at most 100 ms. Same-ID output must remain stable.
+4. Complete the parent skill's typecheck, lint and test commands. Knowledge tests must cover declaration versus verification, dangling facts, mutation, conflicting IDs, concurrent publication, old pins after restart and rejected nonpublic source hosts. Protocol tests must reject extra prompt arguments while preserving valid guide equivalence. Lint must reject the reproduced prompt registration and nonpublic source fixtures.
+
+PASS requires every assertion above to execute successfully. FAIL identifies the failing command/assertion and receipt. UNTESTED identifies an unavailable gate. The scripts are deterministic raw-client/module probes; they do not run the plan's model-agent sessions. That model gate remains UNTESTED. The fixed two-vCPU acceptance gate is UNTESTED on another runner shape. P01 host lanes 6/7 remain UNTESTED and confirmation lane 8 PARTIAL; running this branch does not change them. JSON receipts are service evidence, not UI screenshots.
+
+Production currently publishes a general method with explicit unsupported Nike facts. Synthetic offers stay under `test/fixtures`; neither a local fixture nor an unsupported entry proves a real discount, working code, student scheme or official domain. Hunt execution and totals remain unavailable.

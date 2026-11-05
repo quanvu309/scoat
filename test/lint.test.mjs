@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkComments } from "../scripts/check-no-comments.mjs";
-import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver } from "../scripts/check-structure.mjs";
+import { checkSdkImports, checkWire, checkWorkflow, checkTools, checkDependencyPair, checkPersonBoundary, checkHostConfig, checkRegistryAdapter, checkTypeConfig, checkDriver, checkKnowledgeTypes, checkReleaseSources, checkScratchAllocation } from "../scripts/check-structure.mjs";
 
 test("comment parser rejects comments outside src and accepts URL/regex literals", () => {
   for (const file of ["scripts/past.mjs", "test/past.ts", "vite.config.ts"]) assert.throws(() => checkComments(file, "const x = 1; /" + "/ forbidden"), /comments forbidden/);
@@ -27,4 +27,22 @@ test("structural rules reject each offending fixture with supported fix", () => 
   assert.throws(() => checkPersonBoundary('export async function person(args) { return {kind:"person", grant:args.grant}; }'), /always throw/);
   assert.throws(() => checkDriver('fork("server", [], {});'), /execArgv/);
   assert.throws(() => checkDriver('export async function connect() { await client.connect(transport); }'), /Close the Client/);
+});
+
+test("knowledge stays compatible with strip-only Node tests", () => {
+  assert.throws(() => checkKnowledgeTypes('export class Knowledge { constructor(readonly directory = "seed") {} }'), /erasable TypeScript/);
+  assert.doesNotThrow(() => checkKnowledgeTypes('export class Knowledge { readonly directory: string; constructor(directory: string) { this.directory = directory; } }'));
+});
+
+test("prompt registration and public-source lint reject reproduced review failures", () => {
+  assert.throws(() => checkRegistryAdapter("server.registerPrompt(\"hunt-best-benefit\", { description: \"Pinned complete UK/GBP hunt method\", argsSchema: { shop: z.string().optional() } }, async ({ shop }) => ({ messages: [{ role: \"user\", content: { type: \"text\", text: renderGuide({ release, request: { job: \"best-benefit\", shop: shop ?? null }, format: \"prompt\" }).method } }] }));"), /strict raw GetPromptRequestSchema/);
+  assert.doesNotThrow(() => checkRegistryAdapter('server.server.setRequestHandler(GetPromptRequestSchema, handler);'));
+  for (const source of ["https://127.0.0.1/code", "https://localhost/code", "https://10.0.0.1/code"]) assert.throws(() => checkReleaseSources({ facts: [{ source }] }), /public HTTPS DNS/);
+  assert.doesNotThrow(() => checkReleaseSources({ facts: [{ source: "https://www.nike.com/gb/" }] }));
+});
+
+test("scratch lint rejects the original GitHub runner failure", () => {
+  assert.throws(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await mkdtemp(path.join(os.homedir(), "tmp/p02-test-"));'), /scratchDirectory/);
+  assert.throws(() => checkScratchAllocation("scripts/verify-knowledge.mjs", 'const directory = await fs.mkdtemp(path.join(os.homedir(), "tmp/p02-live-"));'), /scratchDirectory/);
+  assert.doesNotThrow(() => checkScratchAllocation("test/knowledge.test.ts", 'const directory = await scratchDirectory("p02-test-");'));
 });

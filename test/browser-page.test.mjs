@@ -36,7 +36,7 @@ test("consent describes only requested access and keeps both explicit decisions"
  const nodes = elements(html);
  assert.equal(nodes.filter(node => node.tagName === "script").length, 0);
  assert.ok(html.includes("View your hunts and saved results"));
- assert.ok(!html.includes("Run hunts and save changes"));
+ assert.ok(!html.includes("run hunts and save changes"));
  const buttons = nodes.filter(node => node.tagName === "button");
  assert.deepEqual(buttons.map(node => node.attrs.find(attr => attr.name === "value").value), ["allow", "deny"]);
  const csrf = nodes.find(node => node.tagName === "input");

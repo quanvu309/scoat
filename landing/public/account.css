@@ -31,11 +31,10 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 @media (prefers-reduced-motion: no-preference) { .account-content button, .ui-button { transition: filter var(--duration-micro) var(--ease-micro); } }
 
 .account-notice > span:last-child, .account-help { font-size: .8125rem; }
-.account-content button[value="deny"] { background: var(--card); border-color: var(--border); color: var(--foreground); }
 .account-content button.account-secondary { background: var(--card); border-color: var(--border); color: var(--foreground); }
 .account-content .account-code { font: 1.5rem var(--font-mono); letter-spacing: .4em; text-align: center; }
 .account-content .account-after-form { margin-block-start: 1rem; }
-.account-resend { margin-block-start: 1.5rem; padding-block-start: 1.25rem; border-block-start: 1px solid var(--border); }
+.account-resend { margin-block-start: .75rem; }
 .account-resend form { margin-block-start: .75rem; }
 .account-resend p:last-child { margin-block: .5rem 0; }
 
@@ -48,8 +47,6 @@ body.account-page { margin: 0; min-block-size: 100svh; padding: max(1rem, env(sa
 .account-card:has(form[action="/account/erase"]) form { margin-block-start: .75rem; }
 @media (max-width: 44rem) {
  .account-main:has(form[action="/account/erase"], form[action="/account/erase-status"]) { padding-block: 1rem; }
-
 }
 
-.account-resend { margin-block-start: .75rem; padding: 0; border: 0; }
 .account-resend summary { color: var(--primary); font-size: .8125rem; text-decoration: underline; }

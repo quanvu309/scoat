@@ -107,6 +107,9 @@ a {
 a,
 button {
   touch-action: manipulation;
+}
+
+button {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;

@@ -37,25 +37,28 @@
     </div>
   </main>
 
-  <figure class="showcase" aria-labelledby="receipt-caption">
+  <figure class="showcase" data-kind="example" aria-labelledby="receipt-caption">
     <svg class="blob" viewBox="0 0 757.74 760" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M757.74 160.51C757.74 224 725.84 283.95 725.84 383.22C725.84 467.66 755.17 521.17 755.17 594.01C755.17 688.45 684.58 754.52 594.01 754.52C529.23 754.52 460.26 720.03 373.88 720.03C287.18 720.03 235.29 760 161.8 760C78 760 0 700.38 0 600.46C0 535.35 35.13 477.66 35.13 388.38C35.13 315.54 6.12 265.26 6.12 196.93C6.12 107.33 71.88 39 165.67 39C226.59 39 276.86 60.92 357.76 60.92C458.96 60.92 513.12 0 598.85 0C678.14 0 757.74 53.5 757.74 160.51Z"/></svg>
     <div class="ticket">
       <article class="receipt" aria-label="Example hunt receipt">
         <header class="receipt-head">
           <span class="receipt-kicker">Scoat hunt</span>
-          <span class="receipt-progress" data-receipt="progress"></span>
+          <span class="receipt-progress" data-receipt="progress">8 of 8 checked</span>
         </header>
-        <h2 class="receipt-title" data-receipt="title"></h2>
-        <dl class="receipt-lines" data-receipt="lines"></dl>
+        <h2 class="receipt-title" data-receipt="title">Nike trainers, size 6</h2>
+        <dl class="receipt-lines" data-receipt="lines">
+          <div class="receipt-line" data-tone="price"><dt>Shop price</dt><dd>£70.00</dd></div>
+          <div class="receipt-line" data-tone="discount"><dt>Student 10%, verify first</dt><dd>-£7.00</dd></div>
+        </dl>
         <dl class="receipt-total">
           <dt>You pay today</dt>
-          <dd data-receipt="total"></dd>
+          <dd data-receipt="total">£63.00</dd>
         </dl>
         <span class="receipt-link" aria-hidden="true">Open ready link<svg viewBox="0 0 16 16" focusable="false"><path fill="currentColor" d="M16 0.89L16 12.44C16 12.93 15.6 13.33 15.11 13.33C14.62 13.33 14.22 12.93 14.22 12.44L14.22 3.03L1.52 15.74C1.17 16.09 0.61 16.09 0.26 15.74C-0.09 15.39 -0.09 14.83 0.26 14.48L12.97 1.78L3.56 1.78C3.07 1.78 2.67 1.38 2.67 0.89C2.67 0.4 3.07 0 3.56 0L15.11 0C15.6 0 16 0.4 16 0.89Z"/></svg></span>
       </article>
-      <p class="stamp" data-receipt="stamp"><span class="stamp-top">Saved</span><span class="stamp-amount" data-receipt="saved"></span><span class="stamp-bottom">with proof</span></p>
+      <p class="stamp" data-receipt="stamp"><span class="stamp-top">Saved</span><span class="stamp-amount" data-receipt="saved">£7</span><span class="stamp-bottom">with proof</span></p>
     </div>
-    <figcaption class="showcase-caption" id="receipt-caption" data-receipt="caption"></figcaption>
+    <figcaption class="showcase-caption" id="receipt-caption" data-receipt="caption">Example receipt for illustration. Not a live price or offer.</figcaption>
   </figure>
 
   <footer class="site-footer">

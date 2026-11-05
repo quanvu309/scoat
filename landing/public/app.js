@@ -1,17 +1,3 @@
-const REPOSITORY_URL = "https://github.com/quanvu309/scoat";
-
-const exampleReceipt = Object.freeze({
-  kind: "example",
-  caption: "Example receipt for illustration. Not a live price or offer.",
-  title: "Nike trainers, size 6",
-  progress: Object.freeze({ checked: 8, total: 8 }),
-  currency: "GBP",
-  lines: Object.freeze([
-    Object.freeze({ label: "Shop price", amountMinor: 7000, tone: "price" }),
-    Object.freeze({ label: "Student 10%, verify first", amountMinor: -700, tone: "discount" }),
-  ]),
-});
-
 const ACCESS_STATES = Object.freeze(["closed", "signup", "login"]);
 const INFO_STATES = Object.freeze(["closed", "privacy", "terms"]);
 
@@ -48,47 +34,6 @@ const infoCopy = Object.freeze({
     ]),
   }),
 });
-
-function formatMoney(amountMinor, currency, wholeUnits) {
-  const formatter = new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: wholeUnits ? 0 : 2,
-    maximumFractionDigits: wholeUnits ? 0 : 2,
-  });
-  return formatter.format(amountMinor / 100);
-}
-
-function receiptTotals(receipt) {
-  const total = receipt.lines.reduce((sum, line) => sum + line.amountMinor, 0);
-  const saved = receipt.lines.reduce((sum, line) => (line.amountMinor < 0 ? sum - line.amountMinor : sum), 0);
-  return { total, saved };
-}
-
-function renderReceipt(root, receipt) {
-  const slot = (name) => root.querySelector(`[data-receipt="${name}"]`);
-  const { total, saved } = receiptTotals(receipt);
-  slot("progress").textContent = `${receipt.progress.checked} of ${receipt.progress.total}`;
-  slot("progress").setAttribute("aria-label", `${receipt.progress.checked} of ${receipt.progress.total} checked`);
-  slot("title").textContent = receipt.title;
-  slot("lines").replaceChildren(
-    ...receipt.lines.map((line) => {
-      const row = document.createElement("div");
-      row.className = "receipt-line";
-      row.dataset.tone = line.tone;
-      const term = document.createElement("dt");
-      term.textContent = line.label;
-      const value = document.createElement("dd");
-      value.textContent = formatMoney(line.amountMinor, receipt.currency, false);
-      row.append(term, value);
-      return row;
-    }),
-  );
-  slot("total").textContent = formatMoney(total, receipt.currency, false);
-  slot("saved").textContent = formatMoney(saved, receipt.currency, true);
-  slot("caption").textContent = receipt.caption;
-  root.dataset.kind = receipt.kind;
-}
 
 function createDialogController(dialog, states, copy) {
   const title = dialog.querySelector(".sheet-title");
@@ -127,12 +72,8 @@ function createDialogController(dialog, states, copy) {
 }
 
 function init() {
-  const showcase = document.querySelector(".showcase");
-  if (showcase) renderReceipt(showcase, exampleReceipt);
-
   const accessDialog = document.getElementById("access-dialog");
   const infoDialog = document.getElementById("info-dialog");
-  accessDialog.querySelector("a[href]").href = REPOSITORY_URL;
 
   const access = createDialogController(accessDialog, ACCESS_STATES, accessCopy);
   const info = createDialogController(infoDialog, INFO_STATES, infoCopy);

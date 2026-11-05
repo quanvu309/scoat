@@ -1,4 +1,4 @@
-import { refusal, repairFor } from "./results.js";
+import { ContractBreach, refusal, repairFor } from "./results.js";
 import type { ControlLinksFor } from "../controls/codec.js";
 import { MemoryRefusal } from "../memory/contracts.js";
 import { Memory } from "../memory/index.js";
@@ -33,7 +33,7 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
         return { content: [{ type: "text", text }], structuredContent: { ok: true, value } };
       } catch (error) {
         if (!(error instanceof MemoryRefusal)) throw error;
-        const next = error.code === "invalid-cursor" ? "Read the collection again without after." : error.code === "missing-item" || error.code === "item-integrity" ? "Read saved items and select an available item." : error.code === "key-reused" ? "Repeat the original payload or use a new request key." : error.code === "expired" ? "Propose the command again with a new request key and confirm it in the browser." : "Reconnect and propose a new command in this session.";
+        const next = error.code === "invalid-cursor" ? "Read the collection again without after." : error.code === "missing-item" ? "Read saved items and select an available item." : error.code === "key-reused" ? "Repeat the original payload or use a new request key." : error.code === "expired" ? "Propose the command again with a new request key and confirm it in the browser." : "Reconnect and propose a new command in this session.";
         return refusal(error.code, "Memory request refused: " + error.code + ".", next, error.code === "key-reused" ? { kind: "repeat-original-or-new-key" } : { kind: "none" });
       }
     }
@@ -55,19 +55,20 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             text:
               reply.ok && "view" in reply.value
                 ? reply.value.view.text+controlText(controls)
-                : JSON.stringify(reply),
+                : reply.ok ? "Recent shopping hunts." : reply.error.message + " " + reply.error.next,
           },
         ],
         structuredContent: {...reply,...(!reply.ok ? { error: { ...reply.error, repair: repairFor(call, reply.error) } } : {}),...(controls ? {controls} : {})},
       };
     }
+    const issued = (capability: Awaited<ReturnType<ReadGrants["open"]>>): CallToolResult => ({
+      content: [{ type: "text", text: "Private read capability issued until " + capability.expiresAt.toISOString() + "." }],
+      structuredContent: { ok: true, value: { capability: "issued", expiresAt: capability.expiresAt.toISOString() } },
+      _meta: { "scoat/readCapability": capability },
+    });
     try {
     const request = call.input;
-    if (request.op === "open")
-      return {
-        content: [{ type: "text", text: "Read capability created" }],
-        _meta: { "scoat/readCapability": await grants.open(principal, request.hunt) },
-      };
+    if (request.op === "open") return issued(await grants.open(principal, request.hunt));
     const result = await grants.use(
       principal,
       request.hunt,
@@ -92,18 +93,20 @@ export function authenticatedDispatch(store: HuntStore, principal: Principal, is
             text:
               reply.ok && "view" in reply.value
                 ? reply.value.view.text+controlText(controls)
-                : JSON.stringify(reply),
+                : reply.ok ? "Recent shopping hunts." : reply.error.message + " " + reply.error.next,
           },
         ],
-        structuredContent: {...reply,...(controls ? {controls} : {})},
+        structuredContent: {...reply,...(!reply.ok ? { error: { ...reply.error, repair: repairFor({ name: "scoat_hunt", input: { op: "read", hunt: request.hunt } }, reply.error) } } : {}),...(controls ? {controls} : {})},
       };
     }
-    return {
-      content: [{ type: "text", text: "Read capability updated" }],
-      ...(request.op === "renew" ? {_meta:{"scoat/readCapability":result}} : {structuredContent:result}),
-    };
+    if (request.op === "renew") {
+      if (!result.grant || !result.expiresAt) throw new ContractBreach();
+      return issued({ grant: result.grant, expiresAt: result.expiresAt });
+    }
+    return { content: [{ type: "text", text: "Read capability revoked." }], structuredContent: { ok: true, value: { revoked: true } } };
     } catch(error) {
-      return {isError:true,content:[{type:"text",text:"Card read unavailable"}],_meta:{"scoat/cardFailure":{code:error instanceof ReadGrantFailure ? error.code : "transient"}}};
+      if (!(error instanceof ReadGrantFailure)) throw error;
+      return refusal(error.code, "Card read capability " + error.code + ".", error.code === "expired" ? "Open a fresh card capability through this authenticated connection." : "Reopen the hunt through an authorized connection.", { kind: "none" });
     }
   };
 }

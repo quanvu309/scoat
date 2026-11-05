@@ -49,7 +49,7 @@ export const memoryValue = z.union([
   alerts: z.array(z.strictObject({ day: z.string(), pence: count.nullable(), state: z.enum(["pending", "submitting", "accepted", "rejected", "cancelled", "unconfirmed"]), attempts: count, reason: z.string().nullable() })), mayStillArrive: count,
  })).max(20) }),
 ]);
-export const memoryRefusalCode = z.enum(["invalid-cursor", "missing-item", "item-integrity", "key-reused", "session-mismatch", "expired"]);
+export const memoryRefusalCode = z.enum(["invalid-cursor", "missing-item", "key-reused", "session-mismatch", "expired"]);
 export class MemoryRefusal extends Error {
  constructor(readonly code: z.infer<typeof memoryRefusalCode>) { super("Memory refused: " + code); }
 }

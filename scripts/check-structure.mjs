@@ -768,6 +768,7 @@ export function checkWatchVerification(skill, index, runner) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkCardOutputContract(fs.readFileSync("src/mcp/authenticated.ts", "utf8"), fs.readFileSync("src/card/adapter.ts", "utf8"), fs.readFileSync("src/card/contracts.ts", "utf8"));
  checkMemoryContract(fs.readFileSync("src/memory/index.ts", "utf8"), fs.readFileSync("src/mcp/authenticated.ts", "utf8"));
  checkWatchSender(fs.readFileSync("src/memory/watches.ts", "utf8"));
  checkWatchQueueIsolation(fs.readFileSync("src/queue/index.ts", "utf8"), fs.readFileSync("scripts/watch-fixture.mjs", "utf8"), ["scripts/watch-lanes.mjs", "scripts/perf-watch.mjs", "scripts/perf-story.mjs", "test/watch-corrections.test.mjs", "test/watch-races.test.ts"].map(file => fs.readFileSync(file, "utf8")));
@@ -785,7 +786,7 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
 
 export function checkOutputContract(entries, adapter, gate) {
  for (const [name, entry] of Object.entries(entries)) {
-  if (!entry.outputSchema && ["scoat_guide", "scoat_hunt", "scoat_memory"].includes(name)) throw new Error("Declare the full success/error output contract");
+  if (!entry.outputSchema && ["scoat_guide", "scoat_hunt", "scoat_memory", "scoat_card"].includes(name)) throw new Error("Declare the full success/error output contract");
   if (!entry.outputSchema) continue;
   const schema = entry.outputSchema;
   if (schema.type !== "object" || schema.$schema !== "http://json-schema.org/draft-07/schema#" || !schema.oneOf?.some(branch => branch.properties?.ok?.const === false)) throw new Error("Declare a draft-7 object-root success/error union");
@@ -796,7 +797,10 @@ export function checkOutputContract(entries, adapter, gate) {
 }
 export function checkToolDescriptors(entries, catalog, adapter) {
  if (!adapter.includes('io: "input"')) throw new Error("Emit input schemas in input mode");
+ const expected = { scoat_guide: [true, false, true, false], scoat_hunt: [false, true, undefined, false], scoat_memory: [false, true, false, true], scoat_card: [false, true, false, false] };
  for (const [name, entry] of Object.entries(entries)) {
+  const hints = expected[name], annotations = entry.annotations;
+  if (!hints || ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].some((key, index) => annotations?.[key] !== hints[index])) throw new Error("Publish honest whole-tool annotations");
   if (!entry.title || !entry.description || entry.execution) throw new Error("Publish titles and operation descriptions without Tasks");
   const input = catalog[name].input;
   if (!("options" in input)) continue;
@@ -807,9 +811,20 @@ export function checkToolDescriptors(entries, catalog, adapter) {
 }
 
 export function checkMemoryContract(source, adapter) {
- for (const code of ["invalid-cursor", "missing-item", "item-integrity", "key-reused", "session-mismatch", "expired"]) {
+ for (const code of ["invalid-cursor", "missing-item", "key-reused", "session-mismatch", "expired"]) {
   if (!source.includes('new MemoryRefusal("' + code + '")')) throw new Error("Use typed Memory refusals for expected failures");
  }
+ if (!source.includes('throw new Error("Saved item integrity failure")')) throw new Error("Keep corrupt saved items as server faults");
  if (!adapter.includes("if (!(error instanceof MemoryRefusal)) throw error")) throw new Error("Propagate unexpected Memory infrastructure failures");
  if (!adapter.includes("structuredContent: { ok: true, value }") || !adapter.includes('value.kind === "confirmation-required"') || !adapter.includes('value.kind === "unwatched"')) throw new Error("Envelope Memory results and distinguish proposals from immediate cancellation");
+}
+
+export function checkCardOutputContract(adapter, card, contract) {
+ if (!adapter.includes("if (!(error instanceof ReadGrantFailure)) throw error")) throw new Error("Propagate card lineage and infrastructure failures");
+ if (!adapter.includes('value: { capability: "issued", expiresAt: capability.expiresAt.toISOString() }') || !adapter.includes('_meta: { "scoat/readCapability": capability }')) throw new Error("Keep capability grants private and declare only public expiry");
+ const publicValue=adapter.match(/value: \{ capability: "issued"[^\n]+/g) ?? [];
+ if (publicValue.some(value => /\bgrant\b/.test(value))) throw new Error("Never publish a card grant");
+ if ([adapter,card].some(source => source.includes('"scoat/cardFailure"')) || !card.includes("cardOutput.safeParse(reply.structuredContent)")) throw new Error("Read card errors from the shared structured contract");
+ if (!contract.includes('huntSnapshot as snapshotSchema } from "../mcp/outputs.js"')) throw new Error("Share the snapshot output owner with the card");
+ if (adapter.includes("JSON.stringify(")) throw new Error("Serialize public results only at conform");
 }

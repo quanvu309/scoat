@@ -26,7 +26,7 @@ export const repair = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("reconnect-with-write-access") }),
   z.strictObject({ kind: z.literal("none") }),
 ]);
-export const failureCode = z.enum([...failureCodes, ...memoryRefusalCode.options, "invalid-input", "scope-required", "unavailable"]);
+export const failureCode = z.enum([...failureCodes, ...memoryRefusalCode.options, "invalid-input", "scope-required", "unavailable", "revoked", "transient"]);
 export const refused = z.strictObject({ ok: z.literal(false), error: z.strictObject({ code: failureCode, message: z.string(), next: z.string(), repair }) });
 export const guideOutput = z.discriminatedUnion("ok", [
   z.strictObject({ ok: z.literal(true), market: z.literal("GB"), currency: z.literal("GBP"), release: z.string(), method: z.string(), rows: z.array(row), facts: releaseSchema.shape.facts, gap: z.string().nullable() }),
@@ -39,3 +39,8 @@ export const huntOutput = z.discriminatedUnion("ok", [huntSuccess, refused.exten
 export type Repair = z.infer<typeof repair>;
 
 export const memoryOutput = z.discriminatedUnion("ok", [z.strictObject({ ok: z.literal(true), value: memoryValue }), refused]);
+
+export const cardOutput = z.discriminatedUnion("ok", [
+ z.strictObject({ ok: z.literal(true), value: z.union([viewValue, z.strictObject({ capability: z.literal("issued"), expiresAt: z.iso.datetime() }), z.strictObject({ revoked: z.literal(true) })]), controls: controls.optional() }),
+ refused.extend({ current: huntViewSchema.optional() }),
+]);

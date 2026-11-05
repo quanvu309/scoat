@@ -44,7 +44,10 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", issuer), { requestInit: { headers: { authorization: "Bearer " + login.token } } }));
   log({ kind: "public-oauth", host: name, event: "authorization-code with PKCE completed; SDK StreamableHTTP client connected" });
   const call = async (tool, args) => {
-   const result = await client.callTool({ name: tool, arguments: args });
+   const wire = await client.callTool({ name: tool, arguments: args });
+   const parsed = JSON.parse(wire.content.at(-1).text);
+   assert.deepEqual(parsed, wire.structuredContent);
+   const result = { ...wire, structuredContent: parsed };
    log({ kind: "public-mcp", host: name, tool, args, isError: result.isError === true, structured: result.structuredContent ?? null, text: result.content?.[0]?.text ?? null });
    return result;
   };

@@ -1,0 +1,121 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ProgressNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { withDatabase } from "../scripts/durable-database.mjs";
+import { authFixture } from "../scripts/auth-fixture.mjs";
+import { confirm } from "../scripts/memory-lanes.mjs";
+import { toolCatalog, parseToolCall } from "../dist/mcp/index.js";
+
+test("native HTTPS clients validate results, repairs, scopes, progress and cancellation", async () => {
+ await withDatabase(async databaseUrl => {
+  const f = await authFixture(databaseUrl);
+  const clients = [];
+  try {
+   const login = await f.login();
+   const connect = async token => {
+    const client = new Client({ name: "native-contract-http", version: "1" });
+    clients.push(client);
+    await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", f.issuer), { requestInit: { headers: { authorization: "Bearer " + token, connection: "close" } } }));
+    await client.listTools();
+    return client;
+   };
+   const client = await connect(login.token);
+   const call = async (name, args, host = client) => {
+    const result = await host.callTool({ name, arguments: args, _meta: { progressToken: "native-probe" } });
+    const output = toolCatalog[name].output.parse(result.structuredContent);
+    assert.deepEqual(JSON.parse(result.content.at(-1).text), output);
+    assert.equal(result.isError === true, output.ok === false);
+    if (!output.ok && "call" in output.error.repair) parseToolCall(output.error.repair.call.tool, output.error.repair.call.arguments);
+    return output;
+   };
+   const replay = async args => {
+    let committed;
+    await assert.rejects(async () => { committed = await call("scoat_hunt", args); throw new Error("Committed response discarded by caller"); }, /discarded/);
+    const repeated = await call("scoat_hunt", args);
+    assert.deepEqual(repeated, committed);
+    assert.equal((await f.store.pool.query("SELECT count(*) FROM hunt_receipts WHERE key=$1", [args.requestKey])).rows[0].count, "1");
+    const changed = args.op === "start" ? { ...args, intent: { ...args.intent, variant: "different" } } : args.op === "record" ? { ...args, outcome: { kind: "gap", reason: "different" } } : args.op === "compatibility" ? { ...args, evidence: { ...args.evidence, proof: [{ ...args.evidence.proof[0], note: "different" }] } } : { ...args, selection: { price: "different", delivery: null, benefits: [] } };
+    const reused = await call("scoat_hunt", changed);
+    assert.equal(reused.error.code, "key-reused");
+    assert.equal(reused.error.repair.kind, "repeat-original-or-new-key");
+    assert.equal((await call("scoat_hunt", { op: "read", hunt: repeated.value.view.hunt })).ok, true);
+    return repeated;
+   };
+   let progress = 0;
+   client.setNotificationHandler(ProgressNotificationSchema, () => { progress++; });
+   const start = { op: "start", requestKey: randomUUID(), profile: null, intent: { product: { kind: "description", text: "native contract fixture" }, variant: "4GB", shop: null, budget: null } };
+   const opened = await replay(start);
+   assert.equal(opened.ok, true);
+   let view = opened.value.view;
+   const read = () => call("scoat_hunt", { op: "read", hunt: view.hunt });
+   assert.equal((await read()).ok, true);
+   assert.equal((await call("scoat_hunt", { op: "list" })).ok, true);
+   assert.equal((await call("scoat_hunt", { ...start, intent: { ...start.intent, variant: "8GB" } })).error.code, "key-reused");
+   const missing = await call("scoat_hunt", { op: "read", hunt: "absent" });
+   assert.equal(missing.error.repair.kind, "list-hunts");
+   const finish = () => ({ op: "finish", requestKey: randomUUID(), hunt: view.hunt, selection: null });
+   assert.equal((await call("scoat_hunt", finish())).error.code, "incomplete");
+   const proof = [{ url: "https://thepihut.com/", observedAt: new Date().toISOString(), note: "SYNTHETIC native contract fixture" }];
+   const row = view.rows[0];
+   const record = { op: "record", requestKey: randomUUID(), hunt: view.hunt, row: row.row.id, slot: row.slots[0].slot, expected: row.revision, outcome: { kind: "none", checked: "No offer", proof } };
+   const future = { ...record, requestKey: randomUUID(), outcome: { ...record.outcome, proof: [{ ...proof[0], observedAt: new Date(Date.now() + 3600000).toISOString() }] } };
+   assert.equal((await call("scoat_hunt", future)).error.code, "invalid");
+   assert.equal((await replay(record)).ok, true);
+   const conflictArgs = { ...record, requestKey: randomUUID() };
+   const conflict = await call("scoat_hunt", conflictArgs);
+   assert.equal(conflict.error.code, "conflict");
+   assert.equal(conflict.error.repair.call.arguments.hunt, view.hunt);
+   assert.deepEqual(conflict.error.repair, (await call("scoat_hunt", conflictArgs)).error.repair);
+   view = (await read()).value.view;
+   const cancelled = { ...record, requestKey: randomUUID(), expected: view.rows[0].revision, outcome: { kind: "gap", reason: "Cancelled transport fixture" } };
+   const headers = { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25", authorization: "Bearer " + login.token };
+   const pending = fetch(f.issuer + "/mcp", { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 9876, method: "tools/call", params: { name: "scoat_hunt", arguments: cancelled } }) }).then(response => response.text(), error => assert.match(error.message, /fetch failed|cancel/i));
+   const cancel = await fetch(f.issuer + "/mcp", { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 9876, reason: "transport cancellation probe" } }) });
+   assert.equal(cancel.status, 202);
+   await pending;
+   const afterCancel = (await read()).value.view;
+   assert.ok([view.rows[0].revision, view.rows[0].revision + 1].includes(afterCancel.rows[0].revision));
+   view = (await call("scoat_hunt", cancelled)).value.view;
+   assert.equal(view.rows[0].revision, cancelled.expected + 1);
+   assert.equal(view.stopRequested, false);
+   assert.equal((await f.store.pool.query("SELECT count(*) FROM hunt_receipts WHERE key=$1", [cancelled.requestKey])).rows[0].count, "1");
+   const offer = { kind: "price", seller: "The Pi Hut", variant: "4GB", status: { kind: "confirmed" }, proof: proof[0], validUntil: null, amount: { currency: "GBP", pence: 7000 } };
+   for (const r of view.rows) for (const slot of r.slots) {
+    const current = view.rows.find(item => item.row.id === r.row.id);
+    view = (await call("scoat_hunt", { ...record, requestKey: randomUUID(), row: r.row.id, slot: slot.slot, expected: current.revision, outcome: r.row.id === view.rows[0].row.id && slot.slot === view.rows[0].slots[0].slot ? { kind: "found", offers: [offer] } : { kind: "gap", reason: "SYNTHETIC no evidence" } })).value.view;
+   }
+   assert.equal((await call("scoat_hunt", { ...finish(), selection: { price: "absent", delivery: null, benefits: [] } })).error.code, "unproven");
+   assert.equal((await replay({ op: "compatibility", requestKey: randomUUID(), hunt: view.hunt, evidence: { offers: [view.offers[0].id], proof } })).ok, true);
+   assert.equal((await replay(finish())).ok, true);
+   const openedCard = await client.callTool({ name: "scoat_card", arguments: { op: "open", hunt: view.hunt } });
+   const grant = openedCard._meta["scoat/readCapability"].grant;
+   assert.equal(JSON.stringify([openedCard.content, openedCard.structuredContent]).includes(grant), false);
+   assert.equal((await call("scoat_card", { op: "read", hunt: view.hunt, grant })).ok, true);
+   assert.equal((await call("scoat_card", { op: "revoke", hunt: view.hunt, grant })).value.revoked, true);
+   assert.equal((await call("scoat_card", { op: "read", hunt: view.hunt, grant })).error.code, "revoked");
+   assert.equal((await call("scoat_card", { op: "read", hunt: view.hunt })).error.code, "invalid-input");
+   const readonly = await f.login("host-two", "upstream-subject-A", "scoat:read");
+   const reader = await connect(readonly.token);
+   for (const args of [start, record]) assert.equal((await call("scoat_hunt", args, reader)).error.code, "scope-required");
+   assert.equal((await call("scoat_memory", { op: "save", requestKey: randomUUID(), hunt: view.hunt }, reader)).error.code, "scope-required");
+   for (const args of [{ op: "read", hunt: view.hunt }, { op: "list" }]) assert.equal((await call("scoat_hunt", args, reader)).ok, true);
+   assert.equal((await call("scoat_guide", { job: "best-benefit", shop: null }, reader)).ok, true);
+   assert.equal((await f.rpc("invalid", "tools/list")).status, 401);
+   const stopped = await call("scoat_hunt", { ...start, requestKey: randomUUID() });
+   const stoppedView = stopped.value.view;
+   const approval = await confirm(f, stopped.controls.stop, "/account/control", "", false);
+   const field = name => approval.html.match(new RegExp('name="' + name + '" value="([^"]+)"'))?.[1].replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+   const body = new URLSearchParams({ confirmation: field("confirmation"), csrf: field("csrf"), action: field("action") });
+   assert.equal((await f.browser(f.issuer + "/account/control", { method: "POST", headers: { origin: f.issuer, "content-type": "application/x-www-form-urlencoded" }, body })).status, 200);
+
+   const forbidden = await call("scoat_hunt", { ...record, requestKey: randomUUID(), hunt: stoppedView.hunt, row: stoppedView.rows[0].row.id, slot: stoppedView.rows[0].slots[0].slot, expected: 0, outcome: { kind: "found", offers: [offer] } });
+   assert.equal(forbidden.error.code, "forbidden");
+   assert.equal(progress, 0);
+   assert.equal(await readFile(f.logPath, "utf8"), "");
+  } finally { await Promise.all(clients.map(client => client.close())); await f.close(); }
+ });
+});

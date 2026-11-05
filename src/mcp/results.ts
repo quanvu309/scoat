@@ -16,11 +16,10 @@ export function refusal(code: z.infer<typeof refused>["error"]["code"], message:
 export function conform(name: ToolName, result: CallToolResult): CallToolResult {
   const output = toolCatalog[name].output;
   if (!result.structuredContent) {
-    if (output) throw new ContractBreach();
-    return result;
+    throw new ContractBreach();
   }
   const wire: unknown = JSON.parse(JSON.stringify(result.structuredContent));
-  if (output && (!output.safeParse(wire).success || (result.isError === true) !== (result.structuredContent.ok === false))) throw new ContractBreach();
+  if (!output.safeParse(wire).success || (result.isError === true) !== (result.structuredContent.ok === false)) throw new ContractBreach();
   return { ...result, content: [...result.content, { type: "text", text: JSON.stringify(wire) }], structuredContent: JSON.parse(JSON.stringify(wire)) };
 }
 export function refuseInput(name: ToolName, error: z.ZodError): CallToolResult {

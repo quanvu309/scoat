@@ -1,8 +1,9 @@
+import { cardOutput } from "../mcp/outputs.js";
 import { JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { App } from "@modelcontextprotocol/ext-apps";
-import { capabilitySchema, cardFailureSchema, CardFailure, snapshotSchema, toolReplySchema } from "./contracts.js";
+import { capabilitySchema, CardFailure, snapshotSchema, toolReplySchema } from "./contracts.js";
 import type { CardBridge } from "./index.js";
 export class CardTransport implements Transport {
  onmessage?: (message:JSONRPCMessage)=>void;
@@ -21,7 +22,13 @@ export function createAppAdapter() {
  const app=new App({name:"Scoat live hunt",version:"0.1.0"},{});
  async function call(op:string,hunt:string,grant?:string) {
   const reply=toolReplySchema.parse(await app.callServerTool({name:"scoat_card",arguments:{op,hunt,...(grant?{grant}:{})}}));
-  if(reply.isError) {const error=cardFailureSchema.safeParse(reply._meta?.["scoat/cardFailure"]);throw new CardFailure(error.success?error.data.code:"transient");}
+  const output=cardOutput.safeParse(reply.structuredContent);
+  if(!output.success || reply.isError===true !== (output.data.ok===false)) throw new CardFailure("transient");
+  if(!output.data.ok) {const code=output.data.error.code;throw new CardFailure(code==="expired" || code==="revoked" ? code : "transient");}
+  if(op==="open" || op==="renew") {
+   const capability=capabilitySchema.parse(reply._meta?.["scoat/readCapability"]);
+   if(!("capability" in output.data.value) || output.data.value.expiresAt!==capability.expiresAt) throw new CardFailure("transient");
+  }
   return reply;
  }
  const bridge:CardBridge={

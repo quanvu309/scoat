@@ -33,7 +33,7 @@ export class Memory {
     const row = (await client.query("SELECT id,hunt,snapshot,release,digest,format,saved_at FROM memory_items WHERE account=$1 AND incarnation=$2 AND id=$3", [...prefix,request.item])).rows[0];
     if (!row) throw new MemoryRefusal("missing-item");
     const snapshot = z.json().parse(row.snapshot), release = releaseSchema.parse(row.release);
-    if (row.format !== 1 || row.digest !== digest({snapshot,release,format:1})) throw new MemoryRefusal("item-integrity");
+    if (row.format !== 1 || row.digest !== digest({snapshot,release,format:1})) throw new Error("Saved item integrity failure");
     return { kind: "item", item: { ...row, id: z.uuid().parse(row.id), snapshot,release } };
    }
    if (request.op === "read") {

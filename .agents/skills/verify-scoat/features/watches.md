@@ -39,3 +39,5 @@ The capture process models the Resend contract over local TLS. A live Resend acc
 Verify absent-mail browser/MCP refusal and preserved cancellation in watch-corrections. The native confirmation lane must reject zero, oversized and malformed targets with an actionable no-store refusal, then activate using the same unconsumed confirmation after correction.
 
 Queue namespaces follow the database application schema. The default public schema retains `pgboss`; isolated schemas receive a deterministic private namespace. Run the two-fixture teardown regression and shared-database parallel tests after queue or fixture changes.
+
+The quality suite installs Chromium before `npm test`. Browser regressions register HTTP cleanup before launching Chromium and prove missing executables fail without an open server. The live-worker failure test owns a separate database even when CI supplies a shared `DATABASE_URL`, so its zero-client and zero-schema proofs exclude parallel tests. `npm test` applies a 120-second default per test and a 180-second file deadline that reports resource types and fails leaked-handle processes; it never forces a successful exit.

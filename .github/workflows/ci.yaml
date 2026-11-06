@@ -34,6 +34,7 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint
+      - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: docker build --build-arg RAILWAY_GIT_COMMIT_SHA="$(git rev-parse HEAD)" --tag scoat-ci .
       - run: >-

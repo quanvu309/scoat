@@ -2,11 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { z } from "zod";
+import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ListToolsRequestSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpServer, descriptors, toolCatalog, parseToolCall } from "../dist/mcp/index.js";
 import { conform, ContractBreach, repairFor, refusal, refuseInput } from "../dist/mcp/results.js";
+import { wireSchema } from "../dist/mcp/schema.js";
 import { checkCardOutputContract, checkMemoryContract, checkOutputContract, checkToolDescriptors } from "../scripts/check-structure.mjs";
 
 async function withClient(run, invoke, advertised) {
@@ -24,6 +28,40 @@ function parity(result) {
 test("discovery survives pinned SDK parsing with complete schemas and input defaults", () => {
  assert.deepEqual(ListToolsResultSchema.parse({ tools: descriptors() }).tools, descriptors());
  assert.deepEqual(descriptors().find(tool => tool.name === "scoat_memory").inputSchema.oneOf.find(branch => branch.properties.op.const === "read").required, ["op"]);
+});
+test("every published input and output compiles under draft-7 and 2020-12", () => {
+ const tuple = z.toJSONSchema(z.strictObject({ values: z.tuple([z.string()]).rest(z.string()) }), { target: "draft-7" });
+ assert.equal(new Ajv({ strict: false }).validateSchema(tuple), true);
+ assert.equal(new Ajv2020({ strict: false }).validateSchema({ ...tuple, $schema: "https://json-schema.org/draft/2020-12/schema" }), false);
+ for (const [validator, dialect] of [[new Ajv({ strict: false }), "http://json-schema.org/draft-07/schema#"], [new Ajv2020({ strict: false }), "https://json-schema.org/draft/2020-12/schema"]]) {
+  addFormats(validator);
+  for (const tool of descriptors()) for (const key of ["inputSchema", "outputSchema"]) {
+   const schema = { ...tool[key], $schema: dialect };
+   assert.equal(validator.validateSchema(schema), true, `${tool.name}.${key}: ${JSON.stringify(validator.errors)}`);
+   const validate = validator.compile(schema);
+   if (key === "inputSchema" && tool.name === "scoat_hunt") {
+    assert.equal(validate({ op: "start", requestKey: "mouse-1", intent: { product: "Logitech M185 wireless mouse" } }), true);
+    assert.equal(validate({ op: "start", requestKey: "mouse-1", intent: { product: { name: "mouse" } } }), false);
+   }
+  }
+  const validate = validator.compile({ ...wireSchema(z.strictObject({ values: z.tuple([z.string()]).rest(z.string()) }), { io: "output" }), $schema: dialect });
+  assert.equal(validate({ values: ["first", "second"] }), true);
+  assert.equal(validate({ values: [] }), false);
+  assert.equal(validate({ values: ["first", 2] }), false);
+ }
+ assert.throws(() => wireSchema(z.strictObject({ values: z.tuple([z.string(), z.number()]) }), { io: "output" }), /homogeneous/);
+});
+test("a plain product string starts with saved profile defaults and actionable input repair", async () => {
+ const arguments_ = { op: "start", requestKey: "mouse-1", intent: { product: "Logitech M185 wireless mouse" } };
+ const call = parseToolCall("scoat_hunt", arguments_);
+ assert.deepEqual(call.input.intent, { product: { kind: "description", text: "Logitech M185 wireless mouse" }, variant: null, shop: null, budget: null });
+ assert.equal(call.input.profile, null);
+ assert.deepEqual(call, parseToolCall("scoat_hunt", { ...arguments_, intent: { product: { kind: "description", text: "Logitech M185 wireless mouse" } } }));
+ await withClient(async client => {
+  const result = await client.callTool({ name: "scoat_hunt", arguments: { ...arguments_, intent: { product: { name: "PRIVATE-PRODUCT" } } } });
+  assert.match(result.content[0].text, /intent\.product: expected a nonempty product name string/);
+  assert.equal(JSON.stringify(result).includes("PRIVATE-PRODUCT"), false);
+ });
 });
 test("pinned client validates safe input refusals and fixture denials", async () => {
  await withClient(async client => {
@@ -67,7 +105,7 @@ test("native output and discovery enforcement rejects broken contracts", () => {
  const adapter = fs.readFileSync("src/mcp/index.ts", "utf8"), gate = fs.readFileSync("src/mcp/results.ts", "utf8");
  const entries = Object.fromEntries(descriptors().map(entry => [entry.name, entry]));
  checkOutputContract(entries, adapter, gate);
- for (const mutate of [entry => delete entry.outputSchema.type, entry => entry.outputSchema.oneOf.pop(), entry => delete entry.outputSchema]) {
+ for (const mutate of [entry => delete entry.outputSchema.type, entry => entry.outputSchema.oneOf.pop(), entry => delete entry.outputSchema, entry => entry.outputSchema.oneOf[0].properties.tuple = { type: "array", items: [{ type: "string" }], additionalItems: { type: "string" } }, ...["prefixItems", "dependencies", "dependentRequired", "dependentSchemas", "$recursiveRef", "$recursiveAnchor", "$dynamicRef", "$dynamicAnchor", "unevaluatedItems", "unevaluatedProperties", "minContains", "maxContains"].map(key => entry => entry.outputSchema[key] = {})]) {
   const changed = structuredClone(entries); mutate(changed.scoat_hunt);
   assert.throws(() => checkOutputContract(changed, adapter, gate));
  }

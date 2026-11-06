@@ -31,7 +31,12 @@ export function refuseInput(name: ToolName, error: z.ZodError): CallToolResult {
     const problem: z.infer<typeof inputIssue>["problem"] = issue.code === "invalid_union" && issue.path.at(-1) === "op" ? "unknown-operation" : issue.code === "invalid_type" ? (issue.input === undefined ? "missing" : "wrong-type") : issue.code === "too_small" || issue.code === "too_big" ? "out-of-range" : "invalid-value";
     return [{ path: path(issue.path), problem }];
   }).slice(0,10);
-  return refusal("invalid-input", "Invalid tool input; use the strict registry schema.", "Correct the listed fields and repeat the call.", { kind: "fix-arguments", operations, issues });
+  const fields = error.issues.map(issue => {
+    const field = path(issue.path) || "arguments";
+    const expected = field === "intent.product" ? 'expected a nonempty product name string, {kind:"description",text:"..."}, or {kind:"url",url:"https://..."}' : issue.code === "unrecognized_keys" ? "remove unknown fields" : issue.message;
+    return `${field}: ${expected}`;
+  }).slice(0,10).join("; ");
+  return refusal("invalid-input", `Invalid tool input. ${fields}`, "Correct these fields and repeat the call.", { kind: "fix-arguments", operations, issues });
 }
 export function repairFor(call: Extract<ToolCall, { name: "scoat_hunt" }>, failure: Failure): Repair {
   if (failure.code === "missing") return { kind: "list-hunts", call: { tool: "scoat_hunt", arguments: { op: "list" } } };

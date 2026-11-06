@@ -27,6 +27,7 @@ export function checkSdkImports(file, source) {
 export function checkWire(schema) {
   if (!schema || typeof schema !== "object") return;
   if (schema.$schema && schema.$schema !== "http://json-schema.org/draft-07/schema#") throw new Error("Use draft-7 JSON Schema to match the pinned MCP SDK tools/list");
+  if (Array.isArray(schema.items) || ["additionalItems", "prefixItems", "dependencies", "dependentRequired", "dependentSchemas", "$recursiveRef", "$recursiveAnchor", "$dynamicRef", "$dynamicAnchor", "unevaluatedItems", "unevaluatedProperties", "minContains", "maxContains"].some(key => Object.hasOwn(schema, key))) throw new Error("Publish the shared draft-7/2020-12 schema subset: homogeneous object or boolean items, without draft-specific keywords");
   if (schema.type === "object" && !schema.oneOf && schema.additionalProperties !== false) throw new Error("Use z.strictObject for every wire object; client principals/totals must fail before dispatch");
   for (const value of Object.values(schema)) if (Array.isArray(value)) value.forEach(checkWire); else if (value && typeof value === "object") checkWire(value);
 }
@@ -798,10 +799,11 @@ if (process.argv[1]?.endsWith("check-structure.mjs")) {
 
 export function checkOutputContract(entries, adapter, gate) {
  for (const [name, entry] of Object.entries(entries)) {
+  if (entry.inputSchema) checkWire(entry.inputSchema);
   if (!entry.outputSchema && ["scoat_guide", "scoat_hunt", "scoat_memory", "scoat_card"].includes(name)) throw new Error("Declare the full success/error output contract");
   if (!entry.outputSchema) continue;
   const schema = entry.outputSchema;
-  if (schema.type !== "object" || schema.$schema !== "http://json-schema.org/draft-07/schema#" || !schema.oneOf?.some(branch => branch.properties?.ok?.const === false)) throw new Error("Declare a draft-7 object-root success/error union");
+  if (schema.type !== "object" || schema.$schema !== "http://json-schema.org/draft-07/schema#" || !schema.oneOf?.some(branch => branch.properties?.ok?.const === false)) throw new Error("Declare an object-root success/error union in the shared draft-7/2020-12 subset");
   checkWire(schema);
  }
  if (!adapter.includes("return conform(name, await invoke(call))") || !adapter.includes("return conform(name, refuseInput(name, error))")) throw new Error("Route every known tool result through conform");

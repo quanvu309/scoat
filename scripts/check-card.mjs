@@ -53,6 +53,7 @@ export function checkCardProjection(source) {
  for(const path of ["slot.completion.proof","view.final.quote","value.steps","value.reason"]) if(!paths.has(path)) throw new Error("Render slot proofs, the finished quote, and status steps and reasons from the canonical view: "+path);
 }
 export function checkCardApp(main,renderer,adapter,controller,metadata) {
+ if(!renderer.includes('if(watching) setNotice("")')) throw new Error("Clear pending browser approval copy after a confirmed Watch receipt");
  if(!renderer.includes('event.preventDefault()') || !renderer.includes('bridge.openLink(url)') || /window\.open/.test(renderer)) throw new Error("Route card links through the host open-link request");
  if(!renderer.includes('bridge.controls(view.hunt)') || !renderer.includes('void control("watch")') || !renderer.includes('void control("stop")') || !adapter.includes('return await bridge.read(hunt,capability.grant)')) throw new Error("Fetch authenticated controls through tools/call before Watch or Stop confirmation");
  if(!adapter.includes('app.sendMessage(') || !adapter.includes('message?.text') || !adapter.includes('app.updateModelContext(') || !adapter.includes('supported?.text') || !adapter.includes('supported?.structuredContent') || !renderer.includes('"watch-requested":"stop-requested"')) throw new Error("Negotiate chat and model context channels and report pending approvals honestly");

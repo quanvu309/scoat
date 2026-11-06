@@ -144,7 +144,7 @@ await withDatabase(async databaseUrl=>{
   await page.evaluate(({input,result})=>window.harness.result(input,{content:[],structuredContent:result}),{input:{op:"watch",hunt:randomUUID()},result:receipt});
   assert.equal(await page.frameLocator("iframe").locator(".watch-note").count(),0);
   await page.evaluate(({input,result})=>window.harness.result(input,{content:[],structuredContent:result}),{input:{op:"watch",hunt:watchHunt},result:receipt});
-  await page.frameLocator("iframe").locator(".watch-note").waitFor();await capture("watch-active",receipt);
+  await page.frameLocator("iframe").locator(".watch-note").waitFor();await page.frameLocator("iframe").locator(".notice").waitFor({state:"detached"});await capture("watch-active",receipt);
   proofs.push({state:"watch-active",hunt:watchHunt,receipt:receipt.value.kind,activation:"native browser confirmation",proposalShowsActive:false,foreignHuntShowsActive:false});
   const order=["empty","progress","finished","watch-active","error"];matrix.sort((a,b)=>order.indexOf(a.state)-order.indexOf(b.state));
   const contact=await context.newPage();

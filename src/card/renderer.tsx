@@ -41,6 +41,7 @@ export function Card({initial,bridge,watching=false}:{initial:Snapshot;bridge:Ca
  const [state,setState]=useState<CardState>(()=>initialState(initial,bridge));
  useEffect(()=>{performance.mark("scoat-card-render");},[state]);
  const [notice,setNotice]=useState("");
+ useEffect(()=>{if(watching) setNotice("");},[watching]);
  const [excluded,setExcluded]=useState<string>(initial.value.view.rows[0]?.row.id ?? "");
  const latest=useRef(initial),controller=useRef<ReturnType<typeof createController>|undefined>(undefined);
  latest.current=initial;

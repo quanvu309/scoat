@@ -8,9 +8,13 @@ import { chromium } from "playwright";
 import { withDatabase } from "./durable-database.mjs";
 import { watchFixture, productUrl } from "./watch-fixture.mjs";
 import { serveCard } from "./card-fixture.mjs";
+import { comparisonPoints, renderComparisons } from "./card-comparison.mjs";
 const root=process.env.SCOAT_EVIDENCE_DIR??path.join(os.homedir(),"tmp/scoat-ui-council/round-1");
 await mkdir(root,{recursive:true});
-const matrix=[],errors=[],proofs=[];
+const matrix=[],errors=[],proofs=[],comparisons=[];
+const beforePath=process.env.SCOAT_BEFORE_CARD;
+const baseline=beforePath?execFileSync("git",["rev-parse","origin/main"],{encoding:"utf8"}).trim():undefined;
+if(beforePath) await mkdir(path.join(root,"compare/before"),{recursive:true});
 let completed=false;
 const head=execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim();
 await withDatabase(async databaseUrl=>{
@@ -26,7 +30,8 @@ await withDatabase(async databaseUrl=>{
   const hunt=input=>call("scoat_hunt",input);
   const memory=input=>call("scoat_memory",input);
   const open=async(snapshot)=>{const card=await serveCard(f,login,snapshot);cards.push(card);await page.goto(card.url);await page.frameLocator("iframe").getByText(snapshot.value.view.final.kind==="finished"?"Search complete":"Up to date",{exact:true}).waitFor();};
-  const capture=async state=>{
+  const capture=async(state,watchReceipt)=>{
+   const pairs=[];
    for(const [size,width,height] of [["desktop",760,1000],["phone",390,844]]) for(const theme of ["light","dark"]){
     await page.setViewportSize({width,height});await page.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});await page.evaluate(value=>window.harness.theme(value),theme);
     const frame=page.frameLocator("iframe");await frame.locator(`html[data-theme="${theme}"]`).waitFor();
@@ -34,6 +39,20 @@ await withDatabase(async databaseUrl=>{
     assert(await frame.locator("body").evaluate(el=>el.scrollWidth<=el.clientWidth+1));
     assert.equal(await frame.getByText(/Seller unknown: pending|Checklist 0\/8|Stop new discovery|Open browser controls/).count(),0);
     const file=`${state}-${size}-${theme}.png`;await page.screenshot({path:path.join(root,file)});matrix.push({state,size,theme,width,height,file});
+    if(beforePath && size==="phone" && state!=="empty") pairs.push({state,theme,after:file,afterPoints:await comparisonPoints(page,state,"after")});
+   }
+   if(pairs.length){
+    const snapshot=await hunt({op:"read",hunt:view.hunt});
+    const card=await serveCard(f,login,snapshot,()=>undefined,beforePath);cards.push(card);
+    const old=await context.newPage();await old.setViewportSize({width:390,height:844});await old.goto(card.url);const frame=old.frameLocator("iframe");await frame.locator("h1").waitFor();
+    if(snapshot.value.view.final.kind!=="finished") await frame.getByText("Current hunt",{exact:true}).waitFor();
+    if(state==="error"){await old.evaluate(()=>window.harness.setMode("outage"));await frame.getByText("Offline or stale. Retrying; controls paused.",{exact:true}).waitFor();}
+    if(watchReceipt) await old.evaluate(({input,result})=>window.harness.result(input,{content:[],structuredContent:result}),{input:{op:"watch",hunt:view.hunt},result:watchReceipt});
+    for(const pair of pairs){
+     await old.emulateMedia({colorScheme:pair.theme,reducedMotion:"reduce"});await old.evaluate(theme=>window.harness.theme(theme),pair.theme);await frame.locator("body").evaluate(()=>window.scrollTo(0,0));
+     pair.before=`compare/before/${state}-phone-${pair.theme}.png`;pair.beforePoints=await comparisonPoints(old,state,"before");await old.screenshot({path:path.join(root,pair.before)});comparisons.push(pair);
+    }
+    await old.close();
    }
    console.log(JSON.stringify({state,screenshots:4,status:"PASS"}));
   };
@@ -82,7 +101,7 @@ await withDatabase(async databaseUrl=>{
   await page.evaluate(({input,result})=>window.harness.result(input,{content:[],structuredContent:result}),{input:{op:"watch",hunt:randomUUID()},result:receipt});
   assert.equal(await page.frameLocator("iframe").getByText("Watch active",{exact:true}).count(),0);
   await page.evaluate(({input,result})=>window.harness.result(input,{content:[],structuredContent:result}),{input:{op:"watch",hunt:watchHunt},result:receipt});
-  await page.frameLocator("iframe").getByText("Watch active",{exact:true}).waitFor();await capture("watch-active");
+  await page.frameLocator("iframe").getByText("Watch active",{exact:true}).waitFor();await capture("watch-active",receipt);
   proofs.push({state:"watch-active",hunt:watchHunt,receipt:receipt.value.kind,activation:"native browser confirmation",proposalShowsActive:false,foreignHuntShowsActive:false});
   const order=["empty","progress","finished","watch-active","error"];matrix.sort((a,b)=>order.indexOf(a.state)-order.indexOf(b.state));
   const contact=await context.newPage();
@@ -91,8 +110,10 @@ await withDatabase(async databaseUrl=>{
   await contact.setContent(`<html><head><title>Scoat · Deal Ledger · Council round 1</title><style>*{box-sizing:border-box}body{margin:0;padding:32px;background:#e8e9ec;font:14px system-ui;color:#202b42}h1{margin:0 0 8px}p{margin:0 0 24px}main{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}figure{margin:0;background:white;padding:10px;border-radius:8px}figcaption{margin-bottom:10px;font-size:12px;font-weight:600}img{display:block;width:100%;height:460px;object-fit:contain;object-position:top}</style></head><body><h1>scoat. / THE DEAL LEDGER</h1><p>Council round 1 · Five states × two host widths × light and dark. Synthetic shopping data rendered through the production card.</p><main>${tiles.join("")}</main></body></html>`);
   await contact.locator("img").last().waitFor();await contact.screenshot({path:path.join(root,"contact-sheet.png"),fullPage:true});await contact.close();
   assert.equal(errors.length,0,errors.join("\n"));
+  const comparisonFiles=beforePath?await renderComparisons(context,root,comparisons,baseline,process.env.SCOAT_OWNER_CAPTURE):[];
   const index=["# Scoat card — council round 1","","Production card build, real ext-apps App/AppBridge harness, authenticated MCP and isolated PostgreSQL. All prices are synthetic review fixtures, not live retailer claims. No external email was sent.","","Desktop: 760 × 1000. Phone: 390 × 844. Host theme changes are negotiated through AppBridge. Screenshots are unaltered viewport captures, with reduced motion enabled.","","[Contact sheet](contact-sheet.png) · [Short recording](walkthrough.webm)","","| State | Size | Theme | Screenshot |","| --- | --- | --- | --- |",...matrix.map(item=>`| ${item.state} | ${item.size} | ${item.theme} | [${item.file}](${item.file}) |`),"","The progress state contains three persisted checks and three sellers. Error is an actual unavailable harness tool response with saved prices retained. Watch active follows native browser confirmation and a schema-validated Memory receipt for the displayed hunt; a proposal or another hunt’s receipt cannot activate it.","","Reproduce after `npm run build`: `SCOAT_EVIDENCE_DIR=~/tmp/scoat-ui-council/round-1 pstack-run run --timeout 240 -- node scripts/card-review.mjs`.",""];
-  await writeFile(path.join(root,"index.md"),index.join("\n"));await writeFile(path.join(root,"receipt.json"),JSON.stringify({status:"PASS",head,fixture:"production card / real AppBridge / authenticated MCP / synthetic prices / local mail capture",matrix,proofs,errors},null,2));
+  if(comparisonFiles.length) index.push("## Annotated Before / After","",`Baseline: origin/main at ${baseline}. Both card builds use the same AppBridge harness, persisted hunt and phone viewport. The active Watch receipt is delivered to both builds. Error uses the same unavailable bridge response. Arrow tips come from Chromium element bounds; 2px dotted SVG leaders and numbered white pills sit outside the unchanged captures.`,"","| State | Theme | Comparison | Overlay |","| --- | --- | --- | --- |",...comparisonFiles.map(item=>`| ${item.state} | ${item.theme} | [${item.file}](${item.file}) | [HTML](${item.file.replace(".png",".html")}) |`),"","The owner-host comparison uses the supplied original screenshot as an additional reference; its product and host width differ. Controlled before captures are in [compare/before/](compare/before/). Every comparison has an adjacent HTML overlay for inspection.","","| Baseline state | Theme | Raw screenshot |","| --- | --- | --- |",...comparisons.map(item=>`| ${item.state} | ${item.theme} | [${item.before}](${item.before}) |`),"","To include comparisons, build origin/main in an isolated archive and set `SCOAT_BEFORE_CARD` to its `dist/card/index.html`. Set `SCOAT_OWNER_CAPTURE` to the supplied host screenshot.","");
+  await writeFile(path.join(root,"index.md"),index.join("\n"));await writeFile(path.join(root,"receipt.json"),JSON.stringify({status:"PASS",head,baseline,fixture:"production card / real AppBridge / authenticated MCP / synthetic prices / local mail capture",matrix,comparisons:comparisonFiles,callouts:comparisons,proofs,errors},null,2));
   completed=true;console.log(JSON.stringify({status:"PASS",screenshots:matrix.length,root}));
  } finally {await context.close();await browser.close();for(const card of cards) await card.close();await w.close();if(completed){await rename(await page.video().path(),path.join(root,"walkthrough.webm"));await rm(path.join(root,"recordings"),{recursive:true,force:true});}}
 });

@@ -2,12 +2,12 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { build } from "vite";
-export async function serveCard(f,login,initial,observe=()=>undefined) {
+export async function serveCard(f,login,initial,observe=()=>undefined,cardPath="dist/card/index.html") {
  const bundle=await build({configFile:false,logLevel:"silent",build:{target:"esnext",write:false,minify:true,lib:{entry:"scripts/card-host.mjs",formats:["es"],fileName:"host"}}});
  const output=Array.isArray(bundle)?bundle[0].output:bundle.output;
  const js=output.find(item=>item.type==="chunk").code;
  const server=createServer(async(req,res)=>{try {
-  if(req.url==="/card") {res.setHeader("content-type","text/html; charset=utf-8");res.end(await readFile("dist/card/index.html"));}
+  if(req.url==="/card") {res.setHeader("content-type","text/html; charset=utf-8");res.end(await readFile(cardPath));}
   else if(req.url==="/host.js") {res.setHeader("content-type","application/javascript");res.end(js);}
   else if(req.url==="/initial") {res.setHeader("content-type","application/json");res.end(JSON.stringify(initial));}
   else if(req.url==="/expire") {await f.store.pool.query("UPDATE oauth_read_grants SET expires_at=now()-interval '1 second'");res.end("ok");}

@@ -10,6 +10,7 @@ import { getRequestListener } from "@hono/node-server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "./mcp/index.js";
 import { authenticatedDispatch } from "./mcp/authenticated.js";
+import { handleMcpRequest, logMcpResponse } from "./mcp/http.js";
 import { LoginRefused } from "./auth/login.js";
 import { createIssuer, InvalidCredential } from "./auth/issuer.js";
 import { lifecycleSchema } from "./accounts/schema.js";
@@ -94,6 +95,10 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery; 
         }
       : null;
   const handler: import("node:http").RequestListener = async (req, res) => {
+    let transportStarted = false;
+    res.on("finish", () => {
+      if (req.url === "/mcp" && !transportStarted) logMcpResponse(req.headers["mcp-protocol-version"]?.toString() ?? null, null, res.statusCode);
+    });
     const allowedHosts = [
       `localhost:${req.socket.localPort}`,
       `127.0.0.1:${req.socket.localPort}`,
@@ -212,14 +217,16 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery; 
       void transport.close();
       void server.close();
     });
+    let body: unknown;
+    transportStarted = true;
     try {
-      let body: unknown;
       if (req.method === "POST") {
         const chunks: Buffer[] = [];
         let size = 0;
         for await (const chunk of req) {
           size += chunk.length;
           if (size > 65536) {
+            logMcpResponse(req.headers["mcp-protocol-version"]?.toString() ?? null, null, 413);
             res.writeHead(413);
             res.end();
             return;
@@ -230,13 +237,15 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery; 
       }
       await server.connect(transport);
       const handleRequest = getRequestListener(async (request) => {
-        const response = await transport.handleRequest(request, { parsedBody: body });
+        const response = await handleMcpRequest(request, body, async request => await transport.handleRequest(request, { parsedBody: body }));
         if (invocationRefusal !== undefined) {
           process.stderr.write(JSON.stringify({ event: "lineage_refused", reason: invocationRefusal }) + "\n");
+          logMcpResponse(request.headers.get("mcp-protocol-version"), body, 503);
           return Response.json({ error: "service_unavailable", lineage: invocationRefusal }, { status: 503 });
         }
         if (invocationUnavailable !== null) {
           process.stderr.write(JSON.stringify({ event: "mcp_database_unavailable" }) + "\n");
+          logMcpResponse(request.headers.get("mcp-protocol-version"), body, 503);
           return Response.json({ error: "service_unavailable" }, { status: 503 });
         }
         return response;
@@ -248,6 +257,7 @@ export async function createHttpServer(options: Readonly<{ delivery?: Delivery; 
         return;
       }
       process.stderr.write(JSON.stringify({ event: "mcp_request_refused" }) + "\n");
+      logMcpResponse(req.headers["mcp-protocol-version"]?.toString() ?? null, body, 400, { error: { code: -32700 } });
       if (!res.headersSent) res.writeHead(400);
       res.end();
     }

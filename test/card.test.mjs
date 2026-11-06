@@ -12,7 +12,7 @@ test("a card opened on a finished hunt states its final result without polling",
  try {
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.deepEqual(calls,[]);
-  assert.equal(controller.getState().message,"Finished result. It no longer changes, so the card does not poll.");
+  assert.equal(controller.getState().message,"Your final comparison, ready when you are.");
   assert.ok(changes.every(state=>state.message!=="Connecting…"));
  } finally { controller.dispose(); }
 });
@@ -158,7 +158,7 @@ test("a card opened on a finished hunt states the final result instead of connec
  const controller=createController(finished,bridge,state=>changes.push(state));
  await new Promise(resolve=>setTimeout(resolve,20));
  assert.deepEqual(calls,[]);
- assert.equal(controller.getState().message,"Finished result. It no longer changes, so the card does not poll.");
+ assert.equal(controller.getState().message,"Your final comparison, ready when you are.");
  assert.ok(changes.every(state=>state.message!=="Connecting…"));
  controller.dispose();
  const open=createController(cardSnapshot(),undefined,()=>{});
@@ -176,5 +176,5 @@ test("card uses the shared theme, canonical progress and negotiated Refine",asyn
  const {checkCardExperience}=await import("../scripts/check-card.mjs");
  const source=["src/card/main.tsx","src/card/renderer.tsx","src/card/adapter.ts","src/card/style.css"].map(file=>readFileSync(file,"utf8"));
  assert.doesNotThrow(()=>checkCardExperience(...source));
- for(const [index,from,to] of [[0,"../../landing/public/ui.css","local.css"],[1,"aria-valuenow={view.progress.resolved}","aria-valuenow={8}"],[2,"app.getHostCapabilities()?.message","true"],[2,"app.getHostContext()?.theme","undefined"],[3,"prefers-reduced-motion:no-preference","all"]]){const changed=[...source];changed[index]=changed[index].replace(from,to);assert.throws(()=>checkCardExperience(...changed));}
+ for(const [index,from,to] of [[0,"../../landing/public/ui.css","local.css"],[1,"aria-valuenow={view.progress.resolved}","aria-valuenow={8}"],[2,"app.getHostCapabilities()?.message","true"],[2,"app.getHostContext()?.theme","undefined"],[3,"prefers-reduced-motion:no-preference","all"],[0,'watchHunt===active?.value.view.hunt','true'],[0,'memoryOutput.safeParse(raw.structuredContent)','raw'],[1,'Sources & small print','Checklist 0/8']]){const changed=[...source];changed[index]=changed[index].replace(from,to);assert.throws(()=>checkCardExperience(...changed));}
 });

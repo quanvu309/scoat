@@ -16,8 +16,8 @@ export function compareViews(prior:HuntView,next:HuntView):"accept"|"drop"|"retr
  return lower ? higher ? "retry" : "drop" : "accept";
 }
 export function initialState(initial:Snapshot,bridge:CardBridge|undefined):CardState {
- if(initial.value.view.final.kind==="finished") return {snapshot:initial,status:bridge?"stale":"unsupported",message:"Finished result. It no longer changes, so the card does not poll."};
- return {snapshot:initial,status:bridge?"stale":"unsupported",message:bridge?"Connecting…":"Live updates unavailable in this host. Use the browser links or canonical text."};
+ if(initial.value.view.final.kind==="finished") return {snapshot:initial,status:bridge?"stale":"unsupported",message:"Your final comparison, ready when you are."};
+ return {snapshot:initial,status:bridge?"stale":"unsupported",message:bridge?"Connecting…":"Live updates unavailable here. Ask your assistant for the latest prices."};
 }
 export function createController(initial:Snapshot,bridge:CardBridge|undefined,notify:(state:CardState)=>void,clock={now:()=>Date.now(),set:(fn:()=>void,ms:number)=>setTimeout(fn,ms),clear:(id:ReturnType<typeof setTimeout>)=>clearTimeout(id)},visibleInitially=true) {
  let state:CardState=initialState(initial,bridge);
@@ -41,12 +41,12 @@ export function createController(initial:Snapshot,bridge:CardBridge|undefined,no
    const reply=await bridge.read(initial.value.view.hunt,capability.grant);
    if(disposed || seq<applied) return;
    const decision=compareViews(state.snapshot.value.view,reply.value.view);
-   if(decision!=="accept") {state={...state,status:"stale",message:"Waiting for a consistent current result. Controls paused."};publish();return;}
-   applied=seq;failures=0;state={snapshot:reply,status:"live",message:"Current hunt"};publish();
+   if(decision!=="accept") {state={...state,status:"stale",message:"Checking for the latest result. Actions will be ready in a moment."};publish();return;}
+   applied=seq;failures=0;state={snapshot:reply,status:"live",message:reply.value.view.final.kind==="finished"?"Your final comparison, ready when you are.":"Up to date"};publish();
   } catch(error) {
    if(disposed) return;
-   if(error instanceof CardFailure && error.code==="revoked") {terminal=true;capability=undefined;state={...state,status:"revoked",message:"Read access ended. Reopen the hunt after signing in."};}
-   else {if(error instanceof CardFailure && error.code==="expired" && capability) capability={...capability,expiresAt:new Date(0).toISOString()};failures++;state={...state,status:"stale",message:"Offline or stale. Retrying; controls paused."};}
+   if(error instanceof CardFailure && error.code==="revoked") {terminal=true;capability=undefined;state={...state,status:"revoked",message:"Sign in again to reconnect this search."};}
+   else {if(error instanceof CardFailure && error.code==="expired" && capability) capability={...capability,expiresAt:new Date(0).toISOString()};failures++;state={...state,status:"stale",message:"Offline. Reconnecting automatically."};}
    publish();
   } finally {flight=false;schedule();}
  }

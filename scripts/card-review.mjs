@@ -9,9 +9,9 @@ import { withDatabase } from "./durable-database.mjs";
 import { watchFixture, productUrl } from "./watch-fixture.mjs";
 import { serveCard } from "./card-fixture.mjs";
 import { comparisonPoints, renderComparisons } from "./card-comparison.mjs";
-const root=process.env.SCOAT_EVIDENCE_DIR??path.join(os.homedir(),"tmp/scoat-ui-council/round-1");
+const root=process.env.SCOAT_EVIDENCE_DIR??path.join(os.homedir(),"tmp/scoat-ui-council/round-2");
 await mkdir(root,{recursive:true});
-const matrix=[],errors=[],proofs=[],comparisons=[];
+const matrix=[],errors=[],proofs=[],comparisons=[],readability=[];
 const beforePath=process.env.SCOAT_BEFORE_CARD;
 const baseline=beforePath?execFileSync("git",["rev-parse","origin/main"],{encoding:"utf8"}).trim():undefined;
 if(beforePath) await mkdir(path.join(root,"compare/before"),{recursive:true});
@@ -29,7 +29,7 @@ await withDatabase(async databaseUrl=>{
   const call=async(name,input)=>{const result=await f.tool(login.token,name,input);assert(!result.isError,JSON.stringify(result));assert(result.structuredContent?.ok,JSON.stringify(result));return result.structuredContent;};
   const hunt=input=>call("scoat_hunt",input);
   const memory=input=>call("scoat_memory",input);
-  const open=async(snapshot)=>{const card=await serveCard(f,login,snapshot);cards.push(card);await page.goto(card.url);await page.frameLocator("iframe").getByText(snapshot.value.view.final.kind==="finished"?"Search complete":"Up to date",{exact:true}).waitFor();};
+  const open=async(snapshot)=>{const card=await serveCard(f,login,snapshot);cards.push(card);await page.goto(card.url);await page.frameLocator("iframe").locator(snapshot.value.view.final.kind==="finished"?".state-label":"main[data-status=live]").waitFor();};
   const capture=async(state,watchReceipt)=>{
    const pairs=[];
    for(const [size,width,height] of [["desktop",760,1000],["phone",390,844]]) for(const theme of ["light","dark"]){
@@ -38,6 +38,24 @@ await withDatabase(async databaseUrl=>{
     await frame.locator("body").evaluate(()=>window.scrollTo(0,0));
     assert(await frame.locator("body").evaluate(el=>el.scrollWidth<=el.clientWidth+1));
     assert.equal(await frame.getByText(/Seller unknown: pending|Checklist 0\/8|Stop new discovery|Open browser controls/).count(),0);
+    const audit=await frame.locator("main").evaluate(main=>{
+     const parse=color=>color.match(/[\d.]+/g)?.map(Number)??[0,0,0];
+     const luminance=color=>color.slice(0,3).map(n=>{const c=n/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+     const walker=document.createTreeWalker(main,NodeFilter.SHOW_TEXT),failures=[],ratios=[],sizes=[];
+     while(walker.nextNode()){
+      const node=walker.currentNode,el=node.parentElement;if(!node.textContent.trim() || !el) continue;
+      const range=document.createRange();range.selectNodeContents(node);const box=range.getBoundingClientRect();if(!box.width || !box.height || box.top>=innerHeight || box.bottom<=0) continue;
+      const style=getComputedStyle(el),size=parseFloat(style.fontSize);let parent=el,background=[255,255,255];
+      while(parent){const value=parse(getComputedStyle(parent).backgroundColor);if(value.length===3 || value[3]===1){background=value;break;}parent=parent.parentElement;}
+      const a=luminance(parse(style.color)),b=luminance(background),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05),large=size>=24 || size>=18.66 && Number(style.fontWeight)>=700;
+      ratios.push(ratio);sizes.push(size);if(size<13 || ratio<(large?3:4.5)) failures.push({text:node.textContent.trim(),size,ratio});
+     }
+     return {minimumFont:Math.min(...sizes),minimumContrast:Math.min(...ratios),failures,height:main.getBoundingClientRect().height,priceWeight:main.querySelector(".hero-price")?Number(getComputedStyle(main.querySelector(".hero-price")).fontWeight):undefined,primaryActions:main.querySelectorAll(".primary").length};
+    });
+    assert.deepEqual(audit.failures,[],JSON.stringify({state,size,theme,audit}));assert.equal(audit.primaryActions,state==="empty"?0:1);if(state!=="empty") assert(audit.priceWeight>=700);if(size==="phone") assert(audit.height<=844,`${state}: core exceeds phone fold`);
+    if(state==="error"){assert.equal(await frame.getByText("Comparing",{exact:true}).count(),0);await frame.getByText("Last saved price",{exact:false}).waitFor();}
+    if(state==="watch-active") assert.match(await frame.locator("h1").innerText(),/Raspberry Pi 5/);
+    readability.push({state,size,theme,...audit});
     const file=`${state}-${size}-${theme}.png`;await page.screenshot({path:path.join(root,file)});matrix.push({state,size,theme,width,height,file});
     if(beforePath && size==="phone" && state!=="empty") pairs.push({state,theme,after:file,afterPoints:await comparisonPoints(page,state,"after")});
    }
@@ -73,11 +91,11 @@ await withDatabase(async databaseUrl=>{
   for(const slot of view.rows.find(row=>row.row.id===others.row.id).slots.filter(slot=>slot.completion.kind==="pending")) await record(others.row.id,slot.slot,{kind:"gap",reason:"No further matching seller in this synthetic fixture."});
   const next=view.rows.find(row=>row.row.id!==others.row.id && row.slots.some(slot=>slot.completion.kind==="pending"));
   for(const slot of next.slots.filter(slot=>slot.completion.kind==="pending")) await record(next.row.id,slot.slot,{kind:"gap",reason:"No matching discount in this synthetic fixture."});
-  await page.frameLocator("iframe").getByText("3 of 8 checked",{exact:true}).waitFor();
+  await page.frameLocator("iframe").getByText("3/8 checks",{exact:true}).waitFor();
   await capture("progress");
   await page.evaluate(()=>window.harness.setMode("outage"));
   await page.frameLocator("iframe").getByRole("alert").waitFor();await capture("error");
-  await page.evaluate(()=>window.harness.setMode("live"));await page.frameLocator("iframe").getByText("Up to date",{exact:true}).waitFor();
+  await page.evaluate(()=>window.harness.setMode("live"));await page.frameLocator("iframe").locator("main[data-status=live]").waitFor();
   for(const row of view.rows) for(const slot of row.slots.filter(slot=>slot.completion.kind==="pending")) await record(row.row.id,slot.slot,{kind:"gap",reason:"No additional benefit in this synthetic fixture."});
   result=await hunt({op:"finish",requestKey:randomUUID(),hunt:view.hunt,selection:null});view=result.value.view;
   await page.frameLocator("iframe").getByText("Search complete",{exact:true}).waitFor();await capture("finished");
@@ -107,13 +125,13 @@ await withDatabase(async databaseUrl=>{
   const contact=await context.newPage();
   const tiles=await Promise.all(matrix.map(async item=>`<figure><figcaption>${item.state} · ${item.size} · ${item.theme}</figcaption><img src="data:image/png;base64,${(await readFile(path.join(root,item.file))).toString("base64")}"/></figure>`));
   await contact.setViewportSize({width:1600,height:1000});
-  await contact.setContent(`<html><head><title>Scoat · Deal Ledger · Council round 1</title><style>*{box-sizing:border-box}body{margin:0;padding:32px;background:#e8e9ec;font:14px system-ui;color:#202b42}h1{margin:0 0 8px}p{margin:0 0 24px}main{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}figure{margin:0;background:white;padding:10px;border-radius:8px}figcaption{margin-bottom:10px;font-size:12px;font-weight:600}img{display:block;width:100%;height:460px;object-fit:contain;object-position:top}</style></head><body><h1>scoat. / THE DEAL LEDGER</h1><p>Council round 1 · Five states × two host widths × light and dark. Synthetic shopping data rendered through the production card.</p><main>${tiles.join("")}</main></body></html>`);
+  await contact.setContent(`<html><head><title>Scoat · Deal Ledger · Council round 2</title><style>*{box-sizing:border-box}body{margin:0;padding:32px;background:#e8e9ec;font:14px system-ui;color:#202b42}h1{margin:0 0 8px}p{margin:0 0 24px}main{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}figure{margin:0;background:white;padding:10px;border-radius:8px}figcaption{margin-bottom:10px;font-size:12px;font-weight:600}img{display:block;width:100%;height:460px;object-fit:contain;object-position:top}</style></head><body><h1>scoat. / Council round 2</h1><p>Council round 2 · Five states × two host widths × light and dark. Synthetic shopping data rendered through the production card.</p><main>${tiles.join("")}</main></body></html>`);
   await contact.locator("img").last().waitFor();await contact.screenshot({path:path.join(root,"contact-sheet.png"),fullPage:true});await contact.close();
   assert.equal(errors.length,0,errors.join("\n"));
   const comparisonFiles=beforePath?await renderComparisons(context,root,comparisons,baseline,process.env.SCOAT_OWNER_CAPTURE):[];
-  const index=["# Scoat card — council round 1","","Production card build, real ext-apps App/AppBridge harness, authenticated MCP and isolated PostgreSQL. All prices are synthetic review fixtures, not live retailer claims. No external email was sent.","","Desktop: 760 × 1000. Phone: 390 × 844. Host theme changes are negotiated through AppBridge. Screenshots are unaltered viewport captures, with reduced motion enabled.","","[Contact sheet](contact-sheet.png) · [Short recording](walkthrough.webm)","","| State | Size | Theme | Screenshot |","| --- | --- | --- | --- |",...matrix.map(item=>`| ${item.state} | ${item.size} | ${item.theme} | [${item.file}](${item.file}) |`),"","The progress state contains three persisted checks and three sellers. Error is an actual unavailable harness tool response with saved prices retained. Watch active follows native browser confirmation and a schema-validated Memory receipt for the displayed hunt; a proposal or another hunt’s receipt cannot activate it.","","Reproduce after `npm run build`: `SCOAT_EVIDENCE_DIR=~/tmp/scoat-ui-council/round-1 pstack-run run --timeout 240 -- node scripts/card-review.mjs`.",""];
-  if(comparisonFiles.length) index.push("## Annotated Before / After","",`Baseline: origin/main at ${baseline}. Both card builds use the same AppBridge harness, persisted hunt and phone viewport. The active Watch receipt is delivered to both builds. Error uses the same unavailable bridge response. Arrow tips come from Chromium element bounds; 2px dotted SVG leaders and numbered white pills sit outside the unchanged captures.`,"","| State | Theme | Comparison | Overlay |","| --- | --- | --- | --- |",...comparisonFiles.map(item=>`| ${item.state} | ${item.theme} | [${item.file}](${item.file}) | [HTML](${item.file.replace(".png",".html")}) |`),"","The owner-host comparison uses the supplied original screenshot as an additional reference; its product and host width differ. Controlled before captures are in [compare/before/](compare/before/). Every comparison has an adjacent HTML overlay for inspection.","","| Baseline state | Theme | Raw screenshot |","| --- | --- | --- |",...comparisons.map(item=>`| ${item.state} | ${item.theme} | [${item.before}](${item.before}) |`),"","To include comparisons, build origin/main in an isolated archive and set `SCOAT_BEFORE_CARD` to its `dist/card/index.html`. Set `SCOAT_OWNER_CAPTURE` to the supplied host screenshot.","");
-  await writeFile(path.join(root,"index.md"),index.join("\n"));await writeFile(path.join(root,"receipt.json"),JSON.stringify({status:"PASS",head,baseline,fixture:"production card / real AppBridge / authenticated MCP / synthetic prices / local mail capture",matrix,comparisons:comparisonFiles,callouts:comparisons,proofs,errors},null,2));
+  const index=["# Scoat card — council round 2","","Production card build, real ext-apps App/AppBridge harness, authenticated MCP and isolated PostgreSQL. All prices are synthetic review fixtures, not live retailer claims. No external email was sent.","","Desktop: 760 × 1000. Phone: 390 × 844. Host theme changes are negotiated through AppBridge. Screenshots are unaltered viewport captures, with reduced motion enabled.","","[Contact sheet](contact-sheet.png) · [Short recording](walkthrough.webm)","",`Chromium checks every visible text node: minimum ${Math.min(...readability.map(item=>item.minimumFont))}px; normal text ≥4.5:1 and large text ≥3:1 in both themes. Every collapsed phone card fits above the 844px fold. Full measured results: [receipt.json](receipt.json).`,"","| State | Size | Theme | Screenshot |","| --- | --- | --- | --- |",...matrix.map(item=>`| ${item.state} | ${item.size} | ${item.theme} | [${item.file}](${item.file}) |`),"","The progress state contains three persisted checks and three sellers. Error is an actual unavailable harness tool response with saved prices retained. Watch active follows native browser confirmation and a schema-validated Memory receipt for the displayed hunt; a proposal or another hunt’s receipt cannot activate it.","","Reproduce after `npm run build`: `SCOAT_EVIDENCE_DIR=~/tmp/scoat-ui-council/round-2 pstack-run run --timeout 240 -- node scripts/card-review.mjs`.",""];
+  if(comparisonFiles.length) index.push("## Annotated Before / After","",`Baseline: origin/main at ${baseline}. Both card builds use the same AppBridge harness, persisted hunt and phone viewport. The active Watch receipt is delivered to both builds. Error uses the same unavailable bridge response. Small red numbered dots sit directly on element bounds. Matching numbers map to a footer legend below equal 390 × 844 frames. No arrows or side cards. Every pair is labelled as real card builds with fixture data.`,"","| State | Theme | Comparison | Overlay |","| --- | --- | --- | --- |",...comparisonFiles.map(item=>`| ${item.state} | ${item.theme} | [${item.file}](${item.file}) | [HTML](${item.file.replace(".png",".html")}) |`),"","The [owner host capture](compare/reference-owner-host.png) is a separate, unannotated reference; its product and host width differ and it is excluded from the controlled comparisons. Controlled before captures are in [compare/before/](compare/before/). Every comparison has an adjacent HTML overlay for inspection.","","| Baseline state | Theme | Raw screenshot |","| --- | --- | --- |",...comparisons.map(item=>`| ${item.state} | ${item.theme} | [${item.before}](${item.before}) |`),"","To include comparisons, build origin/main in an isolated archive and set `SCOAT_BEFORE_CARD` to its `dist/card/index.html`. Set `SCOAT_OWNER_CAPTURE` to the supplied host screenshot.","");
+  await writeFile(path.join(root,"index.md"),index.join("\n"));await writeFile(path.join(root,"receipt.json"),JSON.stringify({status:"PASS",head,baseline,fixture:"production card / real AppBridge / authenticated MCP / synthetic prices / local mail capture",matrix,comparisons:comparisonFiles,callouts:comparisons,readability,proofs,errors},null,2));
   completed=true;console.log(JSON.stringify({status:"PASS",screenshots:matrix.length,root}));
  } finally {await context.close();await browser.close();for(const card of cards) await card.close();await w.close();if(completed){await rename(await page.video().path(),path.join(root,"walkthrough.webm"));await rm(path.join(root,"recordings"),{recursive:true,force:true});}}
 });

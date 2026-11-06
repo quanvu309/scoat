@@ -1,5 +1,6 @@
 import { guideOutput, huntOutput, memoryOutput, cardOutput } from "./outputs.js";
 import { conform, refuseInput, refusal } from "./results.js";
+import { serverInfo, supportedProtocols } from "./http.js";
 import { readFileSync } from "node:fs";
 import { agentRequestKey } from "../hunt/request-key.js";
 import { memoryInput } from "../memory/contracts.js";
@@ -82,6 +83,7 @@ export function dispatchParsed(call: ToolCall) {
 }
 export const fixtureHtml = readFileSync(new URL("../card/index.html",import.meta.url),"utf8");
 export function mount({ server, invoke = dispatchParsed }: { server: McpServer; invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult> }) {
+  server.server.setRequestHandler(z.object({ method: z.literal("server/discover") }), async () => ({ supportedVersions: supportedProtocols, capabilities: { tools: {}, resources: {}, prompts: {} }, ttlMs: 0, cacheScope: "private" }));
   server.server.registerCapabilities({ prompts: {} });
   server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [huntPrompt] }));
   server.server.setRequestHandler(GetPromptRequestSchema, async request => {
@@ -106,7 +108,7 @@ export function mount({ server, invoke = dispatchParsed }: { server: McpServer; 
   registerAppResource(server, "Scoat live hunt", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
 }
 export function createMcpServer(invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult>) {
-  const server = new McpServer({ name: "scoat-foundation", version: "0.1.0" });
+  const server = new McpServer(serverInfo);
   mount({ server, ...(invoke ? {invoke} : {}) });
   return server;
 }

@@ -106,7 +106,7 @@ export function mount({ server, invoke = dispatchParsed }: { server: McpServer; 
     catch (error) { if (error instanceof z.ZodError) return conform(name, refuseInput(name, error)); throw error; }
     return conform(name, await invoke(call));
   });
-  registerAppResource(server, "Scoat live hunt", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } }] }));
+  registerAppResource(server, "Scoat live hunt", appUri, {}, async () => ({ contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: fixtureHtml, _meta: { ui: { prefersBorder:false, csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] } } } }] }));
 }
 export function createMcpServer(invoke?: (call:ToolCall)=>CallToolResult | Promise<CallToolResult>) {
   const server = new McpServer(serverInfo);

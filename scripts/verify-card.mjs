@@ -74,6 +74,34 @@ const result=await withDatabase(async databaseUrl=>{
   await appFrame.evaluate(()=>{document.documentElement.style.zoom="";});
   lane("canonical amounts, conditional rewards, long seller, unknown delivery, gaps, sources, clean link; 320px, 200% text and CSS zoom");
   await page.setViewportSize({width:1280,height:800});
+  if(!perf) {
+   await page.waitForFunction(()=>window.harness.contexts.length>0 && window.harness.sizes.length>0);
+   await page.evaluate(()=>window.harness.context({theme:"dark",styles:{variables:{"--color-background-primary":"#111827","--color-text-primary":"#f9fafb","--color-text-secondary":"#d1d5db","--color-border-primary":"#64748b","--color-background-secondary":"#1f2937"}},safeAreaInsets:{top:18,right:12,bottom:20,left:12},containerDimensions:{maxWidth:390,maxHeight:600}}));
+   await appFrame.waitForFunction(()=>document.documentElement.style.maxWidth==="390px");
+   assert.deepEqual(await frame.locator("body").evaluate(el=>{const style=getComputedStyle(el),root=document.documentElement;return {theme:root.dataset.theme,scheme:getComputedStyle(root).colorScheme,background:style.backgroundColor,padding:style.padding,maxWidth:root.style.maxWidth,maxHeight:root.style.maxHeight};}),{theme:"dark",scheme:"dark",background:"rgb(17, 24, 39)",padding:"18px 12px 20px",maxWidth:"390px",maxHeight:"600px"});
+   await page.evaluate(()=>window.harness.context({containerDimensions:{width:760,height:600},safeAreaInsets:{top:0,right:0,bottom:0,left:0}}));
+   await appFrame.waitForFunction(()=>document.documentElement.style.width==="100vw");
+   assert.deepEqual(await frame.locator("html").evaluate(el=>[el.style.width,el.style.height,el.style.maxWidth,el.style.maxHeight]),["100vw","100vh","",""]);
+   await page.evaluate(()=>window.harness.context({theme:"light",styles:{variables:{}},containerDimensions:{}}));
+   await frame.getByRole("button",{name:"Refine search"}).click();
+   await page.waitForFunction(()=>window.harness.messages.length===2);
+   const message=await page.evaluate(()=>window.harness.messages.at(-1));assert.equal(message.role,"user");assert.match(message.content[0].text,/ask what I want to change/);
+   const [shop]=await Promise.all([page.waitForEvent("popup"),frame.getByRole("link",{name:/Visit nike/i}).click()]);await shop.close();
+   assert.equal((await page.evaluate(()=>window.harness.opened)).at(-1),"https://www.nike.com/gb/t/synthetic");
+   await page.waitForFunction(()=>window.harness.contexts.some(item=>item.structuredContent?.action==="visit"));
+   await visibility(false);const beforePush=await count();
+   await frame.locator("main").evaluate(el=>{window.cardIdentity=el;});
+   const row=f.initial.value.view.rows.at(-1),pushed=await f.tool({op:"record",requestKey:randomUUID(),hunt:f.initial.value.view.hunt,row:row.row.id,slot:row.row.slots[0],expected:row.revision,outcome:{kind:"gap",reason:"Host-pushed evidence arrived"}});
+   assert(!pushed.isError);await page.evaluate(result=>window.harness.result({op:"record"},result),pushed);
+   await frame.getByText("Host-pushed evidence arrived",{exact:true}).waitFor();
+   assert(await frame.locator("main").evaluate(el=>el===window.cardIdentity));assert.equal(await count(),beforePush);
+   const contexts=await page.evaluate(()=>window.harness.contexts);assert(contexts.some(item=>item.structuredContent?.action==="refine"));
+   assert(!JSON.stringify(contexts).includes("scoat/readCapability"));assert(!JSON.stringify(contexts).includes(f.initial.controls.stop));
+   await visibility(true);await live();
+   const unavailable=await context.newPage();await unavailable.goto(f.url+"?no-context&no-message");await unavailable.frameLocator("iframe").locator('main[data-status="live"]').waitFor();await unavailable.frameLocator("iframe").getByRole("button",{name:"Refine search"}).click();await unavailable.frameLocator("iframe").getByText(/Tell your assistant:/).waitFor();assert.equal(await unavailable.evaluate(()=>window.harness.messages.length+window.harness.contexts.length),0);await unavailable.close();
+   const input=await context.newPage();await input.goto(f.url+"?waiting");await input.frameLocator("iframe").getByText("Opening your search…").waitFor();await input.evaluate(()=>window.harness.input({op:"start",intent:{product:"Logitech M185 wireless mouse"}}));await input.frameLocator("iframe").getByRole("heading",{name:"Logitech M185 wireless mouse"}).waitFor();await input.evaluate(result=>window.harness.result({op:"read"},result),{content:[],structuredContent:f.initial});await input.frameLocator("iframe").locator('main[data-status="live"]').waitFor();await input.close();
+   lane("MCP Apps host open-link, ui/message, private-safe model context, changed styles/insets/dimensions, auto sizing, pushed input/result without remount, unavailable capabilities");
+  }
   if(perf) {
    await page.evaluate(()=>window.harness.setDelay(150));
    await page.waitForTimeout(6500);
@@ -111,7 +139,7 @@ const result=await withDatabase(async databaseUrl=>{
   const [approval]=await Promise.all([page.waitForEvent("popup"),button.press("Enter")]);
   await approval.waitForLoadState();
   await f.fixture.nativeLogin(approval);
-  assert.equal((await page.evaluate(()=>window.harness.opened))[0],skip.url);
+  assert.equal((await page.evaluate(()=>window.harness.opened)).at(-1),skip.url);
   await approval.getByRole("button",{name:/Skip/}).click();
   await approval.close();
   await frame.getByText("Left out by you",{exact:true}).waitFor();
@@ -175,9 +203,12 @@ const result=await withDatabase(async databaseUrl=>{
   const disposed=await context.newPage();await disposed.goto(f.url);await disposed.frameLocator("iframe").locator('main[data-status="live"]').waitFor();await disposed.evaluate(()=>window.harness.setDelay(700));await disposed.waitForTimeout(3100);await disposed.evaluate(()=>window.harness.unmount());const disposedCount=await disposed.evaluate(()=>window.harness.calls.length);await disposed.waitForTimeout(3500);assert.equal(await disposed.evaluate(()=>window.harness.calls.length),disposedCount);assert.equal(await disposed.locator("iframe").count(),0);await disposed.close();
   lane("unmounted iframe issues zero new calls including delayed response completion; unit test proves disposed publication dropped");
   const stop=frame.getByRole("button",{name:"Stop search",exact:true});
+  const stopCalls=await count();
   await stop.focus();
   const [stopApproval]=await Promise.all([page.waitForEvent("popup"),stop.press("Space")]);
   await stopApproval.waitForLoadState();
+  assert((await page.evaluate(start=>window.harness.calls.slice(start),stopCalls)).some(call=>call.name==="scoat_card" && call.op==="read"));
+  await page.waitForFunction(()=>window.harness.contexts.some(item=>item.structuredContent?.action==="stop-requested"));
   await f.fixture.nativeLogin(stopApproval);
   await stopApproval.getByRole("button",{name:"Stop accepting new discoveries"}).click();
   await stopApproval.close();

@@ -114,7 +114,7 @@ test("text and live card expose one canonical watch entry", () => {
  assert.throws(() => checkWatchEntry(codec.replace("url:link({kind:\"skip\",row:row.row.id})}))};", "url:link({kind:\"skip\",row:row.row.id})})),watch:{available:false,reason:\"Watch through scoat_memory op watch; Scoat returns a browser confirmation link for a supported exact public item\"}};"), contract, dispatch, renderer), /fixed codec reason/);
  assert.throws(() => checkWatchEntry(codec, contract.replace("available: z.literal(true)", "available: z.literal(false)"), dispatch, renderer), /canonical watch link/);
  assert.throws(() => checkWatchEntry(codec, contract, dispatch.replace("watch: watchEntry(", "watch: ({ available: false as const, reason: \"Watch through scoat_memory\" }) && watchEntry("), renderer), /one canonical watch entry/);
- assert.throws(() => checkWatchEntry(codec, contract, dispatch, renderer.replace("void open(controls.watch.url)", "void open(controls.hub)")), /open the canonical watch link/);
+ assert.throws(() => checkWatchEntry(codec, contract, dispatch, renderer.replace("await open(controls.watch.url)", "await open(controls.hub)")), /open the canonical watch link/);
 });
 
 test("watch preparation, refusals, issuer origin and one-click parsing stay in their owners", () => {

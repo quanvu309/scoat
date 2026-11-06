@@ -21,6 +21,19 @@ async function withClient(run, invoke, advertised) {
  try { await server.connect(left); await client.connect(right); await client.listTools(); await run(client); }
  finally { await client.close(); await server.close(); }
 }
+test("MCP Apps resource metadata declares a lean isolated inline card", async () => {
+ await withClient(async client => {
+  const tools=(await client.listTools()).tools;
+  assert.equal(tools.length,4);
+  assert.equal(tools.find(tool=>tool.name==="scoat_hunt")._meta.ui.resourceUri,"ui://scoat/hunt.html");
+  for(const tool of tools.filter(tool=>tool.name!=="scoat_hunt")) assert.equal(tool._meta.ui.resourceUri,undefined);
+  assert.deepEqual(tools.find(tool=>tool.name==="scoat_card")._meta.ui.visibility,["app"]);
+  const resource=await client.readResource({uri:"ui://scoat/hunt.html"});
+  assert.equal(resource.contents.length,1);
+  assert.equal(resource.contents[0].mimeType,"text/html;profile=mcp-app");
+  assert.deepEqual(resource.contents[0]._meta.ui,{prefersBorder:false,csp:{connectDomains:[],resourceDomains:[],frameDomains:[],baseUriDomains:[]}});
+ });
+});
 function parity(result) {
  assert.equal(result.content.at(-1).text, JSON.stringify(result.structuredContent));
  assert.equal(result.isError === true, result.structuredContent.ok === false);

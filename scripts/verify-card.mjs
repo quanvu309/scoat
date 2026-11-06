@@ -145,7 +145,7 @@ const result=await withDatabase(async databaseUrl=>{
   await live();
   lane("hidden zero new tool requests; visible resumes single flight");
   await page.evaluate(()=>window.harness.setMode("outage"));
-  await frame.getByText("Reconnecting",{exact:true}).waitFor();
+  await frame.getByRole("alert").filter({hasText:"Can't reach Scoat right now."}).waitFor();
   await frame.locator("details.evidence").evaluate(el=>{el.open=false;});await capture("error");
   await frame.locator("details.evidence").evaluate(el=>{el.open=true;});
   await page.evaluate(()=>window.harness.expire());
@@ -157,7 +157,7 @@ const result=await withDatabase(async databaseUrl=>{
   lane("outage remains retryable; actual expired grant renews serially before read");
   const lostStart=await count();
   await page.evaluate(()=>{window.harness.setMode("lose-renew");return window.harness.expire();});
-  await frame.getByText("Reconnecting",{exact:true}).waitFor();
+  await frame.getByRole("alert").filter({hasText:"Can't reach Scoat right now."}).waitFor();
   await frame.locator("details.evidence").evaluate(el=>{el.open=false;});await capture("error");
   await frame.locator("details.evidence").evaluate(el=>{el.open=true;});
   await frame.locator('main[data-status="live"]').waitFor({timeout:45000});

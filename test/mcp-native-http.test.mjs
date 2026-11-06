@@ -115,7 +115,14 @@ test("native HTTPS clients validate results, repairs, scopes, progress and cance
    const forbidden = await call("scoat_hunt", { ...record, requestKey: randomUUID(), hunt: stoppedView.hunt, row: stoppedView.rows[0].row.id, slot: stoppedView.rows[0].slots[0].slot, expected: 0, outcome: { kind: "found", offers: [offer] } });
    assert.equal(forbidden.error.code, "forbidden");
    assert.equal(progress, 0);
-   assert.equal(await readFile(f.logPath, "utf8"), "");
+   const log = await readFile(f.logPath, "utf8");
+   const diagnostics = log.trim().split("\n").map(line => JSON.parse(line));
+   assert.ok(diagnostics.some(entry => entry.event === "mcp_tool_result" && entry.isError === false));
+   assert.ok(diagnostics.some(entry => entry.toolCode === "invalid-input"));
+   assert.ok(diagnostics.some(entry => entry.event === "mcp_http_refused" && entry.status === 401));
+   const fields = new Set(["event", "method", "protocol", "status", "code", "message", "toolCode", "isError"]);
+   for (const entry of diagnostics) assert.ok(Object.keys(entry).every(key => fields.has(key)));
+   for (const secret of [login.token, readonly.token, grant, view.hunt, "native-probe"]) assert.equal(log.includes(secret), false);
   } finally { await Promise.all(clients.map(client => client.close())); await f.close(); }
  });
 });

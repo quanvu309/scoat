@@ -16,6 +16,7 @@ import { WatchQueue, queueSchemaFor } from "../dist/queue/index.js";
 import { admit } from "../dist/db/lineage.js";
 import { basisDigest } from "../dist/delivery/index.js";
 import { resolveWatchTarget } from "../dist/memory/watches.js";
+import { stopFixtureProcess } from "./watch-resources.mjs";
 
 export const variant = 42531604922563;
 export const productUrl = "https://thepihut.com/products/raspberry-pi-5?variant=" + variant;
@@ -34,11 +35,12 @@ async function child(file, env, ready) {
  const output = [];
  process.stdout.on("data", chunk => output.push(String(chunk)));
  process.stderr.on("data", chunk => output.push(String(chunk)));
- const message = await new Promise((resolve, reject) => {
+ let message;
+ try { message = await new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error("child startup timeout " + output.join(""))), 30000);
   process.on("message", value => { if (ready(value)) { clearTimeout(timer); resolve(value); } });
   process.once("exit", code => { clearTimeout(timer); reject(new Error("child exited " + code + " " + output.join("").slice(-2000))); });
- });
+ }); } catch (error) { await stopFixtureProcess(process, "SIGKILL"); throw error; }
  return { process, message, output };
 }
 
@@ -100,7 +102,7 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
   async deliveries() { return (await (await fetch(mailOrigin + "/deliveries")).text()).split("\n").filter(Boolean).map(line => JSON.parse(line)); },
   async requests() { return (await readFile(path.join(root, "requests.jsonl"), "utf8").catch(() => "")).split("\n").filter(Boolean).map(line => JSON.parse(line)); },
   async startWorker() { worker = await child(new URL("./watch-worker.mjs", import.meta.url), env, value => value.ready); return worker; },
-  killWorker(signal = "SIGKILL") { const current = worker; worker = null; if (!current) return Promise.resolve(); return new Promise(resolve => { if (current.process.exitCode !== null) { resolve(); return; } current.process.once("exit", resolve); current.process.kill(signal); }); },
+  async killWorker(signal = "SIGKILL") { const current = worker; if (!current) return; await stopFixtureProcess(current.process, signal); if (worker === current) worker = null; },
   async observe() { return delivery.observe(resolveWatchTarget({ url: productUrl }).target, AbortSignal.timeout(10000)); },
   async seedWatch({ baselinePence = 7000, targetPence = 6000, address = "seeded-" + randomUUID().slice(0, 8) + "@example.test", account = randomUUID(), incarnation = randomUUID() } = {}) {
    const saved = { ...state };
@@ -116,15 +118,17 @@ export async function watchFixture(databaseUrl, { mailConfigured = true } = {}) 
    return { account, incarnation, watch, address };
   },
   async close() {
-   const step = async (name, run) => { const started = Date.now(); let timer; try { await Promise.race([run(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(name + " timeout")), 20000); })]); } catch (error) { process.stderr.write(JSON.stringify({ event: "watch_fixture_close", step: name, error: String(error.message) }) + "\n"); } finally { clearTimeout(timer); } return Date.now() - started; };
+   const errors = [];
+   const step = async (name, run) => { let timer; try { await Promise.race([run(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(name + " timeout")), 20000); })]); } catch (error) { errors.push(error); process.stderr.write(JSON.stringify({ event: "watch_fixture_close", step: name, error: String(error.message) }) + "\n"); } finally { clearTimeout(timer); } };
    await step("worker", () => fixture.killWorker("SIGTERM"));
    await step("producer", () => producer.stop());
-   await step("capture", () => new Promise(resolve => { capture.process.once("exit", resolve); capture.process.kill("SIGKILL"); }));
+   await step("capture", () => stopFixtureProcess(capture.process, "SIGKILL"));
    await step("seller", () => new Promise(resolve => { seller.close(resolve); seller.closeAllConnections(); }));
    setDefaultCACertificates(defaults);
    await step("queue-schema", async () => { const admin = new pg.Pool({ connectionString: databaseUrl }); try { await admin.query("SET lock_timeout='5s'"); await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`); } finally { await admin.end(); } });
    await step("auth", () => f.close());
    await rm(root, { recursive: true, force: true });
+   if (errors.length) throw new AggregateError(errors, "Watch fixture cleanup failed");
   },
  };
  return fixture;

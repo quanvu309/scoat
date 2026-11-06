@@ -12,6 +12,7 @@ import pg from "pg";
 import * as jose from "jose";
 import assert from "node:assert/strict";
 import { scratchDirectory } from "./scratch.mjs";
+import { stopFixtureProcess } from "./watch-resources.mjs";
 import { durableSchema } from "../dist/db/schema.js";
 import { migrateFixtureDatabase } from "./fixture-journal.mjs";
 import { createIssuer } from "../dist/auth/issuer.js";
@@ -154,18 +155,7 @@ export async function authFixture(databaseUrl, options = {}) {
     });
   }
   async function stopService() {
-    if (child.exitCode !== null) return;
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        child.kill("SIGKILL");
-        reject(new Error("Service shutdown timeout"));
-      }, 10000);
-      child.once("exit", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-      child.kill("SIGTERM");
-    });
+    await stopFixtureProcess(child);
   }
   try {
     await options.beforeStart?.({ issuer, root, databaseUrl, config });

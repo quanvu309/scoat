@@ -19,6 +19,8 @@ Run `npm run build`, then `pstack-run run --timeout 900 -- npm run verify -- p08
 
 Browser refusals cover `email_verified` false, a missing email claim and a foreign Origin. They also cover a stale public observation, an expired or used confirmation (a native same-origin POST, with no injected Origin), an already-watched hunt and the active limit. Each is a no-store 409 page with a fresh-start action.
 
+Native form submissions wait for the new POST response and document before reading a refusal. The lane replays a consumed confirmation immediately after activation and expires a separate confirmation while keeping its public quote fresh. `SCOAT_P08_FORM_DELAY_MS=350` (integer 0–5000) delays scripted native submissions to reproduce a slow browser without changing product clocks or freshness checks. Run P08 twice with this delay after changing navigation or cleanup. `test/watch-verifier.test.mjs` also forces a lane failure after the real worker starts and requires a nonzero exit within 45 seconds (cleanup under 15 seconds), no surviving fixture processes or database clients, and the original private-schema inventory. Pending browser navigation and a child ignoring SIGTERM have separate shutdown regressions.
+
 `npm test` adds PostgreSQL proofs in `test/watch-corrections.test.mjs`:
 
 - The plan waits on the erase account fence while holding no alert lock, finishes on one connection and does not retry.

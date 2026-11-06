@@ -115,6 +115,9 @@ test("text and live card expose one canonical watch entry", () => {
  assert.throws(() => checkWatchEntry(codec, contract.replace("available: z.literal(true)", "available: z.literal(false)"), dispatch, renderer), /canonical watch link/);
  assert.throws(() => checkWatchEntry(codec, contract, dispatch.replace("watch: watchEntry(", "watch: ({ available: false as const, reason: \"Watch through scoat_memory\" }) && watchEntry("), renderer), /one canonical watch entry/);
  assert.throws(() => checkWatchEntry(codec, contract, dispatch, renderer.replace("await open(controls.watch.url)", "await open(controls.hub)")), /open the canonical watch link/);
+ const quoteGate = "(hero || controls?.watch.available)";
+ assert.ok(renderer.includes(quoteGate));
+ assert.throws(() => checkWatchEntry(codec, contract, dispatch, renderer.replace(quoteGate, "hero")), /Watch action accessible without a saved quote/);
 });
 
 test("watch preparation, refusals, issuer origin and one-click parsing stay in their owners", () => {

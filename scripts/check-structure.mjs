@@ -692,6 +692,7 @@ export function checkWatchEntry(codec, contract, dispatch, renderer) {
  if (!/watch:z\.discriminatedUnion\("available",\[z\.strictObject\(\{available:z\.literal\(true\),url:https\}\)/.test(contract.replace(/\s/g, ""))) throw new Error("Card controls must carry the canonical watch link when available");
  if (!/watch: watchEntry\(/.test(dispatch) || !/controls\.watch\.available \? "Watch price: " \+ controls\.watch\.url/.test(dispatch)) throw new Error("Text and card controls must share one canonical watch entry");
  if (/Watch unavailable<\/button>/.test(renderer) || !/open\(controls\.watch\.url\)/.test(renderer)) throw new Error("The live card must open the canonical watch link");
+ if (!renderer.includes("(hero || controls?.watch.available) && <button")) throw new Error("Keep an available canonical Watch action accessible without a saved quote");
 }
 export function checkWatchBoundary(issuer, watches, memory) {
  const issuerNodes = parsedNodes(issuer);

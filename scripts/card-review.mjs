@@ -60,7 +60,7 @@ await withDatabase(async databaseUrl=>{
     if(state==="error"){
      assert.equal(await frame.locator('header [role="status"]').count(),0);assert.equal(await frame.getByRole("alert").count(),1);
      assert.match(await frame.getByRole("alert").innerText(),/Can't reach Scoat right now\. Showing the last saved price from \d{2}:\d{2}/);
-     await frame.locator(".hero-stale").waitFor();await frame.getByText("Last saved price",{exact:false}).waitFor();
+     await frame.locator(".hero-stale").waitFor();await frame.getByRole("heading",{name:/^Last saved price/}).waitFor();
      for(const button of await frame.locator(".controls button:disabled").all()) assert(Number(await button.evaluate(el=>getComputedStyle(el).opacity))<=.45);
     }
     if(state==="progress" || state==="finished"){

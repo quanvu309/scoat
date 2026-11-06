@@ -13,7 +13,7 @@ export async function comparisonPoints(page,state,side){
  for(const [selector,label] of definitions[state][side]){
   const box=await frame.locator(selector).first().boundingBox();
   assert(box && box.y>=0 && box.y+Math.min(box.height,20)<844,`${state}/${side}: callout outside phone viewport: ${selector}`);
-  points.push({label,x:Math.min(377,box.x+box.width-4),y:Math.max(12,box.y+4)});
+  points.push({label,x:Math.min(377,box.x+box.width-4),y:Math.max(12,box.y-8)});
  }
  return points;
 }

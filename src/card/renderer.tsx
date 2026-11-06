@@ -49,7 +49,7 @@ export function Card({initial,bridge,watching=false}:{initial:Snapshot;bridge:Ca
  const disabled=state.status!=="live" || finished;
  const alternatives=view.quotes.filter(quote=>quote.id!==hero?.id).sort((a,b)=>(a.guaranteed.kind==="known"?a.guaranteed.amount.pence:Infinity)-(b.guaranteed.kind==="known"?b.guaranteed.amount.pence:Infinity));
  const offline=state.message.startsWith("Offline");
- const label=offline?"Reconnecting":state.status==="revoked"?"Sign in to reconnect":state.status==="unsupported" && !finished?"Live updates unavailable":watching?"Watch active":view.stopRequested?"Search paused":finished?"Search complete":state.status==="stale"?"Updating":hero?"Comparing":"Starting";
+ const label=offline?"Reconnecting":state.status==="revoked"?"Sign in to reconnect":state.status==="unsupported" && !finished?"Live updates unavailable":watching?"Watch active":finished?"Search complete":view.stopRequested?"Search paused":state.status==="stale"?"Updating":hero?"Comparing":"Starting";
  const priceSource=hero?.guaranteed.lines.find(line=>line.label==="price" && line.status.kind==="confirmed")?.proof.url;
  const shopUrl=priceSource && view.ready && new URL(priceSource).origin===new URL(view.ready.url).origin?view.ready.url:priceSource;
  async function open(url:string) {try{if(bridge) await bridge.openLink(url);else window.open(url,"_blank","noopener,noreferrer");setNotice("Review and confirm in the page that opened.");}catch{setNotice("The link could not open. Use Manage search below.");}}

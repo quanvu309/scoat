@@ -35,6 +35,8 @@ await withDatabase(async databaseUrl=>{
    for(const [size,width,height] of [["desktop",760,1000],["phone",390,844]]) for(const theme of ["light","dark"]){
     await page.setViewportSize({width,height});await page.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});await page.evaluate(value=>window.harness.theme(value),theme);
     const frame=page.frameLocator("iframe");await frame.locator(`html[data-theme="${theme}"]`).waitFor();
+    const fonts=await frame.locator("body").evaluate(async()=>{await document.fonts.ready;return [...document.fonts].filter(face=>face.family==="Inter").map(face=>face.status);});
+    assert(fonts.length>0 && fonts.every(status=>status==="loaded"),JSON.stringify({fonts}));
     await frame.locator("body").evaluate(()=>window.scrollTo(0,0));
     assert(await frame.locator("body").evaluate(el=>el.scrollWidth<=el.clientWidth+1));
     assert.equal(await frame.getByText(/Seller unknown: pending|Checklist 0\/8|Stop new discovery|Open browser controls/).count(),0);
@@ -55,7 +57,7 @@ await withDatabase(async databaseUrl=>{
     assert.deepEqual(audit.failures,[],JSON.stringify({state,size,theme,audit}));assert.equal(audit.primaryActions,state==="empty"?0:1);if(state!=="empty") assert(audit.priceWeight>=700);if(size==="phone") assert(audit.height<=844,`${state}: core exceeds phone fold`);
     if(state==="error"){assert.equal(await frame.getByText("Comparing",{exact:true}).count(),0);await frame.getByText("Last saved price",{exact:false}).waitFor();}
     if(state==="watch-active") assert.match(await frame.locator("h1").innerText(),/Raspberry Pi 5/);
-    readability.push({state,size,theme,...audit});
+    readability.push({state,size,theme,fonts,...audit});
     const file=`${state}-${size}-${theme}.png`;await page.screenshot({path:path.join(root,file)});matrix.push({state,size,theme,width,height,file});
     if(beforePath && size==="phone" && state!=="empty") pairs.push({state,theme,after:file,afterPoints:await comparisonPoints(page,state,"after")});
    }

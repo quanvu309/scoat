@@ -47,6 +47,8 @@ const result=await withDatabase(async databaseUrl=>{
   const loading=await context.newPage();await loading.goto(f.url+"?waiting");await loading.frameLocator("iframe").getByText("Opening your search…").waitFor();await capture("loading",loading);await loading.close();
   const empty=await context.newPage();await empty.goto(f.emptyUrl);await empty.frameLocator("iframe").getByRole("heading",{name:/Waiting for the first price/}).waitFor();await capture("empty",empty);await empty.close();
   await live();
+  const fonts=await frame.locator("body").evaluate(async()=>{await document.fonts.ready;return [...document.fonts].filter(face=>face.family==="Inter").map(face=>face.status);});
+  assert(fonts.length>0 && fonts.every(status=>status==="loaded"),JSON.stringify({fonts}));
   await capture("progress");
   await frame.getByRole("button",{name:"Refine search",exact:true}).click();assert.equal(await page.evaluate(()=>window.harness.messages.length),1);
   await frame.locator("details.evidence > summary").click();

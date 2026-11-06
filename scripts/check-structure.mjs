@@ -42,6 +42,9 @@ export function checkWorkflow(source) {
   }
   checkHostedCoverage(source);
 }
+export function checkTestTimeouts(manifest) {
+ if (manifest.scripts?.test !== "node --import ./scripts/test-deadline.mjs --test --test-reporter=spec --test-timeout=120000 test/*.test.mjs test/*.test.ts") throw new Error("Bound every test to two minutes and every test file to three minutes without forcing successful exits");
+}
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = `${dir}/${entry.name}`;
@@ -146,6 +149,7 @@ export function checkDriver(source) {
 }
 
 if (process.argv[1]?.endsWith("check-structure.mjs")) {
+ checkTestTimeouts(JSON.parse(fs.readFileSync("package.json", "utf8")));
   const runtimeLineage = { database: fs.readFileSync("scripts/database.mjs", "utf8"), lineage: fs.readFileSync("src/db/lineage.ts", "utf8"), journal: fs.readFileSync("src/db/journal.ts", "utf8") };
   checkMigrationAdmission(runtimeLineage);
   checkFixtureJournal({ fixture: fs.readFileSync("scripts/auth-fixture.mjs", "utf8"), journal: fs.readFileSync("scripts/fixture-journal.mjs", "utf8") });
@@ -692,6 +696,7 @@ export function checkWatchEntry(codec, contract, dispatch, renderer) {
  if (!/watch:z\.discriminatedUnion\("available",\[z\.strictObject\(\{available:z\.literal\(true\),url:https\}\)/.test(contract.replace(/\s/g, ""))) throw new Error("Card controls must carry the canonical watch link when available");
  if (!/watch: watchEntry\(/.test(dispatch) || !/controls\.watch\.available \? "Watch price: " \+ controls\.watch\.url/.test(dispatch)) throw new Error("Text and card controls must share one canonical watch entry");
  if (/Watch unavailable<\/button>/.test(renderer) || !/open\(controls\.watch\.url\)/.test(renderer)) throw new Error("The live card must open the canonical watch link");
+ if (!renderer.includes("(hero || controls?.watch.available) && <button")) throw new Error("Keep an available canonical Watch action accessible without a saved quote");
 }
 export function checkWatchBoundary(issuer, watches, memory) {
  const issuerNodes = parsedNodes(issuer);

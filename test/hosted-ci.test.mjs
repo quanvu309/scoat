@@ -35,7 +35,7 @@ test("baseline source, pinned Node, install, build and fixture settings belong t
  for (const id of suites) {
   for (const [index, diagnostic] of [[0, /fetch-depth: 0/], [1, /pinned Node|executable/], [2, /npm ci and build/], [3, /npm ci and build/]]) {
    rejects(w => w.jobs[id].steps.splice(index, 1), diagnostic);
-   rejects(w => w.jobs.foundation.steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
+  rejects(w => w.jobs.foundation.steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
    rejects(w => w.jobs[id].steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
   }
   rejects(w => { w.jobs[id].steps[0].with["fetch-depth"] = 1; }, /fetch-depth: 0/);
@@ -48,11 +48,11 @@ test("baseline source, pinned Node, install, build and fixture settings belong t
 });
 
 test("tools precede their consumers on the same runner", () => {
- for (const [id, pattern, diagnostic] of [["browser", /playwright install/, /Chromium/], ["protocol", /playwright install/, /Chromium/], ["operations", /playwright install/, /Chromium/], ["operations", /apt.postgresql.org/, /PGDG/], ["operations", /sudo ln/, /\/usr\/bin\/node executable/], ["operations", /install.*ffmpeg/, /ffmpeg/]]) {
+ for (const [id, pattern, diagnostic] of [["quality", /playwright install/, /Chromium/], ["browser", /playwright install/, /Chromium/], ["protocol", /playwright install/, /Chromium/], ["operations", /playwright install/, /Chromium/], ["operations", /apt.postgresql.org/, /PGDG/], ["operations", /sudo ln/, /\/usr\/bin\/node executable/], ["operations", /install.*ffmpeg/, /ffmpeg/]]) {
   const index = workflow().jobs[id].steps.findIndex(step => pattern.test(step.run ?? ""));
   assert.ok(index >= 0);
   rejects(w => w.jobs[id].steps.splice(index, 1), diagnostic);
-  rejects(w => w.jobs.quality.steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
+  rejects(w => w.jobs.foundation.steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
   rejects(w => w.jobs[id].steps.push(w.jobs[id].steps.splice(index, 1)[0]), diagnostic);
  }
  rejects(w => { delete w.jobs.operations.env.SCOAT_PG_BIN; w.jobs.quality.env.SCOAT_PG_BIN = "/usr/lib/postgresql/18/bin"; }, /SCOAT_PG_BIN/);

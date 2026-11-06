@@ -8,6 +8,8 @@ import { watchFixture, productUrl, variant } from "./watch-fixture.mjs";
 import { serveCard } from "./card-fixture.mjs";
 import { retryTransaction } from "../dist/db/transaction.js";
 import { eraseAccount } from "../dist/accounts/erasure.js";
+import { postWatchForm } from "./watch-browser.mjs";
+import { closeWatchBrowser } from "./watch-resources.mjs";
 
 const day = n => new Date(Date.UTC(2027, 0, n)).toISOString().slice(0, 10);
 const html = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;");
@@ -15,9 +17,7 @@ const html = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&l
 export async function watchLanes(databaseUrl, evidence, head) {
  const w = await watchFixture(databaseUrl);
  const { f, pool, state } = w;
- const browser = await chromium.launch();
- const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1100, height: 760 } });
- const page = await context.newPage();
+ let browserServer, browser, context, page;
  const lanes = {};
  const shot = async (name, transcript) => {
   await writeFile(path.join(evidence, name + ".json"), JSON.stringify(transcript, null, 1));
@@ -32,6 +32,16 @@ export async function watchLanes(databaseUrl, evidence, head) {
  const jobFor = (scope, watch, n) => ({ account: scope.account, incarnation: scope.incarnation, watch, day: day(n) });
  const sendFor = (scope, watch, alert) => ({ account: scope.account, incarnation: scope.incarnation, watch, alert });
  try {
+  browserServer = await chromium.launchServer();
+  browser = await chromium.connect(browserServer.wsEndpoint());
+  context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1100, height: 760 } });
+  const formDelay = Number(process.env.SCOAT_P08_FORM_DELAY_MS ?? 0);
+  assert.ok(Number.isInteger(formDelay) && formDelay >= 0 && formDelay <= 5000, "SCOAT_P08_FORM_DELAY_MS must be an integer from 0 to 5000");
+  if (formDelay) await context.addInitScript(milliseconds => {
+   const submit = HTMLFormElement.prototype.submit;
+   HTMLFormElement.prototype.submit = function () { setTimeout(() => submit.call(this), milliseconds); };
+  }, formDelay);
+  page = await context.newPage();
   const login = await f.login();
   const principal = await f.authenticate(login.token);
   const scope = { account: principal.agent.account, incarnation: principal.agent.incarnation };
@@ -118,6 +128,8 @@ export async function watchLanes(databaseUrl, evidence, head) {
   assert.ok(!JSON.stringify(replayed).includes("person@example.test"));
 
   const refusals = {};
+  refusals.replayed = await postWatchForm(page, [["confirmation", confirmation], ["decision", "watch"], ["target", "60.00"]]);
+  assert.match(refusals.replayed, /expired or was already used/);
   for (const name of ["wrong-code", "missing-code"]) {
    const proposal = await memory({ op: "watch", requestKey: randomUUID(), hunt: (await finishedHunt(false)).hunt, target: { currency: "GBP", pence: 6000 } });
    await page.goto(proposal.url);
@@ -130,6 +142,13 @@ export async function watchLanes(databaseUrl, evidence, head) {
   await page.goto(stale.url);
   await f.nativeLogin(page);
   await page.getByText("Confirm price watch").waitFor();
+  const expiredConfirmation = await page.locator('input[name="confirmation"]').inputValue();
+  await pool.query("UPDATE oauth_browser_flows SET expires_at=now()-interval '1 second',data=jsonb_set(data,'{context,observedAt}',to_jsonb(round(extract(epoch FROM clock_timestamp())*1000)::bigint)) WHERE state=$1", [createHash("sha256").update(expiredConfirmation).digest("hex")]);
+  refusals.expiredFreshQuote = await postWatchForm(page, [["confirmation", expiredConfirmation], ["decision", "watch"], ["target", "60.00"]]);
+  assert.match(refusals.expiredFreshQuote, /expired or was already used/);
+  await page.goto(stale.url);
+  await f.nativeLogin(page);
+  await page.getByText("Confirm price watch").waitFor();
   await pool.query("UPDATE oauth_browser_flows SET data=jsonb_set(data,'{context,observedAt}',to_jsonb((data->'context'->>'observedAt')::bigint-180000)) WHERE data->'context'->>'stage'='watch-confirm'");
   await page.getByRole("button", { name: "Start watching" }).click();
   await page.waitForLoadState();
@@ -138,12 +157,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
   refusals.foreignOrigin = foreign.status;
   assert.match(refusals.stale.status, /Price watch not started/);
   assert.ok(await page.getByRole("link", { name: "Start again with a fresh public price" }).count());
-  const nativePost = async values => {
-   await page.evaluate(entries => { const form = document.createElement("form"); form.method = "post"; form.action = "/account/watch"; for (const [name, value] of entries) { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input); } document.body.append(form); form.submit(); }, values);
-   await page.waitForLoadState();
-   return await page.locator("body").innerText();
-  };
-  refusals.expired = await nativePost([["confirmation", randomBytes(32).toString("base64url")], ["decision", "watch"], ["target", "60.00"]]);
+  refusals.expired = await postWatchForm(page, [["confirmation", randomBytes(32).toString("base64url")], ["decision", "watch"], ["target", "60.00"]]);
   assert.match(refusals.expired, /expired or was already used/);
   await page.goto(proposalA.url);
   await f.nativeLogin(page);
@@ -365,8 +379,10 @@ export async function watchLanes(databaseUrl, evidence, head) {
   await reviewPage.getByText("This watch is not active").waitFor();
   await reviewPage.screenshot({ path: path.join(evidence, "p08-review-6-replay.png"), fullPage: true });
   await reviewPage.waitForTimeout(4000);
-  const video = await reviewPage.video().path();
+  const recording = reviewPage.video();
+  const video = path.join(evidence, "video", "p08-review.webm");
   await review.close();
+  await recording.saveAs(video);
   lanes[10] = { to: email.message.to, subject: email.message.subject, text: email.message.text, headers: email.message.headers, video, unsubscribeWorked: (await memory({ op: "read", collection: "watches" })).items.find(item => item.watch === watchA.watch).status };
   for (const part of ["GBP 60.00", "GBP 56.20", "GBP 3.80", "Observed at", productUrl, "Conditions", "/watch/unsubscribe?token="]) assert.ok(email.message.text.includes(part), part);
   assert.equal(lanes[10].unsubscribeWorked, "cancelled");
@@ -376,19 +392,29 @@ export async function watchLanes(databaseUrl, evidence, head) {
   const readC = await f.tool(login.token, "scoat_hunt", { op: "read", hunt: huntC.hunt });
   const textUrl = /Watch price: (\S+)/.exec(readC.content[0].text)?.[1];
   assert.ok(textUrl);
+  assert.equal(readC.structuredContent.value.view.best, null);
+  assert.equal(readC.structuredContent.value.view.final.quote, null);
+  assert.equal(readC.structuredContent.controls.watch.available, true);
   assert.equal(textUrl, readC.structuredContent.controls.watch.url);
   const card = await serveCard(f, login, readC.structuredContent);
   const cardPage = await context.newPage();
   try {
    await cardPage.goto(card.url);
+   await cardPage.waitForFunction(() => window.ready === true);
    const cardFrame = cardPage.frameLocator("iframe");
    await f.setEmail({ email: "person.work@example.test", email_verified: true });
-   const [popup] = await Promise.all([cardPage.waitForEvent("popup"), cardFrame.getByRole("button", { name: "Watch price" }).click()]);
+   const before = await cardPage.evaluate(() => ({ opened: window.harness.opened.length, calls: window.harness.calls.length }));
+   await cardPage.evaluate(() => window.harness.setDelay(150));
+   const [popup] = await Promise.all([cardPage.waitForEvent("popup"), cardFrame.getByRole("button", { name: "Watch price", exact: true }).click()]);
+   await cardPage.waitForFunction(count => window.harness.opened.length > count, before.opened);
+   const opened = await cardPage.evaluate(count => window.harness.opened[count], before.opened);
+   const actionCalls = await cardPage.evaluate(count => window.harness.calls.slice(count).map(({ name, op }) => ({ name, op })), before.calls);
+   assert.ok(actionCalls.some(call => call.name === "scoat_card" && call.op === "read"));
+   assert.equal(opened, textUrl);
    await popup.waitForLoadState();
    await f.nativeLogin(popup);
    await popup.getByText("Confirm price watch").waitFor();
-   const opened = (await cardPage.evaluate(() => window.harness.opened))[0];
-   assert.equal(opened, textUrl);
+   assert.ok(!(await memory({ op: "read", collection: "watches" })).items.some(item => item.hunt === huntC.hunt));
    await cardPage.screenshot({ path: path.join(evidence, "p08-review-7-card.png"), fullPage: true });
    const moveText = await popup.locator("body").innerText();
    assert.match(moveText, /verified a different address\. Your 1 other active watch alerts p\*\*\*@example\.test now/);
@@ -406,7 +432,7 @@ export async function watchLanes(databaseUrl, evidence, head) {
    assert.match(activeText, /Alerts for your 1 other active watch now go to the same verified address/);
    await popup.screenshot({ path: path.join(evidence, "p08-review-9-moved.png"), fullPage: true });
    await popup.close();
-  } finally { await cardPage.close(); await card.close(); }
+  } finally { await card.close(); }
   const moved = (await memory({ op: "read", collection: "watches" })).items.filter(item => item.status === "active");
   assert.equal(moved.length, 2);
   assert.ok(moved.every(item => item.alertsCurrentRecipient));
@@ -430,13 +456,12 @@ export async function watchLanes(databaseUrl, evidence, head) {
   await writeFile(path.join(evidence, "browser-refusals.json"), JSON.stringify(refusals, null, 1));
   return { lanes: Object.keys(lanes).length, summary, video: lanes[10].video };
  } catch (error) {
-  await writeFile(path.join(evidence, "failure.txt"), String(error?.stack ?? error) + "\n" + (await page.content().catch(() => "")).slice(0, 4000));
   process.stderr.write("P08 lane failure: " + String(error?.stack ?? error).slice(0, 3000) + "\n");
+  await writeFile(path.join(evidence, "failure.txt"), String(error?.stack ?? error));
   throw error;
  } finally {
-  await page.close().catch(() => undefined);
-  await context.close().catch(() => undefined);
-  await browser.close().catch(() => undefined);
-  await w.close();
+  const closed = await Promise.allSettled([closeWatchBrowser(browserServer), w.close()]);
+  const failures = closed.filter(result => result.status === "rejected").map(result => result.reason);
+  if (failures.length) throw new AggregateError(failures, "P08 cleanup failed");
  }
 }

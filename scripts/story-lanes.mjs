@@ -186,15 +186,19 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   try {
    await page.goto(card.url);
    const frame = page.frameLocator("iframe");
-   await frame.getByText("Current hunt", { exact: true }).waitFor();
-   await frame.getByText("Skipped by you", { exact: true }).waitFor();
-   const skipLink = await openCardLink(page, frame.getByRole("button", { name: "Skip " + rows[2].row.label, exact: true }));
+   await frame.locator("main[data-status=live]").waitFor();
+   await frame.getByText("How we checked", { exact: true }).click();
+   await frame.getByText("Left out by you", { exact: true }).waitFor();
+   await frame.getByText("Change what to compare", { exact: true }).click();
+   await frame.getByLabel("Leave a check out").selectOption(rows[2].row.id);
+   const skipLink = await openCardLink(page, frame.getByRole("button", { name: "Exclude check", exact: true }));
    const cardSkip = await control(skipLink, "Skip row " + rows[2].row.id);
    assert.equal(cardSkip, "applied");
    await page.goto(card.url);
-   await frame.getByText("Current hunt", { exact: true }).waitFor();
-   await page.waitForFunction(() => document.querySelector("iframe")?.contentDocument?.body?.innerText.split("Skipped by you").length === 3);
-   const stopLink = await openCardLink(page, frame.getByRole("button", { name: "Stop new discovery", exact: true }));
+   await frame.locator("main[data-status=live]").waitFor();
+   await frame.getByText("How we checked", { exact: true }).click();
+   await page.waitForFunction(() => document.querySelector("iframe")?.contentDocument?.body?.innerText.split("Left out by you").length === 3);
+   const stopLink = await openCardLink(page, frame.getByRole("button", { name: "Stop search", exact: true }));
    const cardStop = await control(stopLink, "Stop accepting new discoveries");
    assert.equal(cardStop, "applied");
    const stamp = async () => (await conditions.read("SELECT data->>'stopRequestedAt' AS stamp FROM durable_hunts WHERE account=$1 AND id=$2", [account, hunt]))[0].stamp;
@@ -208,7 +212,7 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
    assert.equal(repeated, "unchanged");
    assert.equal(await stamp(), first);
    await page.goto(card.url);
-   await frame.getByText("Discovery stopped", { exact: true }).waitFor();
+   await frame.getByText("Search stopped", { exact: true }).waitFor();
    const after = (await one.hunt({ op: "read", hunt })).structuredContent.value.view;
    assert.equal(after.stopRequested, true);
    assert.deepEqual(after.rows.filter(row => row.skippedBy === "person").map(row => row.row.id), [rows[1].row.id, rows[2].row.id]);
@@ -232,17 +236,17 @@ export async function linkedStory({ fixture, conditions, page, evidence, log, se
   try {
    await page.goto(card.url);
    const frame = page.frameLocator("iframe");
-   await frame.getByText("Finished", { exact: true }).waitFor();
-   await frame.getByText("Finished result. It no longer changes, so the card does not poll.").waitFor();
+   await frame.getByText("Search complete", { exact: true }).waitFor();
    assert.equal(await frame.getByText("Connecting…").count(), 0);
    const finalQuote = await frame.getByRole("region", { name: "Finished quote", exact: true }).innerText();
    assert.ok(finalQuote.includes("The Pi Hut"));
    assert.ok(finalQuote.includes("£70.00"));
+   await frame.getByText("How we checked", { exact: true }).click();
    const cardText = await frame.locator("body").innerText();
    assert.ok(cardText.includes("£63.00"));
    assert.ok(cardText.includes("Requires verify-student"));
    assert.ok(await frame.locator(`a[href="${productUrl}"]`).count() >= 1);
-   assert.equal(await frame.getByRole("link", { name: "Open clean shop link" }).getAttribute("href"), huntA.ready.url);
+   assert.equal(await frame.getByRole("link", { name: "Visit The Pi Hut" }).getAttribute("href"), huntA.ready.url);
    await frame.getByRole("region", { name: "Finished quote", exact: true }).scrollIntoViewIfNeeded();
    await capture("card");
    await conditions.identity.setEmail({ email, email_verified: true });

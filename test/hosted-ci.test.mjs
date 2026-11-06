@@ -102,3 +102,18 @@ test("quality builds the actual Railway image and checks its release and secret-
  }
  rejects(w => { const steps = w.jobs.quality.steps; [steps[indices[0]], steps[indices[1]]] = [steps[indices[1]], steps[indices[0]]]; }, /retain suite order/);
 });
+
+test("landing deployment requires successful main CI and cannot widen its target or permissions", () => {
+ for (const change of [
+  w => { w.jobs["deploy-landing"].needs = []; },
+  w => { w.jobs["deploy-landing"].if = "always()"; },
+  w => { w.jobs["deploy-landing"].if = "${{ github.ref == 'refs/heads/main' }}"; },
+  w => { w.jobs["deploy-landing"].steps[0].with = { ref: "foreign" }; },
+  w => { w.jobs["deploy-landing"].steps[2].run += " --name other-worker"; },
+  w => { w.jobs["deploy-landing"].steps[2].run = "npx wrangler@latest deploy"; },
+  w => { w.jobs["deploy-landing"].steps[2].env.CLOUDFLARE_API_TOKEN = "literal"; },
+  w => { w.jobs["deploy-landing"].concurrency["cancel-in-progress"] = true; },
+  w => { w.jobs["deploy-landing"]["continue-on-error"] = true; }
+ ]) rejects(change, /Deploy only scoat-landing/);
+ rejects(w => { delete w.jobs["deploy-landing"]; }, /exactly five suites/);
+});

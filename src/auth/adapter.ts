@@ -68,6 +68,10 @@ export function postgresAdapter(pool: pg.Pool) {
      if (oldOwners.rows.some(row => !owners.includes(row.account))) throw new InactiveArtifact("OAuth ownership cannot be removed");
      await client.query("INSERT INTO oauth_artifacts(model,id,payload,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(model,id) DO UPDATE SET payload=EXCLUDED.payload,expires_at=EXCLUDED.expires_at", [model,id,payload,Math.min(expiresIn,["Grant", "Session", "RefreshToken"].includes(model) ? connectionLifetimeSeconds : model === "Interaction" ? 1200 : 3600)]);
 
+     if (model === "RefreshToken" && typeof payload.rotations === "number" && payload.rotations > 0) {
+      const renewed = await client.query("UPDATE oauth_artifacts SET expires_at=now()+$3*interval '1 second',payload=jsonb_set(payload,'{exp}',to_jsonb(floor(extract(epoch FROM now()))::bigint+$3::bigint)) WHERE expires_at>now() AND ((model='Grant' AND id=$1) OR (model='Session' AND payload->>'uid'=$2)) RETURNING model", [payload.grantId,payload.sessionUid,connectionLifetimeSeconds]);
+      if (!renewed.rows.some(row => row.model === "Grant") || (payload.sessionUid && !renewed.rows.some(row => row.model === "Session"))) throw new InactiveArtifact("OAuth refresh parents unavailable");
+     }
      await client.query("DELETE FROM oauth_artifact_owners WHERE model=$1 AND id=$2", [model,id]);
      for (const owner of owners) await client.query("INSERT INTO oauth_artifact_owners(model,id,account) VALUES($1,$2,$3)", [model,id,owner]);
     });

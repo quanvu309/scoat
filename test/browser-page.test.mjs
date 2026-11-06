@@ -4,7 +4,6 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { parse } from "parse5";
 import { sendPage, pageHead, refusalPage, browserDocument } from "../dist/browser/page.js";
-import { connectionLifetimeSeconds } from "../dist/auth/config.js";
 import { consent, enroll, link, emailEntry, emailCode } from "../dist/browser/views.js";
 
 function elements(html) {
@@ -85,10 +84,8 @@ test("refresh-grant consent discloses renewal even when offline_access is droppe
  for (const scope of ["openid scoat:read scoat:write offline_access", "openid scoat:read scoat:write"]) {
   const client = {name: "ChatGPT", origin: "https://chatgpt.com", refreshAllowed: true};
   const html = consent({params: {scope}}, "bound-csrf", client);
-  assert.ok(html.includes(`Stays signed in up to ${connectionLifetimeSeconds / 86400} days`));
-  assert.ok(html.includes("Stays signed in up to"));
-  assert.ok(html.includes("days"));
-  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("Stays signed in"));
+  assert.ok(html.includes("Stays connected while you use it"));
+  assert.ok(!consent({params: {scope}}, "bound-csrf", {...client, refreshAllowed: false}).includes("Stays connected"));
  }
 });
 

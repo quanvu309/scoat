@@ -205,3 +205,20 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           node -e 'const keys = ["quality", "protocol", "browser", "operations", "watch-performance"]; try { const needs = JSON.parse(process.env.NEEDS_JSON); if (needs === null || Array.isArray(needs) || typeof needs !== "object" || Object.keys(needs).length !== keys.length || !keys.every(key => Object.hasOwn(needs, key) && needs[key]?.result === "success")) process.exit(1); } catch { process.exit(1); }'
+  deploy-landing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [foundation]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.foundation.result == 'success' }}
+    concurrency:
+      group: production-landing
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - name: Deploy scoat.net
+        run: npx --yes wrangler@4.148.0 deploy --config landing/wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -42,7 +42,14 @@ const result=await withDatabase(async databaseUrl=>{
   const live=()=>frame.getByText("Current hunt",{exact:true}).waitFor();
   const count=()=>page.evaluate(()=>window.harness.calls.length);
   const visibility=async visible=>{const appFrame=page.frames().find(item=>item.url().endsWith("/card"));await appFrame.evaluate(value=>{Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>value?"visible":"hidden"});document.dispatchEvent(new Event("visibilitychange"));},visible);};
+  const matrix=[];
+  const capture=async(state,target=page)=>{if(perf)return;for(const [size,width,height] of [["desktop",1000,900],["phone",390,844]])for(const theme of ["light","dark"]){await target.setViewportSize({width,height});await target.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});await target.evaluate(value=>window.harness.theme(value),theme);await target.frameLocator("iframe").locator("body").evaluate(()=>window.scrollTo(0,0));const file=`${state}-${size}-${theme}.png`;await target.screenshot({path:path.join(root,file)});matrix.push({state,size,theme,file});const app=target.frameLocator("iframe");assert.equal(await app.locator("html").getAttribute("data-theme"),theme);assert(await app.locator("body").evaluate(el=>el.scrollWidth<=el.clientWidth+1));}};
+  const loading=await context.newPage();await loading.goto(f.url+"?waiting");await loading.frameLocator("iframe").getByText("Your next good find.").waitFor();await capture("loading",loading);await loading.close();
+  const empty=await context.newPage();await empty.goto(f.emptyUrl);await empty.frameLocator("iframe").getByText("The evidence comes first.").waitFor();await capture("empty",empty);await empty.close();
   await live();
+  await capture("progress");
+  await frame.getByRole("button",{name:"Refine search",exact:true}).click();assert.equal(await page.evaluate(()=>window.harness.messages.length),1);
+  await frame.locator("details.evidence > summary").click();
   await frame.getByRole("heading",{name:"All price scenarios"}).waitFor();
   const text=await frame.locator("main").innerText();
   for(const required of ["£70.00","£63.00","£1.90","£55.00","Budget £60.00","Unknown:","Evidence gaps","Conditional:","Trading Trading"]) assert(text.includes(required),required);
@@ -135,6 +142,8 @@ const result=await withDatabase(async databaseUrl=>{
   lane("hidden zero new tool requests; visible resumes single flight");
   await page.evaluate(()=>window.harness.setMode("outage"));
   await frame.getByText(/Offline or stale/).waitFor();
+  await frame.locator("details.evidence").evaluate(el=>{el.open=false;});await capture("error");
+  await frame.locator("details.evidence").evaluate(el=>{el.open=true;});
   await page.evaluate(()=>window.harness.expire());
   await page.evaluate(()=>window.harness.setMode("live"));
   await live();
@@ -145,6 +154,8 @@ const result=await withDatabase(async databaseUrl=>{
   const lostStart=await count();
   await page.evaluate(()=>{window.harness.setMode("lose-renew");return window.harness.expire();});
   await frame.getByText(/Offline or stale/).waitFor();
+  await frame.locator("details.evidence").evaluate(el=>{el.open=false;});await capture("error");
+  await frame.locator("details.evidence").evaluate(el=>{el.open=true;});
   await frame.getByText("Current hunt",{exact:true}).waitFor({timeout:45000});
   assert.equal(await page.evaluate(()=>window.harness.lostRenewals),1);
   const recovery=await page.evaluate(start=>window.harness.calls.slice(start).map(call=>call.op),lostStart);
@@ -166,11 +177,13 @@ const result=await withDatabase(async databaseUrl=>{
   await f.fixture.nativeLogin(stopApproval);
   await stopApproval.getByRole("button",{name:"Stop accepting new discoveries"}).click();
   await stopApproval.close();
-  await frame.getByText("Discovery stopped",{exact:true}).waitFor();
+  await frame.locator("header").getByText("Discovery stopped",{exact:true}).waitFor();
+  await capture("stopped");
+  await frame.locator("details.evidence").evaluate(el=>{el.open=true;});
   assert(await frame.getByRole("button",{name:"Skip Shop Price",exact:true}).isEnabled());
   await page.evaluate(()=>window.harness.setMode("old"));
   await frame.getByText(/Waiting for a consistent/).waitFor();
-  assert.equal(await frame.getByText("Discovery stopped",{exact:true}).count(),1);
+  assert.equal(await frame.locator("header").getByText("Discovery stopped",{exact:true}).count(),1);
   lane("keyboard Space Stop native confirmation; late pre-Stop response cannot undo Stop");
   await page.evaluate(()=>window.harness.setMode("live"));
   await live();
@@ -185,6 +198,8 @@ const result=await withDatabase(async databaseUrl=>{
   const finalQuote=frame.getByRole("region",{name:"Finished quote",exact:true});
   assert((await finalQuote.innerText()).includes(chosen.seller));
   assert((await finalQuote.innerText()).includes(new Intl.NumberFormat("en-GB",{style:"currency",currency:chosen.guaranteed.amount.currency}).format(chosen.guaranteed.amount.pence/100)));
+  await frame.locator("details.evidence").evaluate(el=>{el.open=false;});await capture("finished");
+  await writeFile(path.join(root,"matrix.json"),JSON.stringify(matrix,null,2));
   const finishedCount=await count();await page.waitForTimeout(3300);assert.equal(await count(),finishedCount);
   lane("canonical finish stops all future polls");
   const samples=await page.evaluate(()=>window.harness.samples);

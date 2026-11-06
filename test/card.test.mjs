@@ -170,3 +170,11 @@ test("a card opened on a finished hunt states the final result instead of connec
  assert.throws(()=>checkCardInitialState(index,original("src/card/renderer.tsx")),/renderer derives/);
  assert.throws(()=>checkCardInitialState(index.replace('if(initial.value.view.final.kind==="finished") return','if(false) return'),renderer),/initialState owner/);
 });
+
+
+test("card uses the shared theme, canonical progress and negotiated Refine",async()=>{
+ const {checkCardExperience}=await import("../scripts/check-card.mjs");
+ const source=["src/card/main.tsx","src/card/renderer.tsx","src/card/adapter.ts","src/card/style.css"].map(file=>readFileSync(file,"utf8"));
+ assert.doesNotThrow(()=>checkCardExperience(...source));
+ for(const [index,from,to] of [[0,"../../landing/public/ui.css","local.css"],[1,"aria-valuenow={view.progress.resolved}","aria-valuenow={8}"],[2,"app.getHostCapabilities()?.message","true"],[2,"app.getHostContext()?.theme","undefined"],[3,"prefers-reduced-motion:no-preference","all"]]){const changed=[...source];changed[index]=changed[index].replace(from,to);assert.throws(()=>checkCardExperience(...changed));}
+});

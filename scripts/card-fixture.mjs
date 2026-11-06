@@ -42,8 +42,10 @@ export async function cardFixture(databaseUrl) {
  const second=await f.tool(login.token,"scoat_hunt",{op:"record",requestKey:randomUUID(),hunt,row:other.row.id,slot:other.row.slots[0],expected:other.revision,outcome:{kind:"found",offers:[{...extraInput,proof:{...extraInput.proof,observedAt:new Date().toISOString()}}]}});
  if(!second.structuredContent?.ok) throw new Error("Fixture second seller failed");
  const initial=(await f.tool(login.token,"scoat_hunt",{op:"read",hunt})).structuredContent;
+ const empty=await f.tool(login.token,"scoat_hunt",{op:"start",requestKey:randomUUID(),intent:{product:"Logitech M185 wireless mouse"}});
+ const emptyCard=await serveCard(f,login,empty.structuredContent);
  const card=await serveCard(f,login,initial);
  server=card.server;
- return {tool:args=>f.tool(login.token,"scoat_hunt",args),memory:args=>f.tool(login.token,"scoat_memory",args),url:card.url,initial,fixture:f,async close(){await card.close();await f.close();}};
+ return {tool:args=>f.tool(login.token,"scoat_hunt",args),memory:args=>f.tool(login.token,"scoat_memory",args),url:card.url,emptyUrl:emptyCard.url,initial,fixture:f,async close(){await emptyCard.close();await card.close();await f.close();}};
  }catch(error){if(server) server.close();await f.close();throw error;}
 }

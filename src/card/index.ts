@@ -1,7 +1,7 @@
 import type { HuntView } from "../hunt/index.js";
 import type { Capability, Snapshot } from "./contracts.js";
 import { CardFailure } from "./contracts.js";
-export type CardBridge = { capability(op:"open"|"renew",hunt:string,grant?:string):Promise<Capability>; read(hunt:string,grant:string):Promise<Snapshot>; openLink(url:string):Promise<void> };
+export type CardBridge = { capability(op:"open"|"renew",hunt:string,grant?:string):Promise<Capability>; read(hunt:string,grant:string):Promise<Snapshot>; openLink(url:string):Promise<void>; sendMessage?(text:string):Promise<void> };
 export type CardState = { snapshot:Snapshot; status:"live"|"stale"|"revoked"|"unsupported"; message:string };
 export function compareViews(prior:HuntView,next:HuntView):"accept"|"drop"|"retry" {
  if(prior.hunt!==next.hunt || prior.release!==next.release || prior.final.kind==="finished" || (prior.stopRequested && !next.stopRequested)) return "drop";

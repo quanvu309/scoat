@@ -31,10 +31,16 @@ export function createAppAdapter() {
   }
   return reply;
  }
+ const media=window.matchMedia("(prefers-color-scheme: dark)");
+ const theme=()=>{document.documentElement.dataset.theme=app.getHostContext()?.theme ?? (media.matches?"dark":"light");};
+ app.onhostcontextchanged=theme;
+ media.addEventListener("change",theme);
+ theme();
  const bridge:CardBridge={
   async capability(op,hunt,grant){return capabilitySchema.parse((await call(op,hunt,grant))._meta?.["scoat/readCapability"]);},
   async read(hunt,grant){return snapshotSchema.parse((await call("read",hunt,grant)).structuredContent);},
-  async openLink(url){const result=await app.openLink({url});if(result.isError) throw new Error("Link unavailable");}
+  async openLink(url){const result=await app.openLink({url});if(result.isError) throw new Error("Link unavailable");},
+  async sendMessage(text){if(!app.getHostCapabilities()?.message) throw new Error("Messages unavailable");const result=await app.sendMessage({role:"user",content:[{type:"text",text}]});if(result.isError) throw new Error("Message declined");}
  };
- return {app,bridge,connect:()=>app.connect(new CardTransport(window.parent,window.parent))};
+ return {app,bridge,connect:async()=>{await app.connect(new CardTransport(window.parent,window.parent));theme();}};
 }

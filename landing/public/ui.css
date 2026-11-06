@@ -46,3 +46,25 @@
   --page-pad-block: 40px;
   --page-pad-inline: 48px;
 }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #171c22;
+  --foreground: #edf1f5;
+  --card: #1c222a;
+  --card-foreground: #edf1f5;
+  --popover: #1c222a;
+  --popover-foreground: #edf1f5;
+  --primary: #accdec;
+  --primary-foreground: #182b3e;
+  --secondary: #242c35;
+  --secondary-foreground: #edf1f5;
+  --muted: #242c35;
+  --muted-foreground: #b0bac4;
+  --accent: #263b50;
+  --accent-foreground: #accdec;
+  --success: #a5d3af;
+  --border: #495460;
+  --input: #495460;
+  --ring: #accdec;
+}

@@ -1,7 +1,7 @@
 import { CardTransport } from "../src/card/adapter.ts";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 const frame=document.querySelector("iframe");
-const bridge=new AppBridge(null,{name:"Scoat local ext-apps harness",version:"1.0.0"},{...(location.search.includes("unsupported")?{}:{serverTools:{}}),openLinks:{}},{hostContext:{theme:"light"}});
+const bridge=new AppBridge(null,{name:"Scoat local ext-apps harness",version:"1.0.0"},{...(location.search.includes("unsupported")?{}:{serverTools:{}}),openLinks:{},message:{text:{}}},{hostContext:{theme:"light"}});
 const opened=[],calls=[],samples=[];
 let mode="live",delay=0,replyOverride,pendingRenderAt,capability,lostRenewals=0;
 frame.addEventListener("load",()=>{const win=frame.contentWindow;new win.PerformanceObserver(list=>{for(const entry of list.getEntries()) if(entry.name==="scoat-card-render" && pendingRenderAt!==undefined){samples.push({resultToRenderMs:win.performance.timeOrigin+entry.startTime-performance.timeOrigin-pendingRenderAt});pendingRenderAt=undefined;}}).observe({type:"mark"});});
@@ -21,7 +21,9 @@ bridge.oncalltool=async params=>{
  if(params.arguments.op==="read") pendingRenderAt=performance.now();
  return result;
 };
-bridge.oninitialized=async()=>{await bridge.sendToolInput({arguments:{op:"read"}});await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});window.ready=true;};
-window.harness={calls,opened,samples,get lostRenewals(){return lostRenewals;},setMode(value){mode=value;},setReply(value){replyOverride=value;},setDelay(ms){delay=ms;},unmount(){frame.remove();},async revoke(){if(!capability) throw new Error("No active fixture capability");await fetch("/tool",{method:"POST",body:JSON.stringify({name:"scoat_card",arguments:{op:"revoke",...capability}})});},async expire(){await fetch("/expire",{method:"POST"});},async resend(){await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});}};
+bridge.oninitialized=async()=>{if(location.search.includes("waiting")){window.ready=true;return;}await bridge.sendToolInput({arguments:{op:"read"}});await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});window.ready=true;};
+bridge.onmessage=async params=>{messages.push(params);return {};};
+const messages=[];
+window.harness={messages,async theme(theme){await bridge.setHostContext({theme});},calls,opened,samples,get lostRenewals(){return lostRenewals;},setMode(value){mode=value;},setReply(value){replyOverride=value;},setDelay(ms){delay=ms;},unmount(){frame.remove();},async revoke(){if(!capability) throw new Error("No active fixture capability");await fetch("/tool",{method:"POST",body:JSON.stringify({name:"scoat_card",arguments:{op:"revoke",...capability}})});},async expire(){await fetch("/expire",{method:"POST"});},async resend(){await bridge.sendToolResult({content:[],structuredContent:await (await fetch("/initial")).json()});}};
 await bridge.connect(new CardTransport(frame.contentWindow,frame.contentWindow));
 frame.src="/card";

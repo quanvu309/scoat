@@ -152,7 +152,7 @@ export function checkHostedCoverage(source) {
   before("npm run verify -- p09", mediaInstall, "Install ffmpeg/ffprobe before story media");
  }
  const suites = Object.keys(suiteCommands);
- if (!same(Object.keys(workflow.jobs).sort(), [...suites, "foundation"].sort())) throw new Error("Hosted CI has exactly five suites and foundation");
+ if (!same(Object.keys(workflow.jobs).sort(), [...suites, "foundation", "deploy-landing"].sort())) throw new Error("Hosted CI has exactly five suites, foundation and deploy-landing");
  if (!onlyKeys(workflow, ["name", "on", "permissions", "concurrency", "jobs"]) || !same(workflow.permissions, { contents: "read" })) throw new Error("Hosted CI uses only the supported workflow form and read-only permissions");
  if (!onlyKeys(workflow.on, ["push", "pull_request"]) || Object.keys(workflow.on).length !== 2 || workflow.on.pull_request !== null || !same(workflow.on.push, { branches: ["main"] })) throw new Error("Hosted CI uses ordinary pull_request and push main only");
  if (!same(workflow.concurrency, { group: "${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}", "cancel-in-progress": true })) throw new Error("Scope cancellation by workflow, event and PR or ref");
@@ -186,6 +186,20 @@ export function checkHostedCoverage(source) {
    if (!onlyKeys(step, ["name", "run", "uses", "with"]) || (step.run !== undefined ? step.uses !== undefined || step.with !== undefined || !allowed.has(step.run.trim()) : !["actions/checkout@v4", "actions/setup-node@v4"].includes(step.uses))) throw new Error(id + ": supported literal steps only; no conditions, overrides, failure swallowing or background commands");
   }
  }
+ const landing = workflow.jobs["deploy-landing"];
+ const expectedLanding = {
+  "runs-on": "ubuntu-latest",
+  "timeout-minutes": 10,
+  needs: ["foundation"],
+  if: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.foundation.result == 'success' }}",
+  concurrency: { group: "production-landing", "cancel-in-progress": false },
+  steps: [
+   { uses: "actions/checkout@v4" },
+   { uses: "actions/setup-node@v4", with: { "node-version": "24.21.0" } },
+   { name: "Deploy scoat.net", run: "npx --yes wrangler@4.148.0 deploy --config landing/wrangler.jsonc", env: { CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}" } }
+  ]
+ };
+ if (!same(landing, expectedLanding)) throw new Error("Deploy only scoat-landing from main push after successful foundation with pinned Wrangler and a secret token");
  const foundation = workflow.jobs.foundation;
  if (!onlyKeys(foundation, ["runs-on", "timeout-minutes", "needs", "if", "steps"]) || !Array.isArray(foundation.needs) || !same([...foundation.needs].sort(), [...suites].sort()) || foundation.if !== "${{ always() }}") throw new Error("foundation requires exactly five needs and always()");
  const steps = foundation.steps;
